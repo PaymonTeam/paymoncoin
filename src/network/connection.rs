@@ -50,7 +50,6 @@ impl Connection {
 
         debug!("Expected message length is {}", msg_len);
 
-        // https://stackoverflow.com/a/30979689/329496
         let mut recv_buf : Vec<u8> = Vec::with_capacity(msg_len);
         unsafe { recv_buf.set_len(msg_len); }
 
@@ -72,7 +71,7 @@ impl Connection {
             Err(e) => {
 
                 if e.kind() == ErrorKind::WouldBlock {
-                    debug!("CONN : read encountered WouldBlock");
+                    debug!("CONN: read encountered WouldBlock");
 
                     self.read_continuation = Some(msg_len as u64);
                     Ok(None)

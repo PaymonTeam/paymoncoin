@@ -14,7 +14,7 @@ use self::rand::{Rng, thread_rng};
 use self::secp256k1::key::{PublicKey, SecretKey};
 use self::secp256k1::{Secp256k1, Signature, RecoverableSignature, Message, RecoveryId, ContextFlag};
 use self::crypto::digest::Digest;
-use std::fmt::{Display, Formatter, Error};
+use std::fmt::{Display, Formatter};
 use self::crypto::sha3::{Sha3, Sha3Mode};
 
 use self::rocksdb::DB;
@@ -32,12 +32,40 @@ use std::sync::mpsc::channel;
 use std::sync::mpsc::{Sender, Receiver};
 use std::time::Duration;
 
-pub struct Hive {
+#[derive(Copy, PartialEq, Eq, Clone, Debug)]
+pub enum Error {
+    InvalidAddress,
+}
 
+pub struct Hive {
+//    tree: Box<TrieDBMut<'a>>,
+    db: DB,
+//    mdb: MemoryDB,
+//    root: H256,
 }
 
 impl Hive {
-    pub fn generateAddress(seed: &[u8; 32]) {
+    pub fn new() -> Hive {
+//        let f = TrieFactory::new(TrieSpec::Generic);
+//        let mut mdb = MemoryDB::new();
+//        let root = H256::new();
+//        let mut t = Box::new(TrieDBMut::new(&mut mdb, &mut root));
+
+        let mut opts = Options::default();
+        opts.set_max_background_compactions(2);
+        opts.set_max_background_flushes(2);
+        opts.create_if_missing(true);
+        let db = DB::open(&opts, "db/data").unwrap();
+
+        Hive {
+//            tree: t,
+            db,
+//            mdb,
+//            root,
+        }
+    }
+
+    pub fn generate_address(seed: &[u8; 32]) -> ([u8; 21], String) {
 //        let mut sk_data = [0u8; 32];
 //        rand::thread_rng().fill_bytes(&mut sk_data);
 
@@ -55,14 +83,40 @@ impl Hive {
 
         let mut buf: Vec<u8> = repeat(0).take((sha.output_bits()+7)/8).collect();
         sha.result(&mut buf);
+
         let addrLeft = buf[..].to_hex()[24..].to_uppercase();
         let mut appendByte = 0u16;
         for b in buf[12..].iter() {
             appendByte += *b as u16;
             appendByte %= 256;
         }
+
         let addr = format!("P{}{:X}", addrLeft, appendByte);
         println!("{}", addr);
+        let mut bytes = [0u8; 21];
+        bytes[..20].copy_from_slice(&buf[12..32]);
+        bytes[20] = appendByte as u8;
+        (bytes, addr)
+    }
+
+    fn add_transaction(&mut self) {
+//        self.tree.insert(b"k", b"val");
+//        let res = self.tree.get(b"k");
+//        match res {
+//            Ok(Some(val)) => println!("val={}", String::from_utf8_lossy(&val)),
+//            Ok(None) => println!("Nothing found"),
+//            Err(e) => println!("{}", e)
+//        }
+    }
+
+    fn save_to_disk(&self) {
+        self.db.put(b"my key", b"my value");
+        match self.db.get(b"my key") {
+            Ok(Some(value)) => println!("retrieved value '{}'", value.to_utf8().unwrap()),
+            Ok(None) => println!("value not found"),
+            Err(e) => println!("operational problem encountered: {}", e),
+        }
+        self.db.delete(b"my key").unwrap();
     }
 
 //  fn encode(mut num:u64) -> String {
@@ -86,32 +140,4 @@ impl Hive {
 //
 //      return encode
 //  }
-    // RocksDB
-//    let mut opts = Options::default();
-//    opts.set_max_background_compactions(2);
-//    opts.set_max_background_flushes(2);
-//    opts.create_if_missing(true);
-//
-//    let db = DB::open(&opts, "db/data").unwrap();
-//    db.put(b"my key", b"my value");
-//    match db.get(b"my key") {
-//        Ok(Some(value)) => println!("retrieved value '{}'", value.to_utf8().unwrap()),
-//        Ok(None) => println!("value not found"),
-//        Err(e) => println!("operational problem encountered: {}", e),
-//    }
-//    db.delete(b"my key").unwrap();
-
-    // Patricia Trie
-//    let f = TrieFactory::new(TrieSpec::Generic);
-//    let mdb = &mut MemoryDB::new();
-//    let root = &mut H256::new();
-//    let mut t = Box::new(TrieDBMut::new(mdb, root)); //f.create(&mut MemoryDB::new(), &mut H256::new());
-//    t.insert(b"k", b"val");
-//    let res = t.get(b"k");
-//    match res {
-//        Ok(Some(val)) => println!("val={}", String::from_utf8_lossy(&val)),
-//        Ok(None) => println!("Nothing found"),
-//        Err(e) => println!("{}", e)
-//    }
-
 }

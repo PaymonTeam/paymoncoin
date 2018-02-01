@@ -16,7 +16,7 @@ fn main() {
 
         let _ = thread::spawn(move|| {
 
-            let mut stream = TcpStream::connect("127.0.0.1:8000").expect("Couldn't not connect to neighboor"); //.unwrap();
+            let mut stream = TcpStream::connect("127.0.0.1:8000").expect("Couldn't not connect to neighbor"); //.unwrap();
 
             loop {
                 let msg = format!("the answer is {}", i);
