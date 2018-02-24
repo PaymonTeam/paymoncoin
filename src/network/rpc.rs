@@ -1,7 +1,7 @@
 use network::packet::{Packet, SerializedBuffer};
 
 pub struct KeepAlive {
-    stream: SerializedBuffer,
+//    stream: SerializedBuffer,
 }
 
 impl KeepAlive {

@@ -32,6 +32,8 @@ use std::sync::mpsc::channel;
 use std::sync::mpsc::{Sender, Receiver};
 use std::time::Duration;
 
+use model::transaction::{ADDRESS_SIZE, HASH_SIZE};
+
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum Error {
     InvalidAddress,
@@ -84,18 +86,22 @@ impl Hive {
         let mut buf: Vec<u8> = repeat(0).take((sha.output_bits()+7)/8).collect();
         sha.result(&mut buf);
 
-        let addrLeft = buf[..].to_hex()[24..].to_uppercase();
-        let mut appendByte = 0u16;
-        for b in buf[12..].iter() {
-            appendByte += *b as u16;
-            appendByte %= 256;
+        let addr_left = buf[..].to_hex()[24..].to_uppercase();
+        let mut append_byte = 0u16;
+        for (i, b) in buf[12..].iter().enumerate() {
+            if i & 1 == 0 {
+                append_byte += *b as u16;
+            } else {
+                append_byte += (*b as u16) * 2;
+            }
+            append_byte %= 256;
         }
 
-        let addr = format!("P{}{:X}", addrLeft, appendByte);
+        let addr = format!("P{}{:X}", addr_left, append_byte);
         println!("{}", addr);
         let mut bytes = [0u8; 21];
         bytes[..20].copy_from_slice(&buf[12..32]);
-        bytes[20] = appendByte as u8;
+        bytes[20] = append_byte as u8;
         (bytes, addr)
     }
 
@@ -119,25 +125,35 @@ impl Hive {
         self.db.delete(b"my key").unwrap();
     }
 
-//  fn encode(mut num:u64) -> String {
-//      let alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"; //"012345678abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"; //  Base61
-//      let base_count = alphabet.len() as u64;
-//
-//      let mut encode = String::new();
-//
-//      while num >= base_count {
-//          let m = (num % base_count) as usize;
-//  //        encode = alphabet.chars().nth(m).unwrap() + encode;
-//          encode.push(alphabet.chars().nth(m).unwrap());
-//          num = (num / base_count) as u64;
-//      }
-//
-//      if num != 0 {
-//  //        encode = alphabet[num] + encode
-//          encode.push(alphabet.chars().nth(num as usize).unwrap());
-//
-//      }
-//
-//      return encode
-//  }
+    pub fn address_to_string(bytes: [u8; ADDRESS_SIZE]) -> String {
+        let strs: Vec<String> = bytes.iter()
+            .map(|b| format!("{:02X}", b))
+            .collect();
+        format!("P{}", strs.join(""))
+    }
+
+    pub fn address_to_bytes(address: String) -> Result<[u8; ADDRESS_SIZE], Error> {
+        use self::rustc_serialize::hex::{FromHex, FromHexError};
+
+        if !address.starts_with("P") {
+            return Err(Error::InvalidAddress);
+        }
+
+        match address[1..].to_string().from_hex() {
+            Err(_) => return Err(Error::InvalidAddress),
+            Ok(vec) => {
+                let bytes:&[u8] = vec.as_ref();
+                let mut ret_bytes = [0u8; 21];
+
+                if bytes.len() == 21 {
+                    ret_bytes.copy_from_slice(&bytes);
+                    return Ok(ret_bytes)
+                } else {
+                    return Err(Error::InvalidAddress);
+                }
+            }
+        };
+//        let bytes = address[1..].to_string().from_hex().unwrap_or(|| return Err(Error::InvalidAddress));
+
+    }
 }
