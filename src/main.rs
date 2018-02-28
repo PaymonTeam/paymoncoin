@@ -1,3 +1,6 @@
+//#![feature(collection_placement)]
+//#![feature(placement_in_syntax)]
+
 extern crate byteorder;
 extern crate mio;
 extern crate rand;
