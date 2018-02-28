@@ -7,13 +7,14 @@ use byteorder::{ByteOrder, BigEndian};
 
 use mio::{Poll, PollOpt, Ready, Token};
 use mio::net::TcpStream;
-use network::packet::SerializedBuffer;
+use network::packet::{SerializedBuffer, Packet, get_object_size};
+use std::collections::VecDeque;
 
 pub struct Connection {
     sock: TcpStream,
     pub token: Token,
     interest: Ready,
-    send_queue: Vec<Rc<Vec<u8>>>,
+    send_queue: VecDeque<Rc<SerializedBuffer>>,
     is_idle: bool,
     is_reset: bool,
     read_continuation: Option<u32>,
@@ -34,7 +35,7 @@ impl Connection {
             sock,
             token,
             interest: Ready::from(UnixReady::hup()),
-            send_queue: Vec::new(),
+            send_queue: VecDeque::new(),
             is_idle: true,
             is_reset: false,
             read_continuation: None,
@@ -50,7 +51,7 @@ impl Connection {
             sock,
             token,
             interest: Ready::from(Ready::hup()),
-            send_queue: Vec::new(),
+            send_queue: VecDeque::new(),
             is_idle: true,
             is_reset: false,
             read_continuation: None,
@@ -67,7 +68,7 @@ impl Connection {
         };
 
         if msg_len == 0 {
-            debug!("message is zero bytes; token={:?}", self.token);
+//            debug!("message is zero bytes; token={:?}", self.token);
             return Ok(None);
         }
         let msg_len = msg_len as usize;
@@ -140,13 +141,9 @@ impl Connection {
         let mut f_byte_buf = [0u8; 1];
         if self.sock.peek(&mut f_byte_buf).is_ok() {
             let f_byte = f_byte_buf[0];
-            println!("{:X}", f_byte);
-            println!("{:b}", f_byte);
             if f_byte != 0x7f {
                 self.sock.read(&mut f_byte_buf).expect("Failed to read f_byte");
                 let i = (f_byte_buf[0] as u32) * 4;
-                println!("{:X}", i);
-                println!("{:b}", i);
                 return Ok(Some(i));
             } else {
                 let mut buf = [0u8; 4];
@@ -177,28 +174,68 @@ impl Connection {
 //        Ok(Some(msg_len))
     }
 
-    /// TODO: Figure out if sending more than one message is optimal. Maybe we should be trying to
-    /// flush until the kernel sends back EAGAIN?
-    pub fn writable(&mut self) -> io::Result<()> {
+    pub fn send_packet<T>(&mut self, packet: T, message_id : i64) where T: Packet {
+        let message_length = get_object_size(&packet);
+        let size = 8 + 4 + message_length as usize;
+        let mut buffer = SerializedBuffer::new_with_size(size);
+        buffer.set_position(0);
+        buffer.write_i64(message_id);
+        buffer.write_i32(message_length as i32);
+        packet.serialize_to_stream(&mut buffer);
+        self.send_serialized_data(buffer);
+    }
 
-        self.send_queue.pop()
+    pub fn send_serialized_data(&mut self, mut buff: SerializedBuffer) {
+        buff.rewind();
+
+        let mut buffer_len = 0;
+        let mut packet_length = (buff.limit() / 4) as i32;
+
+        if packet_length < 0x7f {
+            buffer_len += 1;
+        } else {
+            buffer_len += 4;
+        }
+
+        let mut buffer = SerializedBuffer::new_with_size(buffer_len);
+        if packet_length < 0x7f {
+            buffer.write_byte(packet_length as u8);
+        } else {
+            packet_length = (packet_length << 8) + 0x7f;
+            buffer.write_i32(packet_length);
+        }
+
+        buffer.rewind();
+        buff.rewind();
+
+        self.send_queue.push_back(Rc::new(buffer));
+        self.send_queue.push_back(Rc::new(buff));
+
+        if !self.interest.is_writable() {
+            self.interest.insert(Ready::writable());
+        }
+    }
+
+    pub fn writable(&mut self) -> io::Result<()> {
+        self.send_queue.pop_front()
             .ok_or(Error::new(ErrorKind::Other, "Could not pop send queue"))
             .and_then(|buf| {
-                match self.write_message_length(&buf) {
-                    Ok(None) => {
-                        self.send_queue.push(buf);
-                        return Ok(());
-                    },
-                    Ok(Some(())) => {
-                        ()
-                    },
-                    Err(e) => {
-                        error!("Failed to send buffer for {:?}, error: {}", self.token, e);
-                        return Err(e);
-                    }
-                }
+//                match self.write_message_length(&buf) {
+//                    Ok(None) => {
+//                        self.send_queue.push(buf);
+//                        return Ok(());
+//                    },
+//                    Ok(Some(())) => {
+//                        ()
+//                    },
+//                    Err(e) => {
+//                        error!("Failed to send buffer for {:?}, error: {}", self.token, e);
+//                        return Err(e);
+//                    }
+//                }
 
-                match self.sock.write(&*buf) {
+                let lim = buf.limit();
+                match self.sock.write(&(*buf).buffer[0..lim]) {
                     Ok(n) => {
                         debug!("CONN : we wrote {} bytes", n);
                         self.write_continuation = false;
@@ -208,7 +245,7 @@ impl Connection {
                         if e.kind() == ErrorKind::WouldBlock {
                             debug!("client flushing buf; WouldBlock");
 
-                            self.send_queue.push(buf);
+                            self.send_queue.push_front(buf);
                             self.write_continuation = true;
                             Ok(())
                         } else {
@@ -253,17 +290,17 @@ impl Connection {
         }
     }
 
-    pub fn send_message(&mut self, message: Rc<Vec<u8>>) -> io::Result<()> {
-        trace!("connection send_message; token={:?}", self.token);
-
-        self.send_queue.push(message);
-
-        if !self.interest.is_writable() {
-            self.interest.insert(Ready::writable());
-        }
-
-        Ok(())
-    }
+//    pub fn send_message(&mut self, message: Rc<Vec<u8>>) -> io::Result<()> {
+//        trace!("connection send_message; token={:?}", self.token);
+//
+//        self.send_queue.push(message);
+//
+//        if !self.interest.is_writable() {
+//            self.interest.insert(Ready::writable());
+//        }
+//
+//        Ok(())
+//    }
 
     pub fn register(&mut self, poll: &mut Poll) -> io::Result<()> {
         trace!("connection register; token={:?}", self.token);

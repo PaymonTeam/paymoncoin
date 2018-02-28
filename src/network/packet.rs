@@ -13,7 +13,7 @@ pub struct SerializedBuffer {
 }
 
 impl SerializedBuffer {
-    pub fn new_with_size(size: usize) -> SerializedBuffer {
+    pub fn new_with_size(size: usize) -> Self {
         let mut sb = SerializedBuffer {
             buffer: Vec::with_capacity(size),
             position: 0,
@@ -25,19 +25,7 @@ impl SerializedBuffer {
         sb
     }
 
-//    pub fn new_with_size_ref<'a>(size: usize) -> &'a mut SerializedBuffer {
-//        let mut sb = SerializedBuffer {
-//            buffer: Vec::with_capacity(size),
-//            position: 0,
-//            limit: size,
-//            capacity: size,
-//            calculated_size_only: false,
-//        };
-//        unsafe { sb.buffer.set_len(size); }
-//        &mut sb
-//    }
-
-    pub fn new(calculate: bool) -> SerializedBuffer {
+    pub fn new(calculate: bool) -> Self {
         let sb = SerializedBuffer {
             buffer: Vec::new(),
             position: 0,
@@ -48,7 +36,7 @@ impl SerializedBuffer {
         sb
     }
 
-    pub fn new_with_buffer(buff: &[u8], length: usize) -> SerializedBuffer {
+    pub fn new_with_buffer(buff: &[u8], length: usize) -> Self {
         SerializedBuffer {
             buffer: Vec::from(buff),
             position: 0,
@@ -129,11 +117,6 @@ impl SerializedBuffer {
         if self.position == self.limit {
             return;
         }
-//        self.buffer = self.buffer[self.position..(self.position + self.limit - self.position)];
-//        let mut cpy = Vec::from(&self.buffer[self.position..self.limit]);
-//        self.buffer = cpy;//.clone_into(&mut cpy);
-//        memmove(buffer, buffer + self.position, sizeof(uint8_t) * (self.limit - self.position));
-
         let mut buffer_ptr = &mut self.buffer[0] as *mut u8;
 
         unsafe {
@@ -227,6 +210,14 @@ impl SerializedBuffer {
         }
     }
 
+    pub fn write_u64(&mut self, i: u64) {
+        self.write_i64(i as i64);
+    }
+
+    pub fn write_u32(&mut self, i: u32) {
+        self.write_i32(i as i32);
+    }
+
     pub fn write_bool(&mut self, val: bool) {
         if !self.calculated_size_only {
             if val {
@@ -293,7 +284,6 @@ impl SerializedBuffer {
     }
 
     pub fn write_byte_array(&mut self, b: &[u8], offset: usize, length: usize) {
-        println!("len={}", length);
         if length <= 253 {
             if !self.calculated_size_only {
                 if self.position + 1 > self.limit {
@@ -336,9 +326,11 @@ impl SerializedBuffer {
         }
 
         let mut addition = (length + (if length <= 253 { 1 } else { 4 })) % 4;
+
         if addition != 0 {
             addition = 4 - addition;
         }
+
         if !self.calculated_size_only && self.position + addition > self.limit {
             error!("write byte array error");
             return;
@@ -359,17 +351,12 @@ impl SerializedBuffer {
         self.write_byte_array(&b.buffer, 0, b.limit);
     }
 
+    pub fn write_f32(&mut self, f: f32) {
+        self.write_u32(f32::to_bits(f));
+    }
+
     pub fn write_f64(&mut self, f: f64) {
-        use std::mem::size_of;
-
-        let mut val = 0i64;
-        let mut val_ptr = val as *mut u8;
-        let f_ptr = val as *const u8;
-
-        unsafe {
-            rlibc::memcpy(val_ptr, f_ptr, size_of::<i64>());
-        }
-        self.write_i64(val);
+        self.write_u64(f64::to_bits(f));
     }
 
     pub fn write_string(&mut self, s:String) {
@@ -414,6 +401,14 @@ impl SerializedBuffer {
         self.read_i64() as u64
     }
 
+    pub fn read_f32(&mut self) -> f32 {
+        f32::from_bits(self.read_u32())
+    }
+
+    pub fn read_f64(&mut self) -> f64 {
+        f64::from_bits(self.read_u64())
+}
+
     pub fn read_byte(&mut self) -> u8 {
         if self.position + 1 > self.limit {
             panic!("read u8 error!");
@@ -439,15 +434,14 @@ impl SerializedBuffer {
     pub fn read_string(&mut self) -> String {
         let mut sl = 1usize;
         if self.position + 1 > self.limit {
-            error!("read string error 1");
+            error!("read string error");
             return String::from("");
         }
         let mut l = self.buffer[self.position] as usize;
         self.position += 1;
-        println!("l={}", l);
         if l >= 254 {
             if self.position + 3 > self.limit {
-                error!("read string error 2");
+                error!("read string error");
                 return String::from("");
             }
             l = (self.buffer[self.position] as usize) | ((self.buffer[self.position + 1] as usize) << 8) | ((self.buffer[self.position + 2] as usize) << 16);
@@ -459,7 +453,7 @@ impl SerializedBuffer {
             addition = 4 - addition;
         }
         if self.position + l + addition > self.limit {
-            error!("read string error 3");
+            error!("read string error");
             return String::from("");
         }
 
@@ -500,7 +494,6 @@ impl SerializedBuffer {
         self.position += l + addition;
         Some(result)
     }
-
 }
 
 impl Clone for SerializedBuffer {
@@ -515,17 +508,6 @@ impl Clone for SerializedBuffer {
         buffer.calculated_size_only = self.calculated_size_only;
         buffer
     }
-
-//    fn clone(&mut self) -> Self {
-//        let bytes = self.buffer.clone().as_bytes();
-//        let len = self.buffer.len();
-//        let mut buffer = SerializedBuffer::new_with_buffer(bytes, len);
-//        buffer.position = self.position;
-//        buffer.limit = self.limit;
-//        buffer.capacity = self.capacity;
-//        buffer.calculated_size_only = self.calculated_size_only;
-//        buffer
-//    }
 }
 
 pub trait Packet {
