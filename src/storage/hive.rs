@@ -10,12 +10,10 @@ extern crate memorydb;
 extern crate ethcore_bigint as bigint;
 extern crate time;
 
-use self::rand::{Rng, thread_rng};
 use self::secp256k1::key::{PublicKey, SecretKey};
-use self::secp256k1::{Secp256k1, Signature, RecoverableSignature, Message, RecoveryId, ContextFlag};
+use self::secp256k1::{Secp256k1, ContextFlag};
 use self::crypto::digest::Digest;
-use std::fmt::{Display, Formatter};
-use self::crypto::sha3::{Sha3, Sha3Mode};
+use self::crypto::sha3::Sha3;
 
 use self::rocksdb::DB;
 use self::rocksdb::Options;
@@ -24,34 +22,28 @@ use self::hashdb::{HashDB, DBValue};
 use self::bigint::hash::H256;
 use self::memorydb::MemoryDB;
 use std::hash::Hash;
-use std::thread::Thread;
-use std::thread;
-use std::io;
-use std::sync::mpsc;
-use std::sync::mpsc::channel;
-use std::sync::mpsc::{Sender, Receiver};
-use std::time::Duration;
+use model::config::Configuration;
 
-use model::transaction::{ADDRESS_SIZE, HASH_SIZE};
+use model::transaction::ADDRESS_SIZE;
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum Error {
     InvalidAddress,
 }
 
-pub struct Hive {
-//    tree: Box<TrieDBMut<'a>>,
+pub struct Hive<'a> {
+    tree: Option<Box<TrieDBMut<'a>>>,
     db: DB,
-//    mdb: MemoryDB,
-//    root: H256,
+    mdb: Box<MemoryDB>,
+    root: H256,
 }
 
-impl Hive {
-    pub fn new() -> Hive {
-//        let f = TrieFactory::new(TrieSpec::Generic);
-//        let mut mdb = MemoryDB::new();
-//        let root = H256::new();
-//        let mut t = Box::new(TrieDBMut::new(&mut mdb, &mut root));
+impl<'a> Hive<'a> {
+    pub fn new(conf: Configuration) -> Hive<'a> {
+        let f = TrieFactory::new(TrieSpec::Generic);
+        let mut mdb = Box::new(MemoryDB::new());
+        let root = H256::new();
+//        let mut t = Box::new(TrieDBMut::new(mdb.as_mut(), &mut root));
 
         let mut opts = Options::default();
         opts.set_max_background_compactions(2);
@@ -59,12 +51,14 @@ impl Hive {
         opts.create_if_missing(true);
         let db = DB::open(&opts, "db/data").unwrap();
 
-        Hive {
-//            tree: t,
+        let hive = Hive {
+            tree: None,
             db,
-//            mdb,
-//            root,
-        }
+            mdb,
+            root,
+        };
+
+        hive
     }
 
     pub fn generate_address(seed: &[u8; 32]) -> ([u8; 21], String) {
@@ -133,7 +127,7 @@ impl Hive {
     }
 
     pub fn address_to_bytes(address: String) -> Result<[u8; ADDRESS_SIZE], Error> {
-        use self::rustc_serialize::hex::{FromHex, FromHexError};
+        use self::rustc_serialize::hex::FromHex;
 
         if !address.starts_with("P") {
             return Err(Error::InvalidAddress);

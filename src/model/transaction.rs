@@ -1,12 +1,11 @@
 extern crate rustc_serialize;
 
-use storage::hive::Error;
-
-pub const MIN_WEIGHT_MAGNITUDE : u8 = 9;
+pub const MIN_WEIGHT_MAGNITUDE : u8 = 4;
 
 pub const HASH_SIZE: usize = 20;
 pub const ADDRESS_SIZE: usize = 21; // HASH_SIZE + 1 (checksum byte)
 
+#[derive(Debug)]
 pub struct Transaction {
     address: [u8; ADDRESS_SIZE],
     attachment_timestamp: u64,

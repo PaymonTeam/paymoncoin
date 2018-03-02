@@ -13,14 +13,11 @@ pub mod storage;
 use std::io::prelude::*;
 use std::io::*;
 use std::net::{TcpStream, SocketAddr, IpAddr};
-use std::thread;
-use std::time::Duration;
-use std::str::from_utf8;
 use byteorder::{ByteOrder, BigEndian};
 use network::packet::{SerializedBuffer, Packet, get_object_size};
 use network::rpc::KeepAlive;
 use model::config::PORT;
-use std::io;
+use network::rpc;
 
 struct Client {
     pub read_continuation : Option<u32>,
@@ -38,7 +35,6 @@ impl Client {
             read_continuation: None,
             stream
         }
-
     }
 
     pub fn send_packet<T>(&mut self, packet: T, message_id : i64) where T: Packet {
@@ -104,19 +100,17 @@ impl Client {
         }
     }
 
-    fn tick(&mut self) {
+    fn read(&mut self) -> Option<SerializedBuffer> {
         let msg_len = match self.read_message_length() {
-            None => { return; },
+            None => { return None; },
             Some(n) => n,
         };
 
         if msg_len == 0 {
-            return;
+            return None;
         }
 
         let msg_len = msg_len as usize;
-
-        println!("len = {}", msg_len);
 
         let mut recv_buf : Vec<u8> = Vec::with_capacity(msg_len);
         unsafe { recv_buf.set_len(msg_len); }
@@ -126,21 +120,58 @@ impl Client {
             Ok(n) => {
                 if n < msg_len as usize {
                     println!("Did not read enough bytes");
-                    return;
+                    return None;
                 }
 
                 self.read_continuation = None;
-                println!("OK");
-                //Ok(Some(SerializedBuffer::new_with_buffer(&recv_buf, msg_len)))
+                Some(SerializedBuffer::new_with_buffer(&recv_buf, msg_len))
             }
             Err(e) => {
-
                 if e.kind() == ErrorKind::WouldBlock {
                     self.read_continuation = Some(msg_len as u32);
                 } else {
                     error!("Failed to read buffer, error: {}", e);
                 }
+                None
             }
+        }
+    }
+
+    fn tick(&mut self) {
+        let mut packets_data = Vec::<SerializedBuffer>::new();
+
+        while let Some(buff) = self.read() {
+            println!("Got buffer len={}", buff.limit());
+            packets_data.push(buff);
+        }
+
+        for data in packets_data {
+            self.on_data_received(data);
+        }
+    }
+
+    fn on_data_received(&mut self, mut data: SerializedBuffer) {
+        let length = data.limit();
+
+        if length == 4 {
+            error!("got data len 4");
+            return;
+        }
+
+        let mark = data.position();
+        let message_id = data.read_i64();
+        let message_length = data.read_i32();
+
+        if message_length != data.remaining() as i32 {
+            error!("received incorrect message length");
+            return;
+        }
+
+        let svuid = data.read_i32();
+
+        if svuid == rpc::KeepAlive::SVUID {
+            let keep_alive = rpc::KeepAlive{};
+            self.send_packet(keep_alive, 1);
         }
     }
 }
@@ -151,23 +182,7 @@ fn main() {
     let packet = KeepAlive {};
     cl.send_packet(packet, 1337);
 
-//    let mut buf = vec![];
     loop {
-//        let size = match stream.read_to_end(&mut buf) {
-//            Ok(n) => n,
-//            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-////                wait_for_fd();
-////                println!("would block");
-//                continue;
-//            }
-//            Err(e) => panic!("encountered IO error: {}", e),
-//        };
-
-
         cl.tick();
-//        println!("buf = {:?}", buf);
     };
-
-
-    loop {}
 }

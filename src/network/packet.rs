@@ -1,8 +1,7 @@
 extern crate rlibc;
 
-use byteorder::{ByteOrder, BigEndian};
+use byteorder::{ByteOrder};
 use std::cell::RefCell;
-use std::io::Write;
 
 pub struct SerializedBuffer {
     pub buffer: Vec<u8>,
@@ -123,7 +122,7 @@ impl SerializedBuffer {
             rlibc::memmove(buffer_ptr, buffer_ptr.offset(self.position as isize), size_of::<u8>() * (self.limit - self.position));
         }
 
-        self.position = (self.limit - self.position);
+        self.position = self.limit - self.position;
         self.limit = self.capacity;
     }
 
@@ -511,8 +510,8 @@ impl Clone for SerializedBuffer {
 }
 
 pub trait Packet {
-    fn read_params(&self, stream: &SerializedBuffer, error: bool);
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer);
+    fn read_params(&mut self, stream: &mut SerializedBuffer, error: bool);
 }
 
 thread_local! {

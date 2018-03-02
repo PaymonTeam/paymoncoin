@@ -5,6 +5,7 @@ extern crate byteorder;
 extern crate mio;
 extern crate rand;
 extern crate slab;
+extern crate secp256k1;
 
 #[macro_use] extern crate log;
 extern crate env_logger;
@@ -28,6 +29,10 @@ use storage::hive::Hive;
 use network::packet::{Packet, get_object_size};
 
 type Slab<T> = slab::Slab<T, usize>;
+
+use secp256k1::key::{PublicKey, SecretKey};
+use secp256k1::{Secp256k1, Signature, RecoverableSignature, Message, RecoveryId, ContextFlag};
+use rand::{Rng, thread_rng};
 
 fn main() {
     env_logger::init().expect("Failed to init logger");

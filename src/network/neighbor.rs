@@ -1,8 +1,6 @@
 extern crate nix;
 
 use std::io::{self, ErrorKind};
-use std::rc::{Rc};
-use std::sync::Arc;
 
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::net::TcpListener;
@@ -10,14 +8,10 @@ use mio::net::TcpListener;
 target_os = "freebsd", target_os = "ios", target_os = "macos"))]
 use mio::unix::UnixReady;
 
-#[cfg(any(target_os = "windows"))]
-use mio::windows::{Binding,Overlapped};
-
 use slab;
 
 use network::connection::Connection;
-use network::packet::{SerializedBuffer, Packet};
-//use self::nix::sys::signal;
+use network::packet::{SerializedBuffer};
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
@@ -52,15 +46,14 @@ impl Neighbor {
         loop {
             let cnt = poll.poll(&mut self.events, None)?;
 
-            let mut i = 0;
+            let mut lst = vec![];
 
-            while i < cnt {
-                let event = self.events.get(i).expect("Failed to get event");
+            for event in self.events.iter() {
+                lst.push(event);
+            }
 
-//                trace!("event={:?}; idx={:?}", event, i);
+            for event in lst {
                 self.ready(poll, event.token(), event.readiness());
-
-                i += 1;
             }
 
             self.tick(poll);
@@ -247,6 +240,7 @@ impl Neighbor {
         use network::rpc;
         
         let mut funcs = HashMap::<i32, fn(conn:&mut Connection)->()>::new();
+
         funcs.insert(rpc::KeepAlive::SVUID, |conn: &mut Connection| {
             let keep_alive = rpc::KeepAlive{};
             conn.send_packet(keep_alive, 1);
