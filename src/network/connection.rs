@@ -24,12 +24,12 @@ pub struct Connection {
 }
 
 #[cfg(any(target_os = "dragonfly",
-target_os = "freebsd", target_os = "ios", target_os = "macos"))]
+target_os = "freebsd", target_os = "ios", target_os = "macos",target_os="linux"))]
 use mio::unix::UnixReady;
 
 impl Connection {
     #[cfg(any(target_os = "dragonfly",
-    target_os = "freebsd", target_os = "ios", target_os = "macos"))]
+    target_os = "freebsd", target_os = "ios", target_os = "macos",target_os="linux"))]
     pub fn new(sock: TcpStream, token: Token) -> Connection {
         Connection {
             sock,
