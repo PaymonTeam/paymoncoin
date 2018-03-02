@@ -23,6 +23,7 @@ use self::bigint::hash::H256;
 use self::memorydb::MemoryDB;
 use std::hash::Hash;
 use model::config::Configuration;
+use std::cell::{RefMut, RefCell};
 
 use model::transaction::ADDRESS_SIZE;
 
@@ -32,18 +33,13 @@ pub enum Error {
 }
 
 pub struct Hive<'a> {
-    tree: Option<Box<TrieDBMut<'a>>>,
+    tree: Box<TrieDBMut<'a>>,
     db: DB,
-    mdb: Box<MemoryDB>,
-    root: H256,
 }
 
 impl<'a> Hive<'a> {
-    pub fn new(conf: Configuration) -> Hive<'a> {
+    pub fn new(conf: Configuration, mdb: &'a mut MemoryDB, root: &'a mut H256) -> Hive<'a> {
         let f = TrieFactory::new(TrieSpec::Generic);
-        let mut mdb = Box::new(MemoryDB::new());
-        let root = H256::new();
-//        let mut t = Box::new(TrieDBMut::new(mdb.as_mut(), &mut root));
 
         let mut opts = Options::default();
         opts.set_max_background_compactions(2);
@@ -51,14 +47,10 @@ impl<'a> Hive<'a> {
         opts.create_if_missing(true);
         let db = DB::open(&opts, "db/data").unwrap();
 
-        let hive = Hive {
-            tree: None,
+        Hive {
+            tree: Box::new(TrieDBMut::new(mdb, root)),
             db,
-            mdb,
-            root,
-        };
-
-        hive
+        }
     }
 
     pub fn generate_address(seed: &[u8; 32]) -> ([u8; 21], String) {

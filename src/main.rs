@@ -6,6 +6,8 @@ extern crate mio;
 extern crate rand;
 extern crate slab;
 extern crate secp256k1;
+extern crate ethcore_bigint as bigint;
+extern crate memorydb;
 
 #[macro_use] extern crate log;
 extern crate env_logger;
@@ -27,6 +29,9 @@ use model::config::PORT;
 use model::transaction::Transaction;
 use storage::hive::Hive;
 use network::packet::{Packet, get_object_size};
+use model::config::Configuration;
+use bigint::hash::H256;
+use memorydb::MemoryDB;
 
 type Slab<T> = slab::Slab<T, usize>;
 
@@ -36,6 +41,10 @@ use rand::{Rng, thread_rng};
 
 fn main() {
     env_logger::init().expect("Failed to init logger");
+
+    let mut root = H256::new();
+    let mut mdb = MemoryDB::new();
+    let hive = Hive::new(Configuration::new(), &mut mdb, &mut root);
 
     let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
     let addr = SocketAddr::new(host, PORT);
