@@ -35,6 +35,10 @@ use secp256k1::{Secp256k1, Signature, RecoverableSignature, Message, RecoveryId,
 use rand::{Rng, thread_rng};
 
 fn main() {
+
+
+
+
     env_logger::init().expect("Failed to init logger");
 
     let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
@@ -43,5 +47,7 @@ fn main() {
 
     let mut poll = Poll::new().expect("Failed to create Poll");
     let mut server = Neighbor::new(sock);
+
     server.run(&mut poll).expect("Failed to run server");
+
 }
