@@ -40,20 +40,31 @@ use secp256k1::{Secp256k1, Signature, RecoverableSignature, Message, RecoveryId,
 use rand::{Rng, thread_rng};
 
 fn main() {
+    let mut sb = SerializedBuffer::new_with_size(4+8);
+    let b = [0u8; 4];
+//    sb.write_bytes(&b, 4);
+//    sb.write_i64(126);
 
-    let mut t = Transaction::new();
+//    sb.set_position(0);
+//    let mut b2 = [0u8; 4];
+//    sb.read_bytes(&mut b2, 4);
+//    let n = sb.read_i64();
+//    println!("{:?} {}", b2, n);
 
-    t.nonce =421421;
-    t.tag = "test serialize".to_string();
 
-    let size = get_object_size(&t);
-    let mut buf = SerializedBuffer::new_with_size(size);
-    t.serialize_to_stream(&mut buf);
+//    let mut t = Transaction::new();
+//
+//    t.nonce = 421421;
+//    t.tag = "test serialize".to_string();
+//
+//    let size = get_object_size(&t);
+//    let mut buf = SerializedBuffer::new_with_size(size);
+//    t.serialize_to_stream(&mut buf);
+//
+//    let mut t2 = Transaction::new();
+//    t2.read_params(&mut buf,false);
 
-    let mut t2 = Transaction::new();
-    t2.read_params(&mut buf,false);
-
-    println!("Transaction = {:?}",t2);
+//    println!("Transaction = {:?}",t2);
     env_logger::init().expect("Failed to init logger");
 
     let mut root = H256::new();

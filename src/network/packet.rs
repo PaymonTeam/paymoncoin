@@ -494,7 +494,7 @@ impl SerializedBuffer {
         Some(result)
     }
 
-    pub fn read_bytes(&mut self, b:&mut [u8], length: usize) {
+    pub fn read_bytes(&mut self, b: &mut [u8], length: usize) {
         if self.position + length > self.limit {
             error!("read bytes error");
             return;
