@@ -41,9 +41,19 @@ use rand::{Rng, thread_rng};
 
 fn main() {
 
+    let mut t = Transaction::new();
 
+    t.nonce =421421;
+    t.tag = "test serialize".to_string();
 
+    let size = get_object_size(&t);
+    let mut buf = SerializedBuffer::new_with_size(size);
+    t.serialize_to_stream(&mut buf);
 
+    let mut t2 = Transaction::new();
+    t2.read_params(&mut buf,false);
+
+    println!("Transaction = {:?}",t2);
     env_logger::init().expect("Failed to init logger");
 
     let mut root = H256::new();
