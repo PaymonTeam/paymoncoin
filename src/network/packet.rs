@@ -240,6 +240,23 @@ impl SerializedBuffer {
         self.position += length;
     }
 
+    fn read_bytes(&mut self, b:&[u8], length: usize) {
+        if self.position + length > self.limit {
+            error!("read bytes error");
+            return;
+        }
+
+        use std::mem::size_of;
+        let mut buffer_ptr = &mut self.buffer[0] as *mut u8;
+        let b_ptr = &b[0] as *const u8;
+
+        unsafe {
+            rlibc::memcpy(b_ptr, buffer_ptr.offset(self.position as isize), size_of::<u8>() * length);
+        }
+
+        self.position += length;
+    }
+
     pub fn write_bytes(&mut self, b:&[u8], length:usize) {
         if !self.calculated_size_only {
             if self.position + length > self.limit {
