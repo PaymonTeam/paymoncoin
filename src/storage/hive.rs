@@ -3,7 +3,7 @@ extern crate crypto;
 extern crate secp256k1;
 extern crate rustc_serialize;
 extern crate patricia_trie;
-extern crate rocksdb;
+//extern crate rocksdb;
 extern crate log;
 extern crate hashdb;
 extern crate memorydb;
@@ -15,8 +15,9 @@ use self::secp256k1::{Secp256k1, ContextFlag};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
 
-use self::rocksdb::DB;
-use self::rocksdb::Options;
+//use self::rocksdb::DB;
+//use self::rocksdb::Options;
+use std::collections::HashMap;
 use self::patricia_trie::{TrieFactory, TrieSpec, TrieMut, TrieDBMut};
 use self::hashdb::{HashDB, DBValue};
 use self::bigint::hash::H256;
@@ -33,23 +34,25 @@ pub enum Error {
 }
 
 pub struct Hive<'a> {
-    tree: Box<TrieDBMut<'a>>,
-    db: DB,
+    tree: Box<TrieMut + 'a>,
+//    db: DB,
+//    db: HashMap<[u8], [u8]>
 }
 
 impl<'a> Hive<'a> {
-    pub fn new(conf: Configuration, mdb: &'a mut MemoryDB, root: &'a mut H256) -> Hive<'a> {
+    pub fn new(mdb: &'a mut MemoryDB, root: &'a mut H256) -> Self {
         let f = TrieFactory::new(TrieSpec::Generic);
-
-        let mut opts = Options::default();
-        opts.set_max_background_compactions(2);
-        opts.set_max_background_flushes(2);
-        opts.create_if_missing(true);
-        let db = DB::open(&opts, "db/data").unwrap();
+        let tree = f.create(mdb, root);
+//        let mut opts = Options::default();
+//        opts.set_max_background_compactions(2);
+//        opts.set_max_background_flushes(2);
+//        opts.create_if_missing(true);
+//        let db = DB::open(&opts, "db/data").unwrap();
 
         Hive {
-            tree: Box::new(TrieDBMut::new(mdb, root)),
-            db,
+            tree
+//            tree: Box::new(TrieDBMut::new(mdb, root)),
+//            db: HashMap::new()
         }
     }
 
@@ -84,7 +87,6 @@ impl<'a> Hive<'a> {
         }
 
         let addr = format!("P{}{:X}", addr_left, append_byte);
-        println!("{}", addr);
         let mut bytes = [0u8; 21];
         bytes[..20].copy_from_slice(&buf[12..32]);
         bytes[20] = append_byte as u8;
@@ -102,13 +104,13 @@ impl<'a> Hive<'a> {
     }
 
     fn save_to_disk(&self) {
-        self.db.put(b"my key", b"my value");
-        match self.db.get(b"my key") {
-            Ok(Some(value)) => println!("retrieved value '{}'", value.to_utf8().unwrap()),
-            Ok(None) => println!("value not found"),
-            Err(e) => println!("operational problem encountered: {}", e),
-        }
-        self.db.delete(b"my key").unwrap();
+//        self.db.put(b"my key", b"my value");
+//        match self.db.get(b"my key") {
+//            Ok(Some(value)) => println!("retrieved value '{}'", value.to_utf8().unwrap()),
+//            Ok(None) => println!("value not found"),
+//            Err(e) => println!("operational problem encountered: {}", e),
+//        }
+//        self.db.delete(b"my key").unwrap();
     }
 
     pub fn address_to_string(bytes: [u8; ADDRESS_SIZE]) -> String {

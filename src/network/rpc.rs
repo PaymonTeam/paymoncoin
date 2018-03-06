@@ -1,4 +1,5 @@
 use network::packet::{Packet, SerializedBuffer};
+use model::transaction::Transaction;
 
 enum RPC {
 
@@ -40,35 +41,13 @@ impl Packet for GetInfo {
     }
 }
 
-use model::transaction::Transaction;
-
-/*
-    address: [u8; ADDRESS_SIZE],
-    attachment_timestamp: u64,
-    attachment_timestamp_lower_bound: u64,
-    attachment_timestamp_upper_bound: u64,
-    branch_transaction: [u8; HASH_SIZE],
-    trunk_transaction: [u8; HASH_SIZE],
-    bundle: [u8; HASH_SIZE],
-    current_index: u32,
-    hash: [u8; HASH_SIZE],
-    last_index: u32,
-    nonce: u64,
-    tag: String,
-    timestamp: u64,
-    value: u32
-*/
-
-
 pub const HASH_SIZE: usize = 20;
 pub const ADDRESS_SIZE: usize = 21; // HASH_SIZE + 1 (checksum byte)
 
 impl Packet for Transaction {
-
-
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
         use std::mem::size_of;
-        stream.write_i32(GetInfo::SVUID);
+        stream.write_i32(Transaction::SVUID);
         stream.write_bytes(&self.address,ADDRESS_SIZE);
         stream.write_u64(self.attachment_timestamp);
         stream.write_u64(self.attachment_timestamp_lower_bound);
@@ -87,7 +66,6 @@ impl Packet for Transaction {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer, error: bool) {
-
         stream.read_bytes(&mut self.address,ADDRESS_SIZE);
         self.attachment_timestamp = stream.read_u64();
         self.attachment_timestamp_lower_bound = stream.read_u64();
@@ -103,7 +81,6 @@ impl Packet for Transaction {
         self.timestamp = stream.read_u64();
         self.value = stream.read_u32();
     }
-
 }
 
 

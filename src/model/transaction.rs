@@ -23,25 +23,24 @@ pub struct Transaction {
     pub value: u32
 }
 
-
 impl Transaction{
     pub const SVUID : i32 = 342631123;
-    pub fn new()->Self{
-        Transaction{
-              address: [0u8; ADDRESS_SIZE],
-              attachment_timestamp: 0u64,
-              attachment_timestamp_lower_bound: 0u64,
-              attachment_timestamp_upper_bound: 0u64,
-              branch_transaction: [0u8; HASH_SIZE],
-              trunk_transaction: [0u8; HASH_SIZE],
-              bundle: [0u8; HASH_SIZE],
-              current_index: 0u32,
-              hash: [0u8; HASH_SIZE],
-              last_index: 0u32,
-              nonce: 0u64,
-              tag: "".to_string(),
-              timestamp: 0u64,
-              value: 0u32
-            }
+    pub fn new() -> Self {
+        Transaction {
+            address: [0u8; ADDRESS_SIZE],
+            attachment_timestamp: 0u64,
+            attachment_timestamp_lower_bound: 0u64,
+            attachment_timestamp_upper_bound: 0u64,
+            branch_transaction: [0u8; HASH_SIZE],
+            trunk_transaction: [0u8; HASH_SIZE],
+            bundle: [0u8; HASH_SIZE],
+            current_index: 0u32,
+            hash: [0u8; HASH_SIZE],
+            last_index: 0u32,
+            nonce: 0u64,
+            tag: "".to_string(),
+            timestamp: 0u64,
+            value: 0u32
+        }
     }
 }
