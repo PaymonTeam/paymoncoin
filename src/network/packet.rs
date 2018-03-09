@@ -364,7 +364,7 @@ impl SerializedBuffer {
 
     pub fn read_i32(&mut self) -> i32 {
         if self.position + 4 > self.limit {
-            panic!("read i32 error!");
+            panic!("read i32 error");
         }
         let result =
             ((self.buffer[self.position] as i32 & 0xff) |
@@ -377,8 +377,9 @@ impl SerializedBuffer {
 
     pub fn read_i64(&mut self) -> i64 {
         if self.position + 8 > self.limit {
-            panic!("read i64 error!");
+            panic!("read i64 error");
         }
+
         let result =
             ((self.buffer[self.position] as i64 & 0xff) |
             ((self.buffer[self.position + 1] as i64 & 0xff) << 8) |
@@ -406,11 +407,11 @@ impl SerializedBuffer {
 
     pub fn read_f64(&mut self) -> f64 {
         f64::from_bits(self.read_u64())
-}
+    }
 
     pub fn read_byte(&mut self) -> u8 {
         if self.position + 1 > self.limit {
-            panic!("read u8 error!");
+            panic!("read u8 error");
         }
         let result = self.buffer[self.position];
         self.position += 1;

@@ -14,24 +14,25 @@ time = "0.1.39"
 hashdb = "0.1.1"
 ethcore-bigint = "0.2.1"
 memorydb = "0.1.1"
-#secp256k1 = "0.8.3"
 threadpool = "1.7.1"
 rustc-serialize = "0.3.24"
 mio = "0.6.13"
 byteorder = "0.3"
 env_logger = "0.3.1"
 secp256k1 = { git = "https://github.com/NEGIhere/rust-secp256k1-sha3.git" }
-
 slab = "0.3.0"
 nix = "0.10.0"
+libc = "0.2.36"
 rlibc = "1.0.0"
 
 [[bin]]
 name = "paymoncoin"
 path = "src/main.rs"
 doc = false
+debug = true
 
 [[bin]]
 name = "paymoncoin_client"
 path = "src/client.rs"
 doc = false
+debug = true

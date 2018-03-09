@@ -25,21 +25,12 @@ use mio::net::{TcpListener, TcpStream};
 use network::neighbor::*;
 use network::connection::*;
 use network::packet::SerializedBuffer;
-use network::rpc::KeepAlive;
 use model::config::PORT;
-use model::transaction::Transaction;
+use model::transaction::{TransactionObject, Transaction};
 use storage::hive::Hive;
-use network::packet::{Packet, get_object_size};
 use model::config::Configuration;
 use bigint::hash::H256;
 use memorydb::MemoryDB;
-use patricia_trie::{TrieFactory, TrieSpec, TrieMut, TrieDBMut};
-
-type Slab<T> = slab::Slab<T, usize>;
-
-use secp256k1::key::{PublicKey, SecretKey};
-use secp256k1::{Secp256k1, Signature, RecoverableSignature, Message, RecoveryId, ContextFlag};
-use rand::{Rng, thread_rng};
 
 fn main() {
     env_logger::init().expect("Failed to init logger");
@@ -55,4 +46,5 @@ fn main() {
     let mut server = Neighbor::new(sock);
 
     server.run(&mut poll).expect("Failed to run server");
+
 }
