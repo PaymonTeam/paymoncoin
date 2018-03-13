@@ -14,7 +14,7 @@ use self::secp256k1::key::{PublicKey, SecretKey};
 use self::secp256k1::{Secp256k1, ContextFlag};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
-use self::rocksdb::{DB, Options, IteratorMode};
+use self::rocksdb::{DB, Options, IteratorMode, ColumnFamilyDescriptor};
 use self::patricia_trie::{TrieFactory, TrieSpec, TrieMut, TrieDBMut};
 use self::hashdb::{HashDB, DBValue};
 use self::bigint::hash::H256;
@@ -22,25 +22,33 @@ use self::memorydb::MemoryDB;
 use std::hash::Hash;
 use std::cell::{RefMut, RefCell};
 use std::collections::HashMap;
+use std::io;
+use std::num;
 
 use model::config::Configuration;
 use model::transaction::{ADDRESS_SIZE, TransactionObject};
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
-pub enum Error {
+pub enum AddressError {
     InvalidAddress,
+}
+
+pub enum Error {
+    IO(io::Error),
+    Parse(num::ParseIntError),
+    Str(String),
 }
 
 pub struct Hive<'a> {
     tree: Box<TrieMut + 'a>,
     db: DB,
-
+    balances: HashMap<String, u32>,
 }
 
 static cf_names : [&str; 3] = ["transaction", "transaction-metadata", "address"];
+const SUPPLY : u32 = 10_000;
 
 impl<'a> Hive<'a> {
-
     pub fn new(mdb: &'a mut MemoryDB, root: &'a mut H256) -> Self {
         let f = TrieFactory::new(TrieSpec::Generic);
         let tree = f.create(mdb, root);
@@ -49,6 +57,7 @@ impl<'a> Hive<'a> {
         Hive {
             tree,
             db,
+            balances: HashMap::new(),
         }
     }
 
@@ -85,35 +94,46 @@ impl<'a> Hive<'a> {
                     db.create_cf(name, &opts);
                 }
 
-                let db = DB::open_cf(&opts, "db/data", &cf_names).expect("failed to open database");
+                let cfs_v = cf_names.to_vec().iter().map(|name| {
+                    let mut opts = Options::default();
+//                opts.set_merge_operator()
+                    opts.set_max_write_buffer_number(2);
+                    opts.set_write_buffer_size(2 * 1024 * 1024);
+
+                    ColumnFamilyDescriptor::new(*name, opts)
+                }).collect();
+
+                let db = DB::open_cf_descriptors(&opts, "db/data", cfs_v).expect("failed to open database");
                 return db;
             }
         }
     }
 
-    pub fn generate_address(seed: &[u8; 32]) -> ([u8; 21], String) {
-//        let mut sk_data = [0u8; 32];
-//        rand::thread_rng().fill_bytes(&mut sk_data);
-
+    pub fn generate_address(private_key: &[u8; 32], index: u32) -> ([u8; 21], String) {
+        use byteorder::{ByteOrder, LittleEndian};
         use std::iter::repeat;
         use self::rustc_serialize::hex::ToHex;
 
         let secp = Secp256k1::with_caps(ContextFlag::Full);
 
-        let sk = SecretKey::from_slice(&secp, seed).unwrap();
+        let sk = SecretKey::from_slice(&secp, private_key).unwrap();
         let pk = PublicKey::from_secret_key(&secp, &sk).unwrap();
 
+        let mut index_bytes = [0u8; 4];
+        LittleEndian::write_u32(&mut index_bytes, index);
+
         let mut sha = Sha3::sha3_256();
-        sha.input(seed);
+        sha.input(private_key);
+        sha.input(&index_bytes);
         sha.input(&pk.serialize_uncompressed()[1..]);
 
         //let mut buf: Vec<u8> = repeat(0).take((sha.output_bits()+7)/8).collect();
         let mut buf = [0u8; 32];
         sha.result(&mut buf);
 
-        let addr_left = buf[..].to_hex()[24..].to_uppercase();
+        let addr_left = buf[..].to_hex()[24..].to_string();//.to_uppercase();
         let mut append_byte = 0u16;
-        let offset = 32 - ADDRESS_SIZE;
+        let offset = 32 - ADDRESS_SIZE + 1;
         for (i, b) in buf[offset..].iter().enumerate() {
             if i & 1 == 0 {
                 append_byte += *b as u16;
@@ -123,7 +143,7 @@ impl<'a> Hive<'a> {
             append_byte %= 256;
         }
 
-        let addr = format!("P{}{:X}", addr_left, append_byte);
+        let addr = format!("P{}{:x}", addr_left, append_byte);
         let mut bytes = [0u8; ADDRESS_SIZE];
         bytes[..20].copy_from_slice(&buf[offset..32]);
         bytes[20] = append_byte as u8;
@@ -158,15 +178,15 @@ impl<'a> Hive<'a> {
         format!("P{}", strs.join(""))
     }
 
-    pub fn address_to_bytes(address: String) -> Result<[u8; ADDRESS_SIZE], Error> {
+    pub fn address_to_bytes(address: String) -> Result<[u8; ADDRESS_SIZE], AddressError> {
         use self::rustc_serialize::hex::FromHex;
 
         if !address.starts_with("P") {
-            return Err(Error::InvalidAddress);
+            return Err(AddressError::InvalidAddress);
         }
 
         match address[1..].to_string().from_hex() {
-            Err(_) => return Err(Error::InvalidAddress),
+            Err(_) => return Err(AddressError::InvalidAddress),
             Ok(vec) => {
                 let bytes:&[u8] = vec.as_ref();
                 let mut ret_bytes = [0u8; 21];
@@ -175,11 +195,74 @@ impl<'a> Hive<'a> {
                     ret_bytes.copy_from_slice(&bytes);
                     return Ok(ret_bytes)
                 } else {
-                    return Err(Error::InvalidAddress);
+                    return Err(AddressError::InvalidAddress);
                 }
             }
         };
 //        let bytes = address[1..].to_string().from_hex().unwrap_or(|| return Err(Error::InvalidAddress));
-
     }
+
+    pub fn load_balances(&mut self) -> Result<(), Error> {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+        use std::io::prelude::*;
+
+        let mut f = File::open("db/snapshot.dat")?;
+        let file = BufReader::new(&f);
+
+        let mut total = 0;
+
+        for line in file.lines() {
+            let l = line?;
+            let arr : Vec<&str> = l.splitn(2, ' ').collect();
+            let (addr, balance) = (String::from(arr[0]), String::from(arr[1]).parse::<u32>()?);
+
+            self.balances.insert(addr, balance);
+
+            total += balance;
+        }
+
+        if total != SUPPLY {
+            panic!("corrupted snapshot")
+        }
+
+        Ok(())
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::IO(e)
+    }
+}
+
+impl From<num::ParseIntError> for Error {
+    fn from(e: num::ParseIntError) -> Self {
+        Error::Parse(e)
+    }
+}
+
+#[test]
+fn hive_test() {
+    use self::rustc_serialize::hex::{ToHex, FromHex};
+    use rand::Rng;
+
+    let mut root = H256::new();
+    let mut mdb = MemoryDB::new();
+    let mut hive = Hive::new(&mut mdb, &mut root);
+    hive.load_balances();
+
+//    let mut data = "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().unwrap_or_else(|e| {
+//        panic!("invalid pk");
+//    });
+//    let mut sk_data = [0u8; 32];
+//    sk_data.copy_from_slice(&data[..32]);
+
+    let mut sk_data = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut sk_data);
+
+    let (_, addr) = Hive::generate_address(&sk_data, 0);
+
+    println!("pk={}", sk_data.to_hex().to_uppercase());
+    println!("address={}", addr);
 }

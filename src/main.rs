@@ -22,7 +22,7 @@ use std::net::{SocketAddr, IpAddr};
 use mio::Poll;
 use mio::net::{TcpListener, TcpStream};
 
-use network::neighbor::*;
+use network::node::*;
 use network::connection::*;
 use network::packet::SerializedBuffer;
 use model::config::PORT;
@@ -34,17 +34,13 @@ use memorydb::MemoryDB;
 
 fn main() {
     env_logger::init().expect("Failed to init logger");
-    let mut root = H256::new();
-    let mut mdb = MemoryDB::new();
-    let hive = Hive::new(&mut mdb, &mut root);
 
     let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
     let addr = SocketAddr::new(host, PORT);
     let sock = TcpListener::bind(&addr).expect("Failed to bind address");
 
     let mut poll = Poll::new().expect("Failed to create Poll");
-    let mut server = Neighbor::new(sock);
+    let mut server = Node::new(sock);
 
     server.run(&mut poll).expect("Failed to run server");
-
 }

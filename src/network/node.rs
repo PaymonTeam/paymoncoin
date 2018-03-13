@@ -20,7 +20,7 @@ extern fn handle_sigint(_:i32) {
 
 type Slab<T> = slab::Slab<T, Token>;
 
-pub struct Neighbor {
+pub struct Node {
     sock: TcpListener,
     token: Token,
     conns: Slab<Connection>,
@@ -28,9 +28,9 @@ pub struct Neighbor {
     running: bool,
 }
 
-impl Neighbor {
-    pub fn new(sock: TcpListener) -> Neighbor {
-        Neighbor {
+impl Node {
+    pub fn new(sock: TcpListener) -> Node {
+        Node {
             sock,
             token: Token(1_000_000),
             conns: Slab::with_capacity(128),

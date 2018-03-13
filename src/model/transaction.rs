@@ -5,7 +5,7 @@ use network::packet::{Packet, SerializedBuffer};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
 
-pub const MIN_WEIGHT_MAGNITUDE: u8 = 1;
+pub const MIN_WEIGHT_MAGNITUDE: u8 = 8;
 
 pub const HASH_SIZE: usize = 20;
 pub const ADDRESS_SIZE: usize = 21; // HASH_SIZE + 1 (checksum byte)
@@ -83,8 +83,11 @@ impl Transaction {
             sha.input(&in_buf.buffer);
             sha.result(&mut buf);
 
-            for i in 0..(MIN_WEIGHT_MAGNITUDE+1) as usize {
-                if buf[i] != 0 {
+            for i in 0..MIN_WEIGHT_MAGNITUDE as usize {
+                let x = buf[i / 8];
+                let y = (0b10000000 >> (i % 8)) as u8;
+
+                if x & y != 0 {
                     sha.reset();
                     nonce += 1;
                     in_buf.set_position(40);
