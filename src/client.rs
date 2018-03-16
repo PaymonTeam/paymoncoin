@@ -14,7 +14,7 @@ use std::io::prelude::*;
 use std::io::*;
 use std::net::{TcpStream, SocketAddr, IpAddr};
 use byteorder::{ByteOrder, BigEndian};
-use network::packet::{SerializedBuffer, Packet, get_object_size};
+use network::packet::{SerializedBuffer, Serializable, get_object_size};
 use network::rpc::KeepAlive;
 use model::config::PORT;
 use network::rpc;
@@ -37,7 +37,7 @@ impl Client {
         }
     }
 
-    pub fn send_packet<T>(&mut self, packet: T, message_id : i64) where T: Packet {
+    pub fn send_packet<T>(&mut self, packet: T, message_id : i64) where T: Serializable {
         let message_length = get_object_size(&packet);
         let size = 8 + 4 + message_length as usize;
         let mut buffer = SerializedBuffer::new_with_size(size);
@@ -124,7 +124,7 @@ impl Client {
                 }
 
                 self.read_continuation = None;
-                Some(SerializedBuffer::new_with_buffer(&recv_buf, msg_len))
+                Some(SerializedBuffer::from_slice(&recv_buf))
             }
             Err(e) => {
                 if e.kind() == ErrorKind::WouldBlock {

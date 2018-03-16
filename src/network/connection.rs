@@ -7,7 +7,7 @@ use byteorder::{ByteOrder, BigEndian};
 
 use mio::{Poll, PollOpt, Ready, Token};
 use mio::net::TcpStream;
-use network::packet::{SerializedBuffer, Packet, get_object_size};
+use network::packet::{SerializedBuffer, Serializable, get_object_size};
 use std::collections::VecDeque;
 
 pub struct Connection {
@@ -81,21 +81,17 @@ impl Connection {
         let sock_ref = <TcpStream as Read>::by_ref(&mut self.sock);
         match sock_ref.take(msg_len as u64).read(&mut recv_buf) {
             Ok(n) => {
-                debug!("CONN: we read {} bytes", n);
-
                 if n < msg_len as usize {
                     return Err(Error::new(ErrorKind::InvalidData, "Did not read enough bytes"));
                 }
 
                 self.read_continuation = None;
 
-                Ok(Some(SerializedBuffer::new_with_buffer(&recv_buf, msg_len)))
+                Ok(Some(SerializedBuffer::from_slice(&recv_buf)))
             }
             Err(e) => {
 
                 if e.kind() == ErrorKind::WouldBlock {
-                    debug!("CONN: read encountered WouldBlock");
-
                     self.read_continuation = Some(msg_len as u32);
                     Ok(None)
                 } else {
@@ -174,7 +170,7 @@ impl Connection {
 //        Ok(Some(msg_len))
     }
 
-    pub fn send_packet<T>(&mut self, packet: T, message_id : i64) where T: Packet {
+    pub fn send_packet<T>(&mut self, packet: T, message_id : i64) where T: Serializable {
         let message_length = get_object_size(&packet);
         let size = 8 + 4 + message_length as usize;
         let mut buffer = SerializedBuffer::new_with_size(size);

@@ -2,6 +2,62 @@ extern crate rlibc;
 
 use byteorder::{ByteOrder};
 use std::cell::RefCell;
+use std::ops::Deref;
+
+impl Serializable for i32 {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(0);
+        stream.write_i32(*self);
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        *self = stream.read_i32();
+    }
+}
+
+impl Serializable for u32 {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(0);
+        stream.write_u32(*self);
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        *self = stream.read_u32();
+    }
+}
+
+impl Serializable for u8 {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(0);
+        stream.write_byte(*self);
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        *self = stream.read_byte();
+    }
+}
+
+impl Serializable for bool {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(0);
+        stream.write_bool(self.clone());
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        *self = stream.read_bool();
+    }
+}
+
+impl Serializable for String {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(0);
+        stream.write_string(self.clone());
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        *self = stream.read_string();
+    }
+}
 
 pub struct SerializedBuffer {
     pub buffer: Vec<u8>,
@@ -14,13 +70,13 @@ pub struct SerializedBuffer {
 impl SerializedBuffer {
     pub fn new_with_size(size: usize) -> Self {
         let mut sb = SerializedBuffer {
-            buffer: Vec::with_capacity(size),
+            buffer: vec![0u8; size], //Vec::with_capacity(size),
             position: 0,
             limit: size,
             capacity: size,
             calculated_size_only: false,
         };
-        unsafe { sb.buffer.set_len(size); }
+//        unsafe { sb.buffer.set_len(size); }
         sb
     }
 
@@ -35,7 +91,8 @@ impl SerializedBuffer {
         sb
     }
 
-    pub fn new_with_buffer(buff: &[u8], length: usize) -> Self {
+    pub fn from_slice(buff: &[u8]/*, length: usize*/) -> Self {
+        let length = buff.len();
         SerializedBuffer {
             buffer: Vec::from(buff),
             position: 0,
@@ -141,6 +198,14 @@ impl SerializedBuffer {
 
     }
 
+    pub fn write<T>(&mut self, mut o: T) where T : Serializable {
+        o.serialize_to_stream(self);
+    }
+
+    pub fn read<T>(&mut self, dst: &mut T) where T : Serializable {
+        dst.read_params(self);
+    }
+
     pub fn write_byte(&mut self, i: u8) {
         if !self.calculated_size_only {
             if self.position + 1 > self.limit {
@@ -240,7 +305,8 @@ impl SerializedBuffer {
         self.position += length;
     }
 
-    pub fn write_bytes(&mut self, b:&[u8], length:usize) {
+    pub fn write_bytes(&mut self, b:&[u8]/*, length:usize*/) {
+        let length = b.len();
         if !self.calculated_size_only {
             if self.position + length > self.limit {
                 panic!("write bytes error");
@@ -527,16 +593,24 @@ impl Clone for SerializedBuffer {
     }
 }
 
-pub trait Packet {
+impl Deref for SerializedBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.buffer[self.position..self.limit]
+    }
+}
+
+pub trait Serializable {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer);
-    fn read_params(&mut self, stream: &mut SerializedBuffer, error: bool);
+    fn read_params(&mut self, stream: &mut SerializedBuffer);
 }
 
 thread_local! {
     pub static sizeCalculatorBuffer: RefCell<SerializedBuffer> = RefCell::new(SerializedBuffer::new(true));
 }
 
-pub fn get_object_size<T>(packet: &T) -> usize where T: Packet {
+pub fn get_object_size<T>(packet: &T) -> usize where T: Serializable {
     let mut capacity = 0usize;
 
     sizeCalculatorBuffer.with(|f| {
@@ -547,4 +621,16 @@ pub fn get_object_size<T>(packet: &T) -> usize where T: Packet {
     });
 
     capacity
+}
+
+pub fn get_serialized_object<T>(packet: &T, with_svuid: bool) -> SerializedBuffer where T: Serializable {
+    let size = get_object_size(packet);
+    let mut sb = SerializedBuffer::new_with_size(size);
+    packet.serialize_to_stream(&mut sb);
+
+    if !with_svuid {
+        sb.set_position(4);
+    }
+
+    sb
 }
