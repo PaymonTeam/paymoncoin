@@ -1,6 +1,5 @@
 extern crate rand;
 extern crate crypto;
-extern crate secp256k1;
 extern crate rustc_serialize;
 extern crate patricia_trie;
 extern crate rocksdb;
@@ -9,9 +8,8 @@ extern crate hashdb;
 extern crate memorydb;
 extern crate ethcore_bigint as bigint;
 extern crate time;
+extern crate ntrumls;
 
-use self::secp256k1::key::{PublicKey, SecretKey};
-use self::secp256k1::{Secp256k1, ContextFlag};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
 use self::rocksdb::{DB, DBVector, Options, IteratorMode, ColumnFamilyDescriptor, ColumnFamily};
@@ -156,23 +154,24 @@ impl<'a> Hive<'a> {
         }
     }
 
-    pub fn generate_address(private_key: &[u8; 32], index: u32) -> (Address, String) {
+    pub fn generate_address(fg: &[u8; 256], index: u32) -> (Address, String) {
         use byteorder::{ByteOrder, LittleEndian};
         use std::iter::repeat;
         use self::rustc_serialize::hex::ToHex;
+        use self::ntrumls::{NTRUMLS, PQParamSetID};
 
-        let secp = Secp256k1::with_caps(ContextFlag::Full);
-
-        let sk = SecretKey::from_slice(&secp, private_key).unwrap();
-        let pk = PublicKey::from_secret_key(&secp, &sk).unwrap();
+        let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+        use super::super::std::mem;
+        let fg_16 : [u16; 128] = unsafe { mem::transmute(*fg) };
+        let (sk, pk) = ntrumls.generate_keypair_from_fg(&fg_16).expect("failed to generate address");
 
         let mut index_bytes = [0u8; 4];
         LittleEndian::write_u32(&mut index_bytes, index);
 
         let mut sha = Sha3::sha3_256();
-        sha.input(private_key);
+        sha.input(fg);
         sha.input(&index_bytes);
-        sha.input(&pk.serialize_uncompressed()[1..]);
+        sha.input(&pk.0);
 
         //let mut buf: Vec<u8> = repeat(0).take((sha.output_bits()+7)/8).collect();
         let mut buf = [0u8; 32];
@@ -246,7 +245,6 @@ impl<'a> Hive<'a> {
                 }
             }
         };
-//        let bytes = address[1..].to_string().from_hex().unwrap_or(|| return Err(Error::InvalidAddress));
     }
 
     pub fn load_balances(&mut self) -> Result<(), Error> {
@@ -308,12 +306,12 @@ fn hive_test() {
 
     let random_sk = true;
 
-    let mut data = "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().expect("invalid sk");
-    let mut sk_data = [0u8; 32];
+    let mut data = "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().expect("invalid sk");
+    let mut sk_data = [0u8; 32 * 8];
     if random_sk {
         rand::thread_rng().fill_bytes(&mut sk_data);
     } else {
-        sk_data.copy_from_slice(&data[..32]);
+        sk_data.copy_from_slice(&data[..(32 * 8)]);
     }
 
     let (addr, addr_str) = Hive::generate_address(&sk_data, 0);
