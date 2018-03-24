@@ -9,8 +9,9 @@ use mio::{Poll, PollOpt, Ready, Token};
 use mio::net::TcpStream;
 use network::packet::{SerializedBuffer, Serializable, get_object_size};
 use std::collections::VecDeque;
+use std::net::SocketAddr;
 
-pub struct Connection {
+pub struct ReplicatorSource {
     sock: TcpStream,
     pub token: Token,
     interest: Ready,
@@ -27,11 +28,11 @@ pub struct Connection {
 target_os = "freebsd", target_os = "ios", target_os = "macos",target_os="linux"))]
 use mio::unix::UnixReady;
 
-impl Connection {
+impl ReplicatorSource {
     #[cfg(any(target_os = "dragonfly",
     target_os = "freebsd", target_os = "ios", target_os = "macos",target_os="linux"))]
-    pub fn new(sock: TcpStream, token: Token) -> Connection {
-        Connection {
+    pub fn new(sock: TcpStream, token: Token) -> ReplicatorSource {
+        ReplicatorSource {
             sock,
             token,
             interest: Ready::from(UnixReady::hup()),
@@ -46,8 +47,8 @@ impl Connection {
     }
 
     #[cfg(any(target_os = "windows"))]
-    pub fn new(sock: TcpStream, token: Token) -> Connection {
-        Connection {
+    pub fn new(sock: TcpStream, token: Token) -> ReplicatorSource {
+        ReplicatorSource {
             sock,
             token,
             interest: Ready::from(Ready::hup()),
@@ -61,6 +62,10 @@ impl Connection {
         }
     }
 
+    pub fn get_address(&self) -> io::Result<SocketAddr> {
+        self.sock.peer_addr()
+    }
+
     pub fn readable(&mut self) -> io::Result<Option<SerializedBuffer>> {
         let msg_len = match self.read_message_length()? {
             None => { return Ok(None); },
@@ -68,9 +73,9 @@ impl Connection {
         };
 
         if msg_len == 0 {
-//            debug!("message is zero bytes; token={:?}", self.token);
             return Ok(None);
         }
+
         let msg_len = msg_len as usize;
         debug!("Expected message length is {}", msg_len);
 
@@ -102,33 +107,6 @@ impl Connection {
         }
     }
 
-//    fn read_message_length(&mut self) -> io::Result<Option<u64>> {
-//        if let Some(n) = self.read_continuation {
-//            return Ok(Some(n));
-//        }
-//
-//        let mut buf = [0u8; 8];
-//
-//        let bytes = match self.sock.read(&mut buf) {
-//            Ok(n) => n,
-//            Err(e) => {
-//                if e.kind() == ErrorKind::WouldBlock {
-//                    return Ok(None);
-//                } else {
-//                    return Err(e);
-//                }
-//            }
-//        };
-//
-//        if bytes < 8 {
-//            warn!("Found message length of {} bytes", bytes);
-//            return Err(Error::new(ErrorKind::InvalidData, "Invalid message length"));
-//        }
-//
-//        let msg_len = BigEndian::read_u64(buf.as_ref());
-//        Ok(Some(msg_len))
-//    }
-
     fn read_message_length(&mut self) -> io::Result<Option<u32>> {
         if let Some(n) = self.read_continuation {
             return Ok(Some(n));
@@ -150,24 +128,6 @@ impl Connection {
         } else {
             return Ok(None);
         }
-
-//        let bytes = match self.sock.read(&mut buf) {
-//            Ok(n) => n,
-//            Err(e) => {
-//                if e.kind() == ErrorKind::WouldBlock {
-//                    return Ok(None);
-//                } else {
-//                    return Err(e);
-//                }
-//            }
-//        };
-//        if bytes < 8 {
-//            warn!("Found message length of {} bytes", bytes);
-//            return Err(Error::new(ErrorKind::InvalidData, "Invalid message length"));
-//        }
-//
-//        let msg_len = BigEndian::read_u64(buf.as_ref());
-//        Ok(Some(msg_len))
     }
 
     pub fn send_packet<T>(&mut self, packet: T, message_id : i64) where T: Serializable {
@@ -286,19 +246,7 @@ impl Connection {
         }
     }
 
-//    pub fn send_message(&mut self, message: Rc<Vec<u8>>) -> io::Result<()> {
-//        trace!("connection send_message; token={:?}", self.token);
-//
-//        self.send_queue.push(message);
-//
-//        if !self.interest.is_writable() {
-//            self.interest.insert(Ready::writable());
-//        }
-//
-//        Ok(())
-//    }
-
-    pub fn register(&mut self, poll: &mut Poll) -> io::Result<()> {
+    pub fn register(&mut self, poll: &Poll) -> io::Result<()> {
         trace!("connection register; token={:?}", self.token);
 
         self.interest.insert(Ready::readable());

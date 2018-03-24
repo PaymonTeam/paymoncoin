@@ -5,7 +5,6 @@ extern crate byteorder;
 extern crate mio;
 extern crate rand;
 extern crate slab;
-extern crate secp256k1;
 extern crate ethcore_bigint as bigint;
 extern crate memorydb;
 extern crate patricia_trie;
@@ -17,30 +16,26 @@ pub mod network;
 pub mod model;
 pub mod storage;
 
-use std::net::{SocketAddr, IpAddr};
-
 use mio::Poll;
-use mio::net::{TcpListener, TcpStream};
+use mio::net::TcpListener;
 
 use network::node::*;
-use network::connection::*;
-use network::packet::SerializedBuffer;
-use model::config::PORT;
-use model::transaction::{TransactionObject, Transaction};
-use storage::hive::Hive;
-use model::config::Configuration;
-use bigint::hash::H256;
-use memorydb::MemoryDB;
+use network::replicator_source_pool::ReplicatorSourcePool;
+use model::config::{PORT, Configuration, ConfigurationSettings};
+use model::config;
+use std::sync::{Arc, Weak, Mutex};
 
 fn main() {
     env_logger::init().expect("Failed to init logger");
 
-    let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
-    let addr = SocketAddr::new(host, PORT);
-    let sock = TcpListener::bind(&addr).expect("Failed to bind address");
+    let mut config = Configuration::new();
 
-    let mut poll = Poll::new().expect("Failed to create Poll");
-    let mut server = Node::new(sock);
+    let mut node = Arc::new(Mutex::new(Node::new(&config)));
+    let receiver = Arc::new(Mutex::new(ReplicatorSourcePool::new(&config, Arc::downgrade(&node.clone()))));
 
-    server.run(&mut poll).expect("Failed to run server");
+    let mut guard = node.lock().unwrap();
+    guard.set_receiver(&Arc::downgrade(&receiver));
+
+    receiver.lock().unwrap().run();
+    guard.run().expect("Failed to run server");
 }

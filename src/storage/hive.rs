@@ -12,19 +12,15 @@ extern crate ntrumls;
 
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
-use self::rocksdb::{DB, DBVector, Options, IteratorMode, ColumnFamilyDescriptor, ColumnFamily};
-use self::patricia_trie::{TrieFactory, TrieSpec, TrieMut, TrieDBMut};
-use self::hashdb::{HashDB, DBValue};
+use self::rocksdb::{DB, Options, IteratorMode, ColumnFamilyDescriptor, ColumnFamily};
+use self::patricia_trie::{TrieFactory, TrieSpec, TrieMut};
+use self::hashdb::HashDB;
 use self::bigint::hash::H256;
 use self::memorydb::MemoryDB;
-use std::hash::Hash;
-use std::cell::{RefMut, RefCell};
 use std::collections::HashMap;
 use std::io;
 use std::num;
 
-use model::config::Configuration;
-use model::transaction;
 use model::transaction::{HASH_SIZE, ADDRESS_SIZE, TransactionObject, Transaction, Address, ADDRESS_NULL, HASH_NULL};
 use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
 
@@ -52,7 +48,7 @@ enum CFType {
 pub struct Hive<'a> {
     tree: Box<TrieMut + 'a>,
     db: DB,
-    balances: HashMap<String, u32>,
+    balances: HashMap<Address, u32>,
     column_families: HashMap<CFType, ColumnFamily>,
 }
 
@@ -154,9 +150,8 @@ impl<'a> Hive<'a> {
         }
     }
 
-    pub fn generate_address(fg: &[u8; 256], index: u32) -> (Address, String) {
+    pub fn generate_address(fg: &[u8; 256], index: u32) -> Address {
         use byteorder::{ByteOrder, LittleEndian};
-        use std::iter::repeat;
         use self::rustc_serialize::hex::ToHex;
         use self::ntrumls::{NTRUMLS, PQParamSetID};
 
@@ -178,22 +173,14 @@ impl<'a> Hive<'a> {
         sha.result(&mut buf);
 
         let addr_left = buf[..].to_hex()[24..].to_string();//.to_uppercase();
-        let mut append_byte = 0u16;
         let offset = 32 - ADDRESS_SIZE + 1;
-        for (i, b) in buf[offset..].iter().enumerate() {
-            if i & 1 == 0 {
-                append_byte += *b as u16;
-            } else {
-                append_byte += (*b as u16) * 2;
-            }
-            append_byte %= 256;
-        }
+        let checksum_byte = Address::calculate_checksum(&buf[offset..]);
 
-        let addr = format!("P{}{:x}", addr_left, append_byte);
-        let mut bytes = ADDRESS_NULL;
-        bytes[..20].copy_from_slice(&buf[offset..32]);
-        bytes[20] = append_byte as u8;
-        (bytes, addr)
+//        let addr = format!("P{}{:x}", addr_left, append_byte);
+        let mut addr = ADDRESS_NULL;
+        addr[..20].copy_from_slice(&buf[offset..32]);
+        addr[20] = checksum_byte;
+        addr
     }
 
     fn add_transaction(&mut self, transaction: &TransactionObject) -> Result<(), Error> {
@@ -250,7 +237,7 @@ impl<'a> Hive<'a> {
     pub fn load_balances(&mut self) -> Result<(), Error> {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
-        use std::io::prelude::*;
+        use self::rustc_serialize::hex::{ToHex, FromHex};
 
         let mut f = File::open("db/snapshot.dat")?;
         let file = BufReader::new(&f);
@@ -260,9 +247,18 @@ impl<'a> Hive<'a> {
         for line in file.lines() {
             let l = line?;
             let arr : Vec<&str> = l.splitn(2, ' ').collect();
-            let (addr, balance) = (String::from(arr[0]), String::from(arr[1]).parse::<u32>()?);
+            let (addr_str, balance) = (String::from(arr[0]), String::from(arr[1]).parse::<u32>()?);
+            let mut arr = [0u8; ADDRESS_SIZE];
+            arr.copy_from_slice(&addr_str[1..].from_hex().expect("failed to load snapshot")[..ADDRESS_SIZE]);
+            let addr = Address(arr);
+//            if !addr.verify() {
+//                panic!("invalid address in snapshot");
+//            }
+            if self.balances.insert(addr, balance).is_some() {
+                panic!("invalid snapshot");
+            }
 
-            self.balances.insert(addr, balance);
+            self.storage_put(CFType::Address, &addr, &balance);
 
             total += balance;
         }
@@ -304,7 +300,7 @@ fn hive_test() {
 
     let addr0 = ADDRESS_NULL;
 
-    let random_sk = true;
+    let random_sk = false;
 
     let mut data = "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().expect("invalid sk");
     let mut sk_data = [0u8; 32 * 8];
@@ -314,10 +310,10 @@ fn hive_test() {
         sk_data.copy_from_slice(&data[..(32 * 8)]);
     }
 
-    let (addr, addr_str) = Hive::generate_address(&sk_data, 0);
+    let addr = Hive::generate_address(&sk_data, 0);
     hive.storage_put(CFType::Address, &addr, &10000u32);
     let balance = hive.storage_get_address(&addr).expect("storage get address error");
 
     println!("pk={}", sk_data.to_hex().to_uppercase());
-    println!("address={} balance={}", addr_str, balance);
+    println!("address={:?} balance={}", addr, balance);
 }

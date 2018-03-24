@@ -37,7 +37,7 @@ impl Serializable for Hash {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Eq, Hash)]
 pub struct Address(pub [u8; ADDRESS_SIZE]);
 impl Deref for Address {
     type Target = [u8];
@@ -59,6 +59,31 @@ impl Serializable for Address {
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
         stream.read_bytes(&mut self.0,ADDRESS_SIZE);
+    }
+}
+impl super::super::std::fmt::Debug for Address {
+    fn fmt(&self, f: &mut super::super::std::fmt::Formatter) -> super::super::std::fmt::Result {
+        use self::rustc_serialize::hex::ToHex;
+        write!(f, "P{}", self.0.to_hex())
+    }
+}
+
+impl Address {
+    pub fn verify(&self) -> bool {
+        Address::calculate_checksum(&self) == self.0[ADDRESS_SIZE-1]
+    }
+
+    pub fn calculate_checksum(bytes: &[u8]) -> u8 {
+        let mut checksum_byte = 0u16;
+        for (i, b) in bytes.iter().enumerate() {
+            if i & 1 == 0 {
+                checksum_byte += *b as u16;
+            } else {
+                checksum_byte += (*b as u16) * 2;
+            }
+            checksum_byte %= 256;
+        }
+        checksum_byte as u8
     }
 }
 

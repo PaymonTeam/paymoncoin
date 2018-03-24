@@ -1,6 +1,5 @@
 extern crate rlibc;
 
-use byteorder::{ByteOrder};
 use std::cell::RefCell;
 use std::ops::Deref;
 

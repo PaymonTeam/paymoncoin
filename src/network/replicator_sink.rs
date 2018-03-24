@@ -1,15 +1,3 @@
-extern crate byteorder;
-extern crate mio;
-extern crate rand;
-extern crate slab;
-
-#[macro_use] extern crate log;
-extern crate env_logger;
-
-pub mod network;
-pub mod model;
-pub mod storage;
-
 use std::io::prelude::*;
 use std::io::*;
 use std::net::{TcpStream, SocketAddr, IpAddr};
@@ -18,21 +6,40 @@ use network::packet::{SerializedBuffer, Serializable, get_object_size};
 use network::rpc::KeepAlive;
 use model::config::PORT;
 use network::rpc;
+use std::sync::{Arc, Weak, Mutex};
+use network::node::Node;
+use model::config::{Configuration, ConfigurationSettings};
 
-struct Client {
+pub struct ReplicatorSink {
     pub read_continuation : Option<u32>,
-    stream: TcpStream
+    stream: TcpStream,
+    node: Weak<Mutex<Node>>,
 }
 
-impl Client {
-    fn connect(host: &str) -> Self {
+impl ReplicatorSink {
+    pub fn new(config: &Configuration, node: Weak<Mutex<Node>>) -> Self {
+//        let host = host.parse::<IpAddr>().expect("Failed to parse host string");
+        let addr = SocketAddr::new(host, PORT);
+        let mut stream = TcpStream::connect(addr).expect("Couldn't not connect to neighbor"); //.unwrap();
+        stream.set_nonblocking(true).expect("stream set non-blocking error");
+
+        ReplicatorSink {
+            read_continuation: None,
+            stream,
+            node
+        }
+    }
+
+    fn connect(host: &str, node: Weak<Mutex<Node>>) -> Self {
         let host = host.parse::<IpAddr>().expect("Failed to parse host string");
         let addr = SocketAddr::new(host, PORT);
         let mut stream = TcpStream::connect(addr).expect("Couldn't not connect to neighbor"); //.unwrap();
-        stream.set_nonblocking(true).expect("stream set non-blockong error");
-        Client {
+        stream.set_nonblocking(true).expect("stream set non-blocking error");
+
+        ReplicatorSink {
             read_continuation: None,
-            stream
+            stream,
+            node
         }
     }
 
@@ -173,15 +180,4 @@ impl Client {
             self.send_packet(keep_alive, 1);
         }
     }
-}
-
-fn main() {
-    let mut cl = Client::connect("127.0.0.1");
-
-    let packet = KeepAlive {};
-    cl.send_packet(packet, 1337);
-
-    loop {
-        cl.tick();
-    };
 }
