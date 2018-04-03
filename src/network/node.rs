@@ -6,6 +6,7 @@ use model::config::{Configuration, ConfigurationSettings};
 use network::packet::{SerializedBuffer};
 use std::sync::{Arc, Weak, Mutex};
 use network::neighbor::Neighbor;
+use std::net::{TcpStream, SocketAddr, IpAddr};
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
@@ -14,30 +15,42 @@ extern fn handle_sigint(_:i32) {
 
 pub struct Node {
     running: bool,
-    receiver: Option<Weak<Mutex<ReplicatorSourcePool>>>,
-    neighbors: Vec<Neighbor>
+    pub neighbors: Vec<Arc<Mutex<Neighbor>>>,
+    config: Configuration
 }
 
 impl Node {
     pub fn new(config: &Configuration) -> Node {
         Node {
             running: true,
-            receiver: None,
             neighbors: Vec::new(),
+            config: config.clone(),
         }
     }
 
-    pub fn set_receiver(&mut self, receiver: &Weak<Mutex<ReplicatorSourcePool>>) {
-        self.receiver = Some(receiver.clone());
+    pub fn init(&mut self) {
+        if let Some(s) = self.config.get_string(ConfigurationSettings::Neighbors) {
+            if s.len() > 0 {
+                for addr in s.split(" ") {
+                    if let Ok(addr) = addr.parse::<SocketAddr>() {
+                        self.neighbors.push(Arc::new(Mutex::new(Neighbor::from_address(addr))));
+                    } else {
+                        debug!("invalid address: {:?}", addr);
+                    }
+                }
+            }
+        }
+//        self.neighbors.push(Arc::new(Mutex::new(Neighbor::from_address("127.0.0.1:10001".parse::<SocketAddr>().unwrap()))));
+//        self.neighbors.push(Arc::new(Mutex::new(Neighbor::from_address("127.0.0.1:10002".parse::<SocketAddr>().unwrap()))));
     }
 
     pub fn run(&mut self) -> Result<(), Error> {
-        if let Some(ref s) = self.receiver {
-            if let Some(ref s) = s.upgrade() {
-                let mut receiver = s.lock().unwrap();
-                (*receiver).run();
-            }
-        }
+//        if let Some(ref s) = self.receiver {
+//            if let Some(ref s) = s.upgrade() {
+//                let mut receiver = s.lock().unwrap();
+//                (*receiver).run();
+//            }
+//        }
         return Ok(());
     }
 

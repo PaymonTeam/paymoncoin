@@ -13,6 +13,7 @@ use network::replicator_source::ReplicatorSource;
 use network::packet::{SerializedBuffer};
 use model::config::{Configuration, ConfigurationSettings, PORT};
 use network::node::Node;
+use std::sync::mpsc::{Sender, Receiver};
 
 type Slab<T> = slab::Slab<T, Token>;
 
@@ -22,14 +23,18 @@ pub struct ReplicatorSourcePool {
     token: Token,
     conns: Slab<ReplicatorSource>,
     events: Events,
-    node: Weak<Mutex<Node>>
+    node: Weak<Mutex<Node>>,
+    replicator_rx: Receiver<bool>,
 }
 
 impl ReplicatorSourcePool {
-    pub fn new(config: &Configuration, node: Weak<Mutex<Node>>) -> Self {
+    pub fn new(config: &Configuration, node: Weak<Mutex<Node>>, replicator_rx: Receiver<bool>, tx: Sender<()>) -> Self {
         let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
-        let addr = SocketAddr::new(host, config.get_int(ConfigurationSettings::Port).unwrap_or(PORT as i32) as u16);
+        let port = config.get_int(ConfigurationSettings::Port).unwrap_or(PORT as i32) as u16;
+        let addr = SocketAddr::new(host, port);
         let sock = TcpListener::bind(&addr).expect("Failed to bind address");
+
+        debug!("Started listener on port {}", port);
 
         ReplicatorSourcePool {
             poll: Poll::new().expect("Failed to create Poll"),
@@ -38,23 +43,24 @@ impl ReplicatorSourcePool {
             conns: Slab::with_capacity(config.get_int(ConfigurationSettings::MaxPeers).unwrap_or(5) as usize),
             events: Events::with_capacity(1024),
             node,
+            replicator_rx,
         }
     }
 
     pub fn init(&mut self) {
-        let so = self.sock.as_sock();
-//        self.node.upgrade().unwrap().lock().unwrap().set_receiver()
+
     }
 
     pub fn run(&mut self) -> io::Result<()> {
         self.register()?;
 
-        info!("Server run loop starting...");
         loop {
+            if let Ok(sd) = self.replicator_rx.try_recv() {
+                return Ok(());
+            }
+
             let cnt = self.poll.poll(&mut self.events, None)?;
-
             let mut lst = vec![];
-
             for event in self.events.iter() {
                 lst.push(event);
             }
@@ -65,6 +71,9 @@ impl ReplicatorSourcePool {
 
             self.tick();
         }
+
+        info!("Shutting down replicator source pool...");
+        Ok(())
     }
 
     pub fn register(&mut self) -> io::Result<()> {
