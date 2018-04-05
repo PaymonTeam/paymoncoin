@@ -109,6 +109,7 @@ impl<'a> Hive<'a> {
                 num.read_params(&mut SerializedBuffer::from_slice(&res?));
                 Some(num)
             },
+
             Err(e) => {
                 warn!("get address from storage error ({})", e);
                 None

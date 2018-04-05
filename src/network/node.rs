@@ -1,12 +1,12 @@
 extern crate nix;
 
 use std::io::Error;
-use super::replicator_source_pool::ReplicatorSourcePool;
 use model::config::{Configuration, ConfigurationSettings};
 use network::packet::{SerializedBuffer};
 use std::sync::{Arc, Weak, Mutex};
 use network::neighbor::Neighbor;
 use std::net::{TcpStream, SocketAddr, IpAddr};
+use std::sync::mpsc::Sender;
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
@@ -16,15 +16,17 @@ extern fn handle_sigint(_:i32) {
 pub struct Node {
     running: bool,
     pub neighbors: Vec<Arc<Mutex<Neighbor>>>,
-    config: Configuration
+    config: Configuration,
+    node_tx: Sender<()>,
 }
 
 impl Node {
-    pub fn new(config: &Configuration) -> Node {
+    pub fn new(config: &Configuration, node_tx: Sender<()>) -> Node {
         Node {
             running: true,
             neighbors: Vec::new(),
             config: config.clone(),
+            node_tx,
         }
     }
 
@@ -87,5 +89,9 @@ impl Node {
 //        if let Some(f) = funcs.get(&svuid) {
 //            f(connection);
 //        }
+    }
+
+    pub fn shutdown(&mut self) {
+        self.node_tx.send(());
     }
 }

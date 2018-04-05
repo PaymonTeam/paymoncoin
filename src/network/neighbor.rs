@@ -1,21 +1,17 @@
 use std::io::Error;
 
 use model::config::{Configuration, ConfigurationSettings};
-use network::replicator_source::ReplicatorSource;
-use network::replicator_sink::ReplicatorSink;
 use std::sync::{Arc, Weak, Mutex};
 use mio::tcp::TcpStream;
 use std::collections::VecDeque;
 use network::packet;
 use network::packet::{SerializedBuffer, Serializable};
 use std::net::{SocketAddr, IpAddr};
+use network::replicator::Replicator;
 
 pub struct Neighbor {
-    pub sock: Option<Arc<Mutex<TcpStream>>>,
-    pub packet_queue: VecDeque<SerializedBuffer>,
     pub addr: SocketAddr,
-    pub has_sink: bool,
-    pub has_source: bool,
+    pub replicator: Option<Weak<Mutex<Replicator>>>,
 }
 
 impl Neighbor {
@@ -24,21 +20,22 @@ impl Neighbor {
         let addr = conn.lock().unwrap().peer_addr().expect("invalid address");
 
         Neighbor {
-            sock: None,
-            packet_queue: VecDeque::new(),
             addr,
-            has_sink: false,
-            has_source: true,
+            replicator: None,
         }
     }
 
     pub fn from_address(addr: SocketAddr) -> Self {
         Neighbor {
-            sock: None,
-            packet_queue: VecDeque::new(),
             addr,
-            has_sink: false,
-            has_source: false,
+            replicator: None,
+        }
+    }
+
+    pub fn from_replicator(replicator: Weak<Mutex<Replicator>>, addr: SocketAddr) -> Self {
+        Neighbor {
+            addr,
+            replicator: Some(replicator),
         }
     }
 
@@ -48,14 +45,13 @@ impl Neighbor {
 
     pub fn send_packet<T>(&mut self, packet: T) where T : Serializable {
         let sb = packet::get_serialized_object(&packet, true);
-        self.packet_queue.push_front(sb);
-    }
 
-    pub fn next_data(&mut self) -> Option<SerializedBuffer> {
-        self.packet_queue.pop_front()
+        if let Some(ref o) = self.replicator {
+            if let Some(arc) = o.upgrade() {
+                if let Ok(mut replicator) = arc.lock() {
+                    replicator.send_packet(packet, 0);
+                }
+            }
+        }
     }
-
-//    pub fn run(&mut self) -> Result<(), Error> {
-//
-//    }
 }

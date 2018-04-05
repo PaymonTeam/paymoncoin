@@ -20,12 +20,12 @@ use mio::Poll;
 use mio::net::TcpListener;
 
 use network::node::*;
-use network::replicator::Replicator;
+use network::replicator_pool::ReplicatorPool;
 use model::config::{PORT, Configuration, ConfigurationSettings};
 use model::config;
+use std::sync::mpsc::channel;
 use std::sync::{Arc, Weak, Mutex};
 use std::io::{self, Read};
-
 use std::env;
 use log::{LogRecord, LogLevelFilter};
 use env_logger::LogBuilder;
@@ -40,7 +40,7 @@ fn main() {
     builder.format(format).filter(None, LogLevelFilter::Info);
 
     if env::var("RUST_LOG").is_ok() {
-       builder.parse(&env::var("RUST_LOG").unwrap());
+        builder.parse(&env::var("RUST_LOG").unwrap());
     }
 
     builder.init().unwrap();
@@ -55,6 +55,7 @@ fn main() {
             neighbors = v.join(" ");
         }
         println!("{}", neighbors);
+
         thread::spawn(move || {
             let mut config = Configuration::new();
             if port != 0 {
@@ -62,10 +63,16 @@ fn main() {
                 config.set_int(ConfigurationSettings::Port, port);
             }
 
-            let mut node = Arc::new(Mutex::new(Node::new(&config)));
-            let replicator = Arc::new(Mutex::new(Replicator::new(&config, Arc::downgrade(&node.clone()))));
+            // used for shutdown replicator pool
+            let (tx, rx) = channel::<()>();
 
-            replicator.lock().unwrap().run();
+            let mut node = Arc::new(Mutex::new(Node::new(&config, tx)));
+
+            let node_copy = node.clone();
+            thread::spawn(move || {
+                let replicator_pool = Arc::new(Mutex::new(ReplicatorPool::new(&config, Arc::downgrade(&node_copy), rx)));
+                replicator_pool.lock().unwrap().run();
+            });
 
             {
                 let mut guard = node.lock().unwrap();
@@ -75,12 +82,12 @@ fn main() {
 
             use std::thread;
             use std::time::Duration;
-            thread::sleep(Duration::from_secs(10));
-            replicator.lock().unwrap().shutdown();
+            thread::sleep(Duration::from_secs(1));
+            node.lock().unwrap().shutdown();
         });
     }
 
     use std::thread;
     use std::time::Duration;
-    thread::sleep(Duration::from_secs(12));
+    thread::sleep(Duration::from_secs(11));
 }

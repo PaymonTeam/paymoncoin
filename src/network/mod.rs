@@ -2,8 +2,9 @@ pub mod node;
 pub mod packet;
 pub mod rpc;
 pub mod neighbor;
-pub mod replicator_source_pool;
-pub mod replicator_sink_pool;
-pub mod replicator_source;
-pub mod replicator_sink;
 pub mod replicator;
+pub mod replicator_pool;
+
+pub use self::replicator::Replicator;
+pub use self::replicator_pool::ReplicatorPool;
+pub use self::neighbor::Neighbor;

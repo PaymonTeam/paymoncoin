@@ -28,6 +28,7 @@ impl Client {
     fn connect(host: &str) -> Self {
         let host = host.parse::<IpAddr>().expect("Failed to parse host string");
         let addr = SocketAddr::new(host, PORT);
+
         let mut stream = TcpStream::connect(addr).expect("Couldn't not connect to neighbor"); //.unwrap();
         stream.set_nonblocking(true).expect("stream set non-blockong error");
         Client {
