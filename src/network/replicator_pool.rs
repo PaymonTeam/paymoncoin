@@ -80,15 +80,22 @@ impl ReplicatorPool {
             }
 
             if let Some(arc) = self.node.upgrade() {
-                if let Ok(node) = arc.lock() {
-                    for arc2 in &node.neighbors {
-                        let mut f = false;
-                        if let Ok(mut n) = arc2.lock() {
-                            if n.replicator.is_none() {
-                                use std::net;
-                                if let Ok(stream) = net::TcpStream::connect_timeout(&n.addr, Duration::from_secs(3)) {
-                                    if let Ok(stream) = TcpStream::from_stream(stream) {
-                                        n.replicator = self.add_replicator(stream);
+                if let Ok(node) = arc.try_lock() {
+                    if let Ok(mut neighbors) = node.neighbors.lock() {
+                        for arc2 in neighbors.iter() {
+                            let mut f = false;
+                            if let Ok(mut n) = arc2.lock() {
+                                if n.replicator.is_none() {
+                                    use std::net;
+                                    match net::TcpStream::connect_timeout(&n.addr, Duration::from_secs(3)) {
+                                        Ok(stream) => {
+                                            if let Ok(stream) = TcpStream::from_stream(stream) {
+                                                n.replicator = self.add_replicator(stream);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            println!("Couldn't connect to neighbor: {:?}", e);
+                                        }
                                     }
                                 }
                             }
@@ -234,17 +241,21 @@ impl ReplicatorPool {
                         if let Ok(mut node) = arc.lock() {
                             let mut neighbor_exsists = false;
 
-                            for neighbor_arc in &node.neighbors {
-                                if let Ok(neighbor) = neighbor_arc.lock() {
-                                    if addr == neighbor.addr {
-                                        neighbor_exsists = true;
-                                        break;
+                            if let Ok(mut neighbors) = node.neighbors.lock() {
+                                for neighbor_arc in neighbors.iter() {
+                                    if let Ok(neighbor) = neighbor_arc.lock() {
+                                        if addr == neighbor.addr {
+                                            neighbor_exsists = true;
+                                            break;
+                                        }
                                     }
                                 }
                             }
 
                             if !neighbor_exsists {
-                                node.neighbors.push(Arc::new(Mutex::new(Neighbor::from_replicator(replicator_weak, addr.clone()))))
+                                if let Ok(mut neighbors) = node.neighbors.lock() {
+                                    neighbors.push(Arc::new(Mutex::new(Neighbor::from_replicator(replicator_weak, addr.clone()))))
+                                }
                             }
                         }
                     }
@@ -278,18 +289,22 @@ impl ReplicatorPool {
     fn readable(&mut self, token: Token) -> io::Result<()> {
         let mut packets_data = Vec::<SerializedBuffer>::new();
 
-        {
-            if let Ok(mut connection) = self.find_connection_by_token(token) {
-                while let Some(buffer) = connection.readable()? {
-                    packets_data.push(buffer);
-                }
+        let mut addr : SocketAddr;
+        if let Ok(mut connection) = self.find_connection_by_token(token) {
+            addr = connection.get_address()?;
+
+            while let Some(buffer) = connection.readable()? {
+                packets_data.push(buffer);
             }
+        } else {
+            use std::io::Error;
+            return Err(Error::from(ErrorKind::NotFound));
         }
 
         for data in packets_data {
             let node = self.node.upgrade().unwrap();
             let mut node_guard = node.lock().unwrap();
-            node_guard.on_connection_data_received(data);
+            node_guard.on_connection_data_received(data, addr);
         }
 
         Ok(())

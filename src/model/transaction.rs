@@ -1,10 +1,12 @@
 extern crate rustc_serialize;
 extern crate crypto;
+extern crate ntrumls;
 
 use network::packet::{Serializable, SerializedBuffer};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
 use std::ops::{Deref, DerefMut};
+use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
 
 pub const MIN_WEIGHT_MAGNITUDE: u8 = 8;
 
@@ -34,6 +36,21 @@ impl Serializable for Hash {
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
         stream.read_bytes(&mut self.0,HASH_SIZE);
+    }
+}
+impl Hash {
+    pub fn trailing_zeros(&self) -> u16 {
+//        let mut index ;
+        let mut zeros = 0u16;
+
+//        final int[] trits;
+//        index = SIZE_IN_TRITS;
+//        zeros = 0;
+//        trits = trits();
+//        while(index-- > 0 && trits[index] == 0) {
+//        zeros++;
+//        }
+        zeros
     }
 }
 
@@ -112,16 +129,30 @@ impl Serializable for Account {
     }
 }
 
+impl Serializable for Signature {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_byte_array(&self.0)
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        if let Some(v) = stream.read_byte_array() {
+            self.0 = v;
+        } else {
+            error!("error reading byte array");
+        }
+    }
+}
+
 pub const HASH_NULL : Hash = Hash([0u8; HASH_SIZE]);
 pub const ADDRESS_NULL : Address = Address([0u8; ADDRESS_SIZE]);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TransactionType {
     HashOnly,
     Full
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TransactionObject {
     pub address: Address,
     pub attachment_timestamp: u64,
@@ -138,11 +169,14 @@ pub struct TransactionObject {
     pub timestamp: u64,
     pub value: u32,
     pub data_type: TransactionType,
+    pub signature: Signature,
 }
 
+#[derive(Clone)]
 pub struct Transaction {
-    pub transaction: TransactionObject,
+    pub object: TransactionObject,
     pub bytes: SerializedBuffer,
+    pub weight_magnitude: u16
 }
 
 impl Transaction {
@@ -151,8 +185,9 @@ impl Transaction {
         transaction.read_params(&mut bytes);
 
         Transaction {
-            transaction,
-            bytes
+            weight_magnitude: transaction.hash.trailing_zeros(),
+            object: transaction,
+            bytes,
         }
     }
 
@@ -161,8 +196,9 @@ impl Transaction {
         transaction.serialize_to_stream(&mut bytes);
 
         Transaction {
-            transaction,
-            bytes
+            weight_magnitude: transaction.hash.trailing_zeros(),
+            object: transaction,
+            bytes,
         }
     }
 
@@ -172,7 +208,8 @@ impl Transaction {
         transaction.serialize_to_stream(&mut bytes);
 
         Transaction {
-            transaction,
+            weight_magnitude: transaction.hash.trailing_zeros(),
+            object: transaction,
             bytes
         }
     }
@@ -183,22 +220,34 @@ impl Transaction {
         transaction.serialize_to_stream(&mut bytes);
 
         Transaction {
-            transaction,
+            weight_magnitude: transaction.hash.trailing_zeros(),
+            object: transaction,
             bytes
         }
     }
 
-    pub fn get_hash(&mut self) -> Hash {
+    pub fn calculate_hash(&mut self) -> Hash {
         if self.bytes.position() == 0 {
-            self.transaction.serialize_to_stream(&mut self.bytes);
+            self.object.serialize_to_stream(&mut self.bytes);
         }
 
+        let mut sb = SerializedBuffer::new_with_size(ADDRESS_SIZE + 4 + 8);
+        sb.write_bytes(&self.object.address);
+        sb.write_u32(self.object.value);
+        sb.write_u64(self.object.timestamp);
+
         let mut sha = Sha3::sha3_256();
-        sha.input(&self.bytes.buffer);
+        sha.input(&sb.buffer);
 
         let mut buf = [0u8; HASH_SIZE];
         sha.result(&mut buf);
         Hash(buf)
+    }
+
+    pub fn calculate_signature(&mut self, sk: PrivateKey) {
+        let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+        let pk = PublicKey(self.object.address.0.to_vec());
+        ntrumls.sign(&self.object.hash, &sk, &pk);
     }
 
     pub fn find_nonce(&self) -> Option<u64> {
@@ -207,8 +256,8 @@ impl Transaction {
         let mut buf = [0u8; 32];
 
         let mut in_buf = SerializedBuffer::new_with_size(HASH_SIZE * 2 + 8);
-        in_buf.write_bytes(&self.transaction.branch_transaction);
-        in_buf.write_bytes(&self.transaction.trunk_transaction);
+        in_buf.write_bytes(&self.object.branch_transaction);
+        in_buf.write_bytes(&self.object.trunk_transaction);
         in_buf.write_u64(nonce);
 
         'nonce_loop: loop {
@@ -257,6 +306,7 @@ impl TransactionObject {
             timestamp: 0u64,
             value: 0u32,
             data_type: TransactionType::HashOnly,
+            signature: Signature(Vec::new()),
         }
     }
 
@@ -264,6 +314,7 @@ impl TransactionObject {
         use rand::Rng;
         use rand::thread_rng;
 
+        let mut signature = Signature(Vec::new());
         let mut address = ADDRESS_NULL;
         let mut branch_transaction = HASH_NULL;
         let mut trunk_transaction = HASH_NULL;
@@ -279,12 +330,14 @@ impl TransactionObject {
         let last_index = 0u32;
         let value = 0u32;
 
+        thread_rng().fill_bytes(&mut signature.0);
         thread_rng().fill_bytes(&mut branch_transaction);
         thread_rng().fill_bytes(&mut address);
         thread_rng().fill_bytes(&mut trunk_transaction);
         thread_rng().fill_bytes(&mut bundle);
 
         TransactionObject {
+            signature,
             address,
             attachment_timestamp,
             attachment_timestamp_lower_bound,
@@ -326,6 +379,7 @@ impl Serializable for TransactionObject {
             TransactionType::Full => 1,
         };
         stream.write_byte(b);
+        stream.write_byte_array(&self.signature.0);
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
@@ -347,15 +401,55 @@ impl Serializable for TransactionObject {
             1 => TransactionType::Full,
             _ => TransactionType::HashOnly
         };
+        self.signature = Signature(stream.read_byte_array().unwrap());
     }
 }
 
 impl Serializable for Transaction {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-        self.transaction.serialize_to_stream(stream);
+        self.object.serialize_to_stream(stream);
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        self.transaction.read_params(stream);
+        self.object.read_params(stream);
     }
+}
+
+// TODO: return Result
+pub fn validate_transaction(transaction: &mut Transaction) -> bool {
+    // check hash
+    let calculated_hash = transaction.calculate_hash();
+    if transaction.object.hash != calculated_hash {
+        return false;
+    }
+
+    // check nonce
+    let mut nonce = 0;
+    let mut sha = Sha3::sha3_256();
+    let mut buf = [0u8; 32];
+
+    let mut in_buf = SerializedBuffer::new_with_size(HASH_SIZE * 2 + 8);
+    in_buf.write_bytes(&transaction.object.branch_transaction);
+    in_buf.write_bytes(&transaction.object.trunk_transaction);
+    in_buf.write_u64(transaction.object.nonce);
+
+    sha.input(&in_buf.buffer);
+    sha.result(&mut buf);
+
+    for i in 0..MIN_WEIGHT_MAGNITUDE as usize {
+        let x = buf[i / 8];
+        let y = (0b10000000 >> (i % 8)) as u8;
+
+        if x & y != 0 {
+            return false;
+        }
+    }
+
+    // check signature
+//        let sign = transaction.transaction.signature;
+//        let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+//        let data = [0u8; 1];
+//        let pk = PublicKey(&transaction.transaction.address.0);
+//        ntrumls.verify(data, &sign, &pk);
+    true
 }

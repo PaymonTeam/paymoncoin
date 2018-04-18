@@ -13,13 +13,14 @@ extern crate ntrumls;
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
 use self::rocksdb::{DB, Options, IteratorMode, ColumnFamilyDescriptor, ColumnFamily};
-use self::patricia_trie::{TrieFactory, TrieSpec, TrieMut};
+use self::patricia_trie::{TrieFactory, TrieSpec, TrieMut, TrieDBMut};
 use self::hashdb::HashDB;
 use self::bigint::hash::H256;
 use self::memorydb::MemoryDB;
 use std::collections::HashMap;
 use std::io;
 use std::num;
+use std::sync::Arc;
 
 use model::transaction::{HASH_SIZE, ADDRESS_SIZE, TransactionObject, Transaction, Address, ADDRESS_NULL, HASH_NULL};
 use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
@@ -39,40 +40,29 @@ pub enum Error {
 }
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug, Hash)]
-enum CFType {
+pub enum CFType {
     Transaction = 0,
     TransactionMetadata,
     Address
 }
 
-pub struct Hive<'a> {
-    tree: Box<TrieMut + 'a>,
+pub struct Hive {
     db: DB,
     balances: HashMap<Address, u32>,
-    column_families: HashMap<CFType, ColumnFamily>,
 }
 
-impl<'a> Hive<'a> {
-    pub fn new(mdb: &'a mut MemoryDB, root: &'a mut H256) -> Self {
-        let f = TrieFactory::new(TrieSpec::Generic);
-        let tree = f.create(mdb, root);
+impl Hive {
+    pub fn new() -> Self {
         let db = Hive::init_db();
 
-        let mut column_families = HashMap::<_, _>::new();
-
-        column_families.insert(CFType::Transaction, db.cf_handle(CF_NAMES[0]).unwrap());
-        column_families.insert(CFType::TransactionMetadata, db.cf_handle(CF_NAMES[1]).unwrap());
-        column_families.insert(CFType::Address, db.cf_handle(CF_NAMES[2]).unwrap());
-
         Hive {
-            tree,
             db,
             balances: HashMap::new(),
-            column_families,
         }
     }
 
     pub fn init(&mut self) {
+        self.load_balances();
     }
 
     fn clear_db(db: &mut DB) {
@@ -85,13 +75,17 @@ impl<'a> Hive<'a> {
         }
     }
 
-    fn storage_put<T>(&mut self, t: CFType, key: &[u8], packet: &T) where T : Serializable {
-        let object = get_serialized_object(packet, false);
-        self.db.put_cf((*self.column_families.get(&t).unwrap()).clone(), key, &object);
+    pub fn put_transaction(&mut self, t: &Transaction) -> bool {
+        self.storage_put(CFType::Transaction, &t.object.hash, &t.object)
     }
 
-    fn storage_get_transaction(&mut self, key: &[u8]) -> Option<Transaction> {
-        let vec = self.db.get_cf((*self.column_families.get(&CFType::Transaction).unwrap()).clone(), key);
+    pub fn storage_put<T>(&mut self, t: CFType, key: &[u8], packet: &T) -> bool where T : Serializable {
+        let object = get_serialized_object(packet, false);
+        self.db.put_cf(self.db.cf_handle(CF_NAMES[t as usize]).unwrap(), key, &object).is_ok()
+    }
+
+    pub fn storage_get_transaction(&mut self, key: &[u8]) -> Option<Transaction> {
+        let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Transaction as usize]).unwrap(), key);
         match vec {
             Ok(res) => Some(Transaction::from_bytes(SerializedBuffer::from_slice(&res?))),
             Err(e) => {
@@ -102,7 +96,7 @@ impl<'a> Hive<'a> {
     }
 
     fn storage_get_address(&mut self, key: &[u8]) -> Option<u32> {
-        let vec = self.db.get_cf((*self.column_families.get(&CFType::Address).unwrap()).clone(), key);
+        let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Address as usize]).unwrap(), key);
         match vec {
             Ok(res) => {
                 let mut num = 0;
@@ -122,14 +116,17 @@ impl<'a> Hive<'a> {
         opts.set_max_background_compactions(2);
         opts.set_max_background_flushes(2);
 
-        match DB::open_cf(&opts, "db/data", &CF_NAMES) {
+        use std::thread;
+        let path = format!("db/data{:?}", thread::current().id());
+
+        match DB::open_cf(&opts, path.clone(), &CF_NAMES) {
             Ok(mut db) => {
                 Hive::clear_db(&mut db);
                 return db;
             },
             Err(e) => {
                 opts.create_if_missing(true);
-                let mut db = DB::open(&opts, "db/data").expect("failed to create database");
+                let mut db = DB::open(&opts, path.clone()).expect("failed to create database");
 
                 let opts = Options::default();
                 for name in CF_NAMES.iter() {
@@ -145,7 +142,8 @@ impl<'a> Hive<'a> {
                     ColumnFamilyDescriptor::new(*name, opts)
                 }).collect();
 
-                let db = DB::open_cf_descriptors(&opts, "db/data", cfs_v).expect("failed to open database");
+                drop(db);
+                let db = DB::open_cf_descriptors(&opts, path, cfs_v).expect("failed to open database");
                 return db;
             }
         }
@@ -169,7 +167,6 @@ impl<'a> Hive<'a> {
         sha.input(&index_bytes);
         sha.input(&pk.0);
 
-        //let mut buf: Vec<u8> = repeat(0).take((sha.output_bits()+7)/8).collect();
         let mut buf = [0u8; 32];
         sha.result(&mut buf);
 
@@ -177,7 +174,6 @@ impl<'a> Hive<'a> {
         let offset = 32 - ADDRESS_SIZE + 1;
         let checksum_byte = Address::calculate_checksum(&buf[offset..]);
 
-//        let addr = format!("P{}{:x}", addr_left, append_byte);
         let mut addr = ADDRESS_NULL;
         addr[..20].copy_from_slice(&buf[offset..32]);
         addr[20] = checksum_byte;
@@ -185,7 +181,7 @@ impl<'a> Hive<'a> {
     }
 
     fn add_transaction(&mut self, transaction: &TransactionObject) -> Result<(), Error> {
-        self.tree.insert(b"k", b"val");
+//        self.tree.insert(b"k", b"val");
 
         Ok(())
     }
@@ -282,39 +278,4 @@ impl From<num::ParseIntError> for Error {
     fn from(e: num::ParseIntError) -> Self {
         Error::Parse(e)
     }
-}
-
-#[test]
-fn hive_test() {
-    use self::rustc_serialize::hex::{ToHex, FromHex};
-    use rand::Rng;
-
-    let mut root = H256::new();
-    let mut mdb = MemoryDB::new();
-    let mut hive = Hive::new(&mut mdb, &mut root);
-    hive.load_balances();
-
-    let mut t0 = TransactionObject::new_random();
-    hive.storage_put(CFType::Transaction, &t0.hash, &t0);
-    let t1 = hive.storage_get_transaction(&t0.hash).expect("failed to load transaction object from db");
-    assert_eq!(t0, t1.transaction);
-
-    let addr0 = ADDRESS_NULL;
-
-    let random_sk = false;
-
-    let mut data = "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().expect("invalid sk");
-    let mut sk_data = [0u8; 32 * 8];
-    if random_sk {
-        rand::thread_rng().fill_bytes(&mut sk_data);
-    } else {
-        sk_data.copy_from_slice(&data[..(32 * 8)]);
-    }
-
-    let addr = Hive::generate_address(&sk_data, 0);
-    hive.storage_put(CFType::Address, &addr, &10000u32);
-    let balance = hive.storage_get_address(&addr).expect("storage get address error");
-
-    println!("pk={}", sk_data.to_hex().to_uppercase());
-    println!("address={:?} balance={}", addr, balance);
 }

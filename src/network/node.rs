@@ -1,4 +1,5 @@
 extern crate nix;
+extern crate ntrumls;
 
 use std::io::Error;
 use model::config::{Configuration, ConfigurationSettings};
@@ -7,6 +8,18 @@ use std::sync::{Arc, Weak, Mutex};
 use network::neighbor::Neighbor;
 use std::net::{TcpStream, SocketAddr, IpAddr};
 use std::sync::mpsc::Sender;
+use std::collections::VecDeque;
+use model::{TransactionObject, Transaction, TransactionType};
+use self::ntrumls::{NTRUMLS, PQParamSetID, PublicKey, PrivateKey};
+use storage::Hive;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
+use model::transaction;
+//#[macro_use]
+//use utils;
+use utils::{AM, AWM};
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
@@ -14,36 +27,121 @@ extern fn handle_sigint(_:i32) {
 }
 
 pub struct Node {
-    running: bool,
-    pub neighbors: Vec<Arc<Mutex<Neighbor>>>,
+    hive: AWM<Hive>,
+    pub neighbors: AM<Vec<AM<Neighbor>>>,
     config: Configuration,
     node_tx: Sender<()>,
+    broadcast_queue: AM<VecDeque<Transaction>>,
+    receive_queue: AM<VecDeque<Transaction>>,
+    running: Arc<AtomicBool>,
+    thread_join_handles: VecDeque<JoinHandle<()>>,
 }
 
 impl Node {
-    pub fn new(config: &Configuration, node_tx: Sender<()>) -> Node {
+    pub fn new(hive: Weak<Mutex<Hive>>, config: &Configuration, node_tx: Sender<()>) -> Node {
         Node {
-            running: true,
-            neighbors: Vec::new(),
+            hive,
+            running: Arc::new(AtomicBool::new(true)),
+            neighbors: make_am!(Vec::new()),
             config: config.clone(),
             node_tx,
+            broadcast_queue: make_am!(VecDeque::new()),
+            receive_queue: make_am!(VecDeque::new()),
+            thread_join_handles: VecDeque::new(),
         }
     }
 
-    pub fn init(&mut self) {
+    pub fn init(&mut self, replicator_jh: JoinHandle<()>) {
         if let Some(s) = self.config.get_string(ConfigurationSettings::Neighbors) {
             if s.len() > 0 {
                 for addr in s.split(" ") {
                     if let Ok(addr) = addr.parse::<SocketAddr>() {
-                        self.neighbors.push(Arc::new(Mutex::new(Neighbor::from_address(addr))));
+                        if let Ok(mut neighbors) = self.neighbors.lock() {
+                            neighbors.push(Arc::new(Mutex::new(Neighbor::from_address(addr))));
+                        }
                     } else {
                         debug!("invalid address: {:?}", addr);
                     }
                 }
             }
         }
-//        self.neighbors.push(Arc::new(Mutex::new(Neighbor::from_address("127.0.0.1:10001".parse::<SocketAddr>().unwrap()))));
-//        self.neighbors.push(Arc::new(Mutex::new(Neighbor::from_address("127.0.0.1:10002".parse::<SocketAddr>().unwrap()))));
+
+        let running_weak = Arc::downgrade(&self.running.clone());
+        let broadcast_queue_weak = Arc::downgrade(&self.broadcast_queue.clone());
+        let neighbors_weak = Arc::downgrade(&self.neighbors.clone());
+        let jh = thread::spawn(|| Node::broadcast_thread(running_weak, broadcast_queue_weak, neighbors_weak));
+        self.thread_join_handles.push_back(jh);
+
+        let running_weak = Arc::downgrade(&self.running.clone());
+        let receive_queue_weak = Arc::downgrade(&self.receive_queue.clone());
+        let broadcast_queue_weak = Arc::downgrade(&self.broadcast_queue.clone());
+        let hive_weak = self.hive.clone();
+        let jh = thread::spawn(|| Node::receive_thread(running_weak, receive_queue_weak, broadcast_queue_weak, hive_weak));
+        self.thread_join_handles.push_back(jh);
+
+        self.thread_join_handles.push_back(replicator_jh);
+    }
+
+    fn receive_thread(running: Weak<AtomicBool>, receive_queue: AWM<VecDeque<Transaction>>, broadcast_queue: AWM<VecDeque<Transaction>>, hive: AWM<Hive>) {
+        loop {
+            if let Some(arc) = running.upgrade() {
+                let b = arc.load(Ordering::SeqCst);
+                if !b { break; }
+
+                if let Some(arc) = receive_queue.upgrade() {
+                    if let Ok(mut queue) = arc.lock() {
+                        if let Some(mut t) = queue.pop_front() {
+                            let validated = transaction::validate_transaction(&mut t);
+                            if validated {
+                                if let Some(arc) = hive.upgrade() {
+                                    if let Ok(mut hive) = arc.lock() {
+                                        let stored = hive.put_transaction(&t);
+
+                                        if stored {
+                                            if let Some(arc) = broadcast_queue.upgrade() {
+                                                if let Ok(mut broadcast_queue) = arc.lock() {
+                                                    broadcast_queue.push_back(t);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                thread::sleep(Duration::from_secs(1));
+            }
+        }
+    }
+
+    fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>) {
+        loop {
+            if let Some(arc) = running.upgrade() {
+                let b = arc.load(Ordering::SeqCst);
+                if !b { break; }
+
+                if let Some(arc) = broadcast_queue.upgrade() {
+                    if let Ok(mut queue) = arc.lock() {
+                        if let Some(t) = queue.pop_front() {
+                            if let Some(arc) = neighbors.upgrade() {
+                                if let Ok(neighbors) = arc.lock() {
+                                    for n in neighbors.iter() {
+                                        if let Ok(mut n) = n.lock() {
+                                            let transaction = t.object.clone();
+                                            n.send_packet(transaction);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                thread::sleep(Duration::from_secs(1));
+            }
+        }
     }
 
     pub fn run(&mut self) -> Result<(), Error> {
@@ -56,10 +154,22 @@ impl Node {
         return Ok(());
     }
 
-    pub fn on_connection_data_received(&mut self, mut data: SerializedBuffer) {
-//        let connection = self.find_connection_by_token(token);
+    pub fn on_connection_data_received(&mut self, mut data: SerializedBuffer, addr: SocketAddr) {
+        if let Ok(mut neighbors) = self.neighbors.lock() {
+            let neighbor = match neighbors.iter().find(
+                |arc| {
+                    if let Ok(n) = arc.lock() { return n.addr == addr }
+                    false
+                }) {
+                Some(arc) => arc,
+                None => {
+                    info!("Received data from unknown neighbor {:?}", addr);
+                    return;
+                }
+            };
+        }
         let length = data.limit();
-//
+
 //        if length == 4 {
 //            connection.mark_reset();
 //            return;
@@ -78,14 +188,40 @@ impl Node {
 
         use std::collections::HashMap;
         use network::rpc;
-        
-//        let mut funcs = HashMap::<i32, fn(conn:&mut Connection)->()>::new();
+        use network::packet::Serializable;
 
-//        funcs.insert(rpc::KeepAlive::SVUID, |conn: &mut Connection| {
-//            let keep_alive = rpc::KeepAlive{};
-//            conn.send_packet(keep_alive, 1);
+        match svuid {
+            TransactionObject::SVUID => {
+                let mut transaction_object = TransactionObject::new();
+                transaction_object.read_params(&mut data);
+
+                let mut transaction = Transaction::from_object(transaction_object);
+                if let Ok(mut queue) = self.receive_queue.lock() {
+                    queue.push_back(transaction);
+                }
+            }
+            rpc::AttachTransaction::SVUID => {
+                let mut transaction_object = TransactionObject::new();
+                transaction_object.read_params(&mut data);
+
+                let mut transaction = Transaction::from_object(transaction_object);
+                if let Ok(mut queue) = self.receive_queue.lock() {
+                    queue.push_back(transaction);
+                }
+            }
+            _ => {
+                warn!("Unknown SVUID {}", svuid);
+            }
+        }
+
+//        let mut funcs = HashMap::<i32, fn(n: TS<Neighbor>)->()>::new();
+//
+//        funcs.insert(TransactionObject::SVUID, |n: TS<Neighbor>| {
+//
+////            let keep_alive = rpc::KeepAlive{};
+////            conn.send_packet(keep_alive, 1);
 //        });
-
+//
 //        if let Some(f) = funcs.get(&svuid) {
 //            f(connection);
 //        }
@@ -93,5 +229,12 @@ impl Node {
 
     pub fn shutdown(&mut self) {
         self.node_tx.send(());
+
+        info!("Shutting down node threads...");
+        self.running.store(false, Ordering::SeqCst);
+
+        while let Some(th) = self.thread_join_handles.pop_front() {
+            th.join();
+        }
     }
 }
