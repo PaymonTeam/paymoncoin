@@ -25,6 +25,7 @@ nix = "0.10.0"
 libc = "0.2.36"
 rlibc = "1.0.0"
 lazy_static = "1.0"
+iron = "*"
 
 [[bin]]
 name = "paymoncoin"
