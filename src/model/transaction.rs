@@ -1,63 +1,48 @@
 extern crate rustc_serialize;
 extern crate crypto;
+extern crate ntrumls;
 
 use network::packet::{Serializable, SerializedBuffer};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
 use std::ops::{Deref, DerefMut};
-// added by Andrii Zozulia
 use storage::hive::Hive;
 use std::collections::HashSet;
 use std::clone::Clone;
-//
-pub const MIN_WEIGHT_MAGNITUDE: u8 = 8;
+use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
 
+pub const MIN_WEIGHT_MAGNITUDE: u8 = 8;
 pub const HASH_SIZE: usize = 20;
-pub const ADDRESS_SIZE: usize = 21; // HASH_SIZE + 1 (checksum byte)
+pub const ADDRESS_SIZE: usize = 21;
+// HASH_SIZE + 1 (checksum byte)
 pub const TRANSACTION_SIZE: usize = 173 + 4;
 
-
-#[derive(Debug, PartialEq, Copy, Eq, Hash)]
-
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
 pub struct Hash([u8; HASH_SIZE]);
 
-impl Hash{
+impl Hash {
+    pub fn trailing_zeros(&self) -> u16 {
+//        let mut index ;
+        let mut zeros = 0u16;
 
-    // fn equals() created by Andrii Zozulia
+//        final int[] trits;
+//        index = SIZE_IN_TRITS;
+//        zeros = 0;
+//        trits = trits();
+//        while(index-- > 0 && trits[index] == 0) {
+//        zeros++;
+//        }
+        zeros
+    }
 
-    pub fn equals(&self, obj_to_check:&Hash) -> bool{
-        let self_array = *self;
-        let array_to_check = *obj_to_check;
-        if self_array.len() != HASH_SIZE && array_to_check.len() != HASH_SIZE  {
-            for i in 0..HASH_SIZE {
-                if self_array[i] != array_to_check[i] {
-                    return false;
-                }
-            }
+    pub fn is_null(&self) -> bool {
+        if *self != HASH_NULL {
             return true;
-        }else{
+        } else {
             return false;
         }
     }
-
-    pub fn is_null(&self) -> bool{
-        if *self != HASH_NULL{
-            return true;
-        }else{
-            return false;
-        }
-    }
-    //
 }
-// Clone override created by Andrii Zozulia
-impl Clone for Hash {
-    fn clone(&self) -> Self {
-        let res = *self;
-        return Hash(res.0);
-
-    }
-}
-//
 
 impl Deref for Hash {
     type Target = [u8];
@@ -66,11 +51,13 @@ impl Deref for Hash {
         &self.0
     }
 }
+
 impl DerefMut for Hash {
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.0
     }
 }
+
 impl Serializable for Hash {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
         stream.write_i32(0);
@@ -78,13 +65,14 @@ impl Serializable for Hash {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        stream.read_bytes(&mut self.0,HASH_SIZE);
+        stream.read_bytes(&mut self.0, HASH_SIZE);
     }
 }
 
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Eq, Hash)]
 pub struct Address(pub [u8; ADDRESS_SIZE]);
+
 impl Deref for Address {
     type Target = [u8];
 
@@ -92,11 +80,13 @@ impl Deref for Address {
         &self.0
     }
 }
+
 impl DerefMut for Address {
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.0
     }
 }
+
 impl Serializable for Address {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
         stream.write_i32(0);
@@ -104,12 +94,39 @@ impl Serializable for Address {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        stream.read_bytes(&mut self.0,ADDRESS_SIZE);
+        stream.read_bytes(&mut self.0, ADDRESS_SIZE);
+    }
+}
+
+impl super::super::std::fmt::Debug for Address {
+    fn fmt(&self, f: &mut super::super::std::fmt::Formatter) -> super::super::std::fmt::Result {
+        use self::rustc_serialize::hex::ToHex;
+        write!(f, "P{}", self.0.to_hex())
+    }
+}
+
+impl Address {
+    pub fn verify(&self) -> bool {
+        Address::calculate_checksum(&self) == self.0[ADDRESS_SIZE - 1]
+    }
+
+    pub fn calculate_checksum(bytes: &[u8]) -> u8 {
+        let mut checksum_byte = 0u16;
+        for (i, b) in bytes.iter().enumerate() {
+            if i & 1 == 0 {
+                checksum_byte += *b as u16;
+            } else {
+                checksum_byte += (*b as u16) * 2;
+            }
+            checksum_byte %= 256;
+        }
+        checksum_byte as u8
     }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Account(pub Address, pub u32);
+
 impl Deref for Account {
     type Target = [u8];
 
@@ -117,11 +134,13 @@ impl Deref for Account {
         &self.0
     }
 }
+
 impl DerefMut for Account {
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.0
     }
 }
+
 impl Serializable for Account {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
         stream.write_i32(0);
@@ -129,21 +148,34 @@ impl Serializable for Account {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        stream.read_bytes(&mut self.0,ADDRESS_SIZE);
+        stream.read_bytes(&mut self.0, ADDRESS_SIZE);
     }
 }
 
-pub const HASH_NULL : Hash = Hash([0u8; HASH_SIZE]);
-pub const ADDRESS_NULL : Address = Address([0u8; ADDRESS_SIZE]);
+impl Serializable for Signature {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_byte_array(&self.0)
+    }
 
-#[derive(Debug, PartialEq)]
-pub enum TransactionType {
-    HashOnly,
-    Full
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        if let Some(v) = stream.read_byte_array() {
+            self.0 = v;
+        } else {
+            error!("error reading byte array");
+        }
+    }
 }
 
-#[derive(Debug, PartialEq)]
+pub const HASH_NULL: Hash = Hash([0u8; HASH_SIZE]);
+pub const ADDRESS_NULL: Address = Address([0u8; ADDRESS_SIZE]);
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum TransactionType {
+    HashOnly,
+    Full,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct TransactionObject {
     pub address: Address,
     pub attachment_timestamp: u64,
@@ -160,56 +192,54 @@ pub struct TransactionObject {
     pub timestamp: u64,
     pub value: u32,
     pub data_type: TransactionType,
+    pub signature: Signature,
 }
 
 pub struct Transaction {
-    pub transaction: TransactionObject,
+    pub object: TransactionObject,
     pub bytes: SerializedBuffer,
+    pub weight_magnitude: u16,
 }
 
 impl Transaction {
-
-    // fn get_current_index() created by Andrii Zozulia
-
-    pub fn get_current_index(&self)->u32{
-        self.transaction.current_index
+    pub fn get_current_index(&self) -> u32 {
+        self.object.current_index
     }
 
-    // fn  get_approvers() created by Andrii Zozulia
-
-    pub fn get_approvers(&self, hive:&Hive) -> HashSet<Hash> {
-        let result:HashSet<Hash> = HashSet::new();
-
+    pub fn get_approvers(&self, hive: &Hive) -> HashSet<Hash> {
+        let result: HashSet<Hash> = HashSet::new();
         return result;
-        //TO DO
     }
-    pub fn from_hash(&self, hash:&Hash) -> Self{
-        let mut transaction = TransactionObject::from_hash(*hash);
+
+    pub fn from_hash(hash: Hash) -> Self {
+        let mut transaction = TransactionObject::from_hash(hash);
         let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
         transaction.serialize_to_stream(&mut bytes);
-        Transaction{
-            transaction,
-            bytes
+        Transaction {
+            weight_magnitude: transaction.hash.trailing_zeros(),
+            object: transaction,
+            bytes,
         }
     }
-    pub fn get_trunk_transaction_hash(&self) -> Hash{
-        let result = self.transaction.trunk_transaction.clone();
-        return result;
-    }
-    pub fn get_branch_transaction_hash(&self) -> Hash{
-        let result = self.transaction.branch_transaction.clone();
+
+    pub fn get_trunk_transaction_hash(&self) -> Hash {
+        let result = self.object.trunk_transaction.clone();
         return result;
     }
 
-    //
+    pub fn get_branch_transaction_hash(&self) -> Hash {
+        let result = self.object.branch_transaction.clone();
+        return result;
+    }
 
     pub fn from_bytes(mut bytes: SerializedBuffer) -> Self {
         let mut transaction = TransactionObject::new();
         transaction.read_params(&mut bytes);
 
         Transaction {
-            transaction,
-            bytes
+            weight_magnitude: transaction.hash.trailing_zeros(),
+            object: transaction,
+            bytes,
         }
     }
 
@@ -218,8 +248,9 @@ impl Transaction {
         transaction.serialize_to_stream(&mut bytes);
 
         Transaction {
-            transaction,
-            bytes
+            weight_magnitude: transaction.hash.trailing_zeros(),
+            object: transaction,
+            bytes,
         }
     }
 
@@ -229,9 +260,16 @@ impl Transaction {
         transaction.serialize_to_stream(&mut bytes);
 
         Transaction {
-            transaction,
-            bytes
+            weight_magnitude: transaction.hash.trailing_zeros(),
+            object: transaction,
+            bytes,
         }
+    }
+
+    pub fn calculate_signature(&mut self, sk: PrivateKey) {
+        let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+        let pk = PublicKey(self.object.address.0.to_vec());
+        ntrumls.sign(&self.object.hash, &sk, &pk);
     }
 
     pub fn new_random() -> Self {
@@ -240,18 +278,24 @@ impl Transaction {
         transaction.serialize_to_stream(&mut bytes);
 
         Transaction {
-            transaction,
-            bytes
+            weight_magnitude: transaction.hash.trailing_zeros(),
+            object: transaction,
+            bytes,
         }
     }
 
-    pub fn get_hash(&mut self) -> Hash {
+    pub fn calculate_hash(&mut self) -> Hash {
         if self.bytes.position() == 0 {
-            self.transaction.serialize_to_stream(&mut self.bytes);
+            self.object.serialize_to_stream(&mut self.bytes);
         }
 
+        let mut sb = SerializedBuffer::new_with_size(ADDRESS_SIZE + 4 + 8);
+        sb.write_bytes(&self.object.address);
+        sb.write_u32(self.object.value);
+        sb.write_u64(self.object.timestamp);
+
         let mut sha = Sha3::sha3_256();
-        sha.input(&self.bytes.buffer);
+        sha.input(&sb.buffer);
 
         let mut buf = [0u8; HASH_SIZE];
         sha.result(&mut buf);
@@ -264,8 +308,8 @@ impl Transaction {
         let mut buf = [0u8; 32];
 
         let mut in_buf = SerializedBuffer::new_with_size(HASH_SIZE * 2 + 8);
-        in_buf.write_bytes(&self.transaction.branch_transaction);
-        in_buf.write_bytes(&self.transaction.trunk_transaction);
+        in_buf.write_bytes(&self.object.branch_transaction);
+        in_buf.write_bytes(&self.object.trunk_transaction);
         in_buf.write_u64(nonce);
 
         'nonce_loop: loop {
@@ -291,12 +335,11 @@ impl Transaction {
 }
 
 impl TransactionObject {
-    pub const SVUID : i32 = 342631123;
+    pub const SVUID: i32 = 342631123;
 
     pub fn new() -> Self {
         TransactionObject::from_hash(HASH_NULL)
     }
-
 
     pub fn from_hash(hash: Hash) -> Self {
         TransactionObject {
@@ -315,6 +358,7 @@ impl TransactionObject {
             timestamp: 0u64,
             value: 0u32,
             data_type: TransactionType::HashOnly,
+            signature: Signature(Vec::new()),
         }
     }
 
@@ -322,6 +366,7 @@ impl TransactionObject {
         use rand::Rng;
         use rand::thread_rng;
 
+        let mut signature = Signature(Vec::new());
         let mut address = ADDRESS_NULL;
         let mut branch_transaction = HASH_NULL;
         let mut trunk_transaction = HASH_NULL;
@@ -337,12 +382,14 @@ impl TransactionObject {
         let last_index = 0u32;
         let value = 0u32;
 
+        thread_rng().fill_bytes(&mut signature.0);
         thread_rng().fill_bytes(&mut branch_transaction);
         thread_rng().fill_bytes(&mut address);
         thread_rng().fill_bytes(&mut trunk_transaction);
         thread_rng().fill_bytes(&mut bundle);
 
         TransactionObject {
+            signature,
             address,
             attachment_timestamp,
             attachment_timestamp_lower_bound,
@@ -384,36 +431,77 @@ impl Serializable for TransactionObject {
             TransactionType::Full => 1,
         };
         stream.write_byte(b);
+        stream.write_byte_array(&self.signature.0);
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        stream.read_bytes(&mut self.hash,HASH_SIZE);
-        stream.read_bytes(&mut self.address,ADDRESS_SIZE);
+        stream.read_bytes(&mut self.hash, HASH_SIZE);
+        stream.read_bytes(&mut self.address, ADDRESS_SIZE);
         self.attachment_timestamp = stream.read_u64();
         self.attachment_timestamp_lower_bound = stream.read_u64();
         self.attachment_timestamp_upper_bound = stream.read_u64();
-        stream.read_bytes(&mut self.branch_transaction,HASH_SIZE);
-        stream.read_bytes(&mut self.trunk_transaction,HASH_SIZE);
-        stream.read_bytes(&mut self.bundle,HASH_SIZE);
+        stream.read_bytes(&mut self.branch_transaction, HASH_SIZE);
+        stream.read_bytes(&mut self.trunk_transaction, HASH_SIZE);
+        stream.read_bytes(&mut self.bundle, HASH_SIZE);
         self.current_index = stream.read_u32();
         self.last_index = stream.read_u32();
         self.nonce = stream.read_u64();
-        stream.read_bytes(&mut self.tag,HASH_SIZE);
+        stream.read_bytes(&mut self.tag, HASH_SIZE);
         self.timestamp = stream.read_u64();
         self.value = stream.read_u32();
-        self.data_type =  match stream.read_byte() {
+        self.data_type = match stream.read_byte() {
             1 => TransactionType::Full,
             _ => TransactionType::HashOnly
         };
+        self.signature = Signature(stream.read_byte_array().unwrap());
     }
 }
 
 impl Serializable for Transaction {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-        self.transaction.serialize_to_stream(stream);
+        self.object.serialize_to_stream(stream);
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        self.transaction.read_params(stream);
+        self.object.read_params(stream);
     }
+}
+
+// TODO: return Result
+pub fn validate_transaction(transaction: &mut Transaction) -> bool {
+    // check hash
+    let calculated_hash = transaction.calculate_hash();
+    if transaction.object.hash != calculated_hash {
+        return false;
+    }
+
+    // check nonce
+    let mut nonce = 0;
+    let mut sha = Sha3::sha3_256();
+    let mut buf = [0u8; 32];
+
+    let mut in_buf = SerializedBuffer::new_with_size(HASH_SIZE * 2 + 8);
+    in_buf.write_bytes(&transaction.object.branch_transaction);
+    in_buf.write_bytes(&transaction.object.trunk_transaction);
+    in_buf.write_u64(transaction.object.nonce);
+
+    sha.input(&in_buf.buffer);
+    sha.result(&mut buf);
+
+    for i in 0..MIN_WEIGHT_MAGNITUDE as usize {
+        let x = buf[i / 8];
+        let y = (0b10000000 >> (i % 8)) as u8;
+
+        if x & y != 0 {
+            return false;
+        }
+    }
+
+    // check signature
+//        let sign = transaction.transaction.signature;
+//        let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+//        let data = [0u8; 1];
+//        let pk = PublicKey(&transaction.transaction.address.0);
+//        ntrumls.verify(data, &sign, &pk);
+    true
 }

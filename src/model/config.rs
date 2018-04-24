@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
+// TODO: remove
 pub const PORT: u16 = 44832;
 
+#[derive(Clone)]
 pub struct Configuration {
     params: HashMap<u8, ConfigurationValue>
 }
 
+#[derive(Clone)]
 pub enum ConfigurationValue {
     String(String),
     Int(i32),
@@ -55,22 +58,22 @@ pub enum ConfigurationSettings {
 
 impl Configuration {
     pub fn set_string(&mut self, param: ConfigurationSettings, value: &str) {
-        let _ = self.params.insert(ConfigurationSettings::Port as u8, ConfigurationValue::String(value.to_string()));
+        let _ = self.params.insert(param as u8, ConfigurationValue::String(value.to_string()));
     }
 
     pub fn set_int(&mut self, param: ConfigurationSettings, value: i32) {
-        let _ = self.params.insert(ConfigurationSettings::Port as u8, ConfigurationValue::Int(value));
+        let _ = self.params.insert(param as u8, ConfigurationValue::Int(value));
     }
 
     pub fn set_float(&mut self, param: ConfigurationSettings, value: f32) {
-        let _ = self.params.insert(ConfigurationSettings::Port as u8, ConfigurationValue::Float(value));
+        let _ = self.params.insert(param as u8, ConfigurationValue::Float(value));
     }
 
     pub fn set_bool(&mut self, param: ConfigurationSettings, value: bool) {
-        let _ = self.params.insert(ConfigurationSettings::Port as u8, ConfigurationValue::Bool(value));
+        let _ = self.params.insert(param as u8, ConfigurationValue::Bool(value));
     }
 
-    pub fn get_string(&mut self, param: ConfigurationSettings) -> Option<String> {
+    pub fn get_string(&self, param: ConfigurationSettings) -> Option<String> {
         let param = param as u8;
 
         self.params.get(&param).and_then(|p| {
@@ -82,7 +85,7 @@ impl Configuration {
         })
     }
 
-    pub fn get_int(&mut self, param: ConfigurationSettings) -> Option<i32> {
+    pub fn get_int(&self, param: ConfigurationSettings) -> Option<i32> {
         let param = param as u8;
 
         self.params.get(&param).and_then(|p| {
@@ -132,7 +135,7 @@ impl Configuration {
         config.set_string(ConfigurationSettings::RemoteLimitApi, "");
         config.set_string(ConfigurationSettings::RemoteAuth, "");
         config.set_string(ConfigurationSettings::Neighbors, "");
-        config.set_string(ConfigurationSettings::DBPath, "mainnetdb");
+        config.set_string(ConfigurationSettings::DBPath, "data");
         config.set_int(ConfigurationSettings::DBCacheSize, 100000); //KB
         config.set_string(ConfigurationSettings::Config, "hive.ini");
         config.set_float(ConfigurationSettings::PRemoveRequest, 0.01);
@@ -143,7 +146,7 @@ impl Configuration {
         config.set_float(ConfigurationSettings::PPropagateRequest, 0.01);
         config.set_string(ConfigurationSettings::MainDB, "rocksdb");
         config.set_float(ConfigurationSettings::SendLimit, -1.0);
-        config.set_int(ConfigurationSettings::MaxPeers, 0);
+        config.set_int(ConfigurationSettings::MaxPeers, 5);
         config.set_bool(ConfigurationSettings::DNSRefresherEnabled, true);
         config.set_bool(ConfigurationSettings::DNSResolutionEnabled, true);
         config.set_bool(ConfigurationSettings::Revalidate, false);

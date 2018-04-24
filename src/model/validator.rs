@@ -17,6 +17,7 @@ struct Pair(Hash, i64);
 pub struct Validator {}
 
 pub struct MonteCarlo {
+    // TODO: использовать utils::AM
     hive: Hive,
 }
 
@@ -27,9 +28,12 @@ impl MonteCarlo {
             hive,
         }
     }
-    pub fn set_hive(&mut self, hive_: &Hive) {
-        self.hive = *hive_.clone();
-    }
+
+    // TODO: сделать по-другому
+//    pub fn set_hive(&mut self, hive_: &Hive) {
+//        self.hive = *hive_.clone();
+//    }
+
     pub fn random_walk(&self,
                        visited_hashes: &HashSet<Hash>,
                        diff: &HashMap<Hash, i64>,
@@ -52,9 +56,8 @@ impl MonteCarlo {
         let mut my_diff = diff.clone();
         let mut my_approved_hashes = visited_hashes.clone();
 
-
         while !tip.is_null() {
-            transaction_obj.from_hash(&tip);
+            transaction_obj = Transaction::from_hash(tip.clone());
             tip_set = transaction_obj.get_approvers(&self.hive).clone();
 
             if transaction_obj.get_current_index() == 0 {
@@ -66,7 +69,7 @@ impl MonteCarlo {
                     break;
                 } else if !ledgerValidator.updateDiff(myApprovedHashes, myDiff, transactionViewModel.getHash()) {
                     break;
-                }  else*/ if transaction_obj.get_hash().equals(&extra_tip) {
+                }  else*/ if transaction_obj.calculate_hash() == *extra_tip {
                     break;
                 }
             }
@@ -80,7 +83,8 @@ impl MonteCarlo {
                 let mut hash_iterator = tip_set.iter();
 
                 match hash_iterator.next() {
-                    Some(hash) => tip = *tip_set.get(hash).unwrap(),
+                    // FIXME: нельзя просто делать unwrap, иначе это может вызвать ошибку
+                    Some(hash) => tip = tip_set.get(&hash).unwrap().clone(),
                     None => tip = HASH_NULL
                 }
             } else {
@@ -116,8 +120,8 @@ impl MonteCarlo {
                         break;
                     }
                 }
-                tip = tips[approver_index as usize];
-                if transaction_obj.get_hash().equals(&tip) {
+                tip = tips[approver_index as usize].clone();
+                if transaction_obj.calculate_hash() == tip {
                     break;
                 }
             }
@@ -142,6 +146,7 @@ impl MonteCarlo {
         for i in *iterations..0 {
             tail = self.random_walk(visited_hashes, diff, tip, extra_tip, ratings, max_depth, max_depth_ok);
             if monte_carlo_integrations.contains_key(&tail) {
+                // TODO: unwrap
                 MonteCarlo::put(monte_carlo_integrations, &tail, &(*(&map_clone.get(&tail).unwrap()) + 1));
             } else {
                 MonteCarlo::put(monte_carlo_integrations, &tail, &1);
@@ -182,12 +187,12 @@ impl MonteCarlo {
 
     fn serial_update_ratings(&self,
                              visited_hashes: &HashSet<Hash>,
-                             txHash: &Hash,
+                             tx_hash: &Hash,
                              ratings: &mut HashMap<Hash, i64>,
                              analyzed_tips: &mut HashSet<Hash>,
                              extra_tip: &Hash) {
         let mut hashes_to_rate: LinkedList<Hash> = LinkedList::new();
-        hashes_to_rate.push_front(*txHash);
+        hashes_to_rate.push_front(*tx_hash);
         let mut current_hash: Hash;
         let mut added_back: bool;
         while !hashes_to_rate.is_empty() {
@@ -198,8 +203,7 @@ impl MonteCarlo {
                     return;
                 }
             }
-            let mut transaction: Transaction = Transaction::new();
-            transaction.from_hash(&current_hash);
+            let mut transaction: Transaction = Transaction::from_hash(current_hash);
             added_back = false;
             let mut approvers: HashSet<Hash> = transaction.get_approvers(&self.hive).clone();
             for approver in &approvers {
@@ -207,7 +211,7 @@ impl MonteCarlo {
                     Some(..) => true,
                     None => false
                 };
-                if flag && !approver.equals(&current_hash) {
+                if flag && *approver != current_hash {
                     if !added_back {
                         added_back = true;
                         hashes_to_rate.push_front(current_hash);
@@ -236,7 +240,7 @@ impl MonteCarlo {
 
     fn rating_calc(extra_tip: &Hash, visited_hashes: &HashSet<Hash>, current_hash: &Hash, approvers: &HashSet<Hash>, ratings: &HashMap<Hash, i64>) -> i64 {
         let mut result: i64;
-        result = match extra_tip.equals(&HASH_NULL) && visited_hashes.contains(current_hash) {
+        result = match *extra_tip == HASH_NULL && visited_hashes.contains(current_hash) {
             true => 0,
             false => 1
         };
@@ -252,6 +256,7 @@ impl MonteCarlo {
         let result: i64;
         match map.contains_key(&key) {
             true => {
+                // TODO: unwrap
                 result = *map.get(&key).unwrap();
                 map.insert(*key, *value);
                 return Some(result);
