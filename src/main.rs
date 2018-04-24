@@ -1,195 +1,67 @@
+//#![feature(collection_placement)]
+//#![feature(placement_in_syntax)]
+
 extern crate byteorder;
 extern crate mio;
 extern crate rand;
 extern crate slab;
+//extern crate secp256k1;
 extern crate ethcore_bigint as bigint;
 extern crate memorydb;
 extern crate patricia_trie;
-extern crate env_logger;
-extern crate rustc_serialize;
-#[macro_use] extern crate log;
-#[macro_use] extern crate lazy_static;
 
-#[macro_use] pub mod utils;
+#[macro_use] extern crate log;
+extern crate env_logger;
+
 pub mod network;
 pub mod model;
 pub mod storage;
 
-use std::{
-    sync::{mpsc::channel, Arc, Weak, Mutex},
-    io::{self, Read},
-    env,
-    collections::VecDeque,
-    thread,
-    thread::Builder,
-};
+use std::net::{SocketAddr, IpAddr};
 
 use mio::Poll;
-use mio::net::TcpListener;
+use mio::net::{TcpListener, TcpStream};
 
 use network::node::*;
-use network::replicator_pool::ReplicatorPool;
-use model::config::{PORT, Configuration, ConfigurationSettings};
-use model::config;
-
-use env_logger::LogBuilder;
-use log::{LogRecord, LogLevelFilter};
-use storage::Hive;
-
+use network::connection::*;
+use network::packet::SerializedBuffer;
+use model::config::PORT;
+use model::transaction::{TransactionObject, Transaction};
+use storage::hive::Hive;
+use model::config::Configuration;
+use bigint::hash::H256;
+use memorydb::MemoryDB;
+//
+use model::validator::MonteCarlo;
+use model::transaction::Hash;
+use model::transaction::HASH_NULL;
+use std::collections::HashMap;
+use std::collections::HashSet;
+//
 fn main() {
-}
 
-#[test]
-fn test_threads() {
-    let format = |record: &LogRecord| {
-        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
-    };
+    env_logger::init().expect("Failed to init logger");
+   /* //
+    let m_c:MonteCarlo = MonteCarlo::new();
+    let values :( &HashSet<Hash>, &HashMap<Hash, i64>,& Hash, &Hash, & mut HashMap<Hash, i64>, &u32, &u32, &HashSet<Hash>) =
+        (&HashSet::new(), &HashMap::new(), &HASH_NULL, &HASH_NULL, & mut HashMap::new(), &0, &0, &HashSet::new());
 
-    let mut builder = LogBuilder::new();
-    builder.format(format).filter(None, LogLevelFilter::Info);
+    let validator:Hash = m_c.markov_chain_monte_carlo(values.0,
+                                                     values.1,
+                                                     values.2,
+                                                     values.3,
+                                                     values.4,
+                                                     values.5,
+                                                     values.6,
+                                                     values.7);
+    //
+    */
+    let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
+    let addr = SocketAddr::new(host, PORT);
+    let sock = TcpListener::bind(&addr).expect("Failed to bind address");
 
-    if env::var("RUST_LOG").is_ok() {
-        builder.parse(&env::var("RUST_LOG").unwrap());
-    }
+    let mut poll = Poll::new().expect("Failed to create Poll");
+    let mut server = Node::new(sock);
 
-    builder.init().unwrap();
-
-    let mut jhs = VecDeque::new();
-
-    let ports = [0, 10001, 10002].iter();
-    for port in ports {
-        let port = *port;
-        let mut neighbors = String::new();
-        if port != 0 {
-            let ports2 = [44832, 10001, 10002].iter();
-            let v: Vec<String> = ports2.filter(|p| **p != port).map(|p| format!("127.0.0.1:{}", p)).collect();
-            neighbors = v.join(" ");
-        }
-        println!("{}", neighbors);
-
-        let jh = Builder::new().name(format!("pmnc {}", port)).spawn(move || {
-            let mut config = Configuration::new();
-            if port != 0 {
-                config.set_string(ConfigurationSettings::Neighbors, &neighbors);
-                config.set_int(ConfigurationSettings::Port, port);
-            }
-
-            let mut hive = Arc::new(Mutex::new(Hive::new()));
-
-            // used for shutdown replicator pool
-            let (tx, rx) = channel::<()>();
-            let mut node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), &config, tx)));
-
-            let node_copy = node.clone();
-            let replicator_jh = thread::spawn(move || {
-                let mut replicator_pool = ReplicatorPool::new(&config, Arc::downgrade(&node_copy), rx);
-                replicator_pool.run();
-            });
-
-            {
-                let mut guard = node.lock().unwrap();
-                guard.init(replicator_jh);
-                guard.run().expect("Failed to run server");
-            }
-
-            use std::thread;
-            use std::time::Duration;
-            thread::sleep(Duration::from_secs(9));
-            node.lock().unwrap().shutdown();
-        }).unwrap();
-
-        jhs.push_back(jh);
-    }
-
-    while let Some(jh) = jhs.pop_front() {
-        jh.join();
-    }
-}
-
-#[test]
-fn hive_test() {
-    use model::{Transaction, TransactionObject};
-    use model::transaction::ADDRESS_NULL;
-    use storage::hive::{CFType};
-
-    use self::rustc_serialize::hex::{ToHex, FromHex};
-    use rand::Rng;
-
-    let mut hive = Hive::new();
-    hive.init();
-
-    let mut t0 = TransactionObject::new_random();
-    hive.storage_put(CFType::Transaction, &t0.hash, &t0);
-    let t1 = hive.storage_get_transaction(&t0.hash).expect("failed to load transaction from db");
-    assert_eq!(t0, t1.object);
-
-    let addr0 = ADDRESS_NULL;
-
-    let random_sk = true;
-
-    let mut data =
-        "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A\
-        3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87\
-        EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A\
-        0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A774\
-        84468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B021\
-        4EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().expect("invalid sk");
-    let mut sk_data = [0u8; 32 * 8];
-    if random_sk {
-        rand::thread_rng().fill_bytes(&mut sk_data);
-    } else {
-        sk_data.copy_from_slice(&data[..(32 * 8)]);
-    }
-
-    let addr = Hive::generate_address(&sk_data, 0);
-//    hive.storage_put(CFType::Address, &addr, &10000u32);
-//    let balance = hive.storage_get_address(&addr).expect("storage get address error");
-
-    println!("sk={}", sk_data.to_hex().to_uppercase());
-    println!("address={:?}", addr);
-//    println!("address={:?} balance={}", addr, balance);
-}
-
-#[test]
-fn hive_transaction_test() {
-    use model::{Transaction, TransactionObject};
-    use model::transaction::ADDRESS_NULL;
-    use storage::hive::{CFType};
-
-    use self::rustc_serialize::hex::{ToHex, FromHex};
-    use rand::Rng;
-
-    let mut hive = Hive::new();
-    hive.init();
-
-    let mut t0 = TransactionObject::new_random();
-    hive.storage_put(CFType::Transaction, &t0.hash, &t0);
-    let t1 = hive.storage_get_transaction(&t0.hash).expect("failed to load transaction from db");
-    assert_eq!(t0, t1.object);
-
-    let addr0 = ADDRESS_NULL;
-
-    let random_sk = true;
-
-    let mut data =
-        "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A\
-        3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87\
-        EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A\
-        0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A774\
-        84468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B021\
-        4EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().expect("invalid sk");
-    let mut sk_data = [0u8; 32 * 8];
-    if random_sk {
-        rand::thread_rng().fill_bytes(&mut sk_data);
-    } else {
-        sk_data.copy_from_slice(&data[..(32 * 8)]);
-    }
-
-    let addr = Hive::generate_address(&sk_data, 0);
-//    hive.storage_put(CFType::Address, &addr, &10000u32);
-//    let balance = hive.storage_get_address(&addr).expect("storage get address error");
-
-    println!("sk={}", sk_data.to_hex().to_uppercase());
-    println!("address={:?}", addr);
-//    println!("address={:?} balance={}", addr, balance);
+    server.run(&mut poll).expect("Failed to run server");
 }

@@ -1,5 +1,6 @@
 extern crate rlibc;
 
+use byteorder::{ByteOrder};
 use std::cell::RefCell;
 use std::ops::Deref;
 
@@ -293,17 +294,13 @@ impl SerializedBuffer {
         }
     }
 
-    fn write_bytes_internal(&mut self, b:&[u8], length:usize) {
-        if length == 0 {
-            return;
-        }
-
+    fn write_bytes_internal(&mut self, b:&[u8], offset: usize, length:usize) {
         use std::mem::size_of;
         let mut buffer_ptr = &mut self.buffer[0] as *mut u8;
         let b_ptr = &b[0] as *const u8;
 
         unsafe {
-            rlibc::memcpy(buffer_ptr.offset(self.position as isize), b_ptr, size_of::<u8>() * length);
+            rlibc::memcpy(buffer_ptr.offset(self.position as isize), b_ptr.offset(offset as isize), size_of::<u8>() * length);
         }
         self.position += length;
     }
@@ -315,19 +312,19 @@ impl SerializedBuffer {
                 panic!("write bytes error");
                 return;
             }
-            self.write_bytes_internal(b, length);
+            self.write_bytes_internal(b, 0, length);
         } else {
             self.capacity += length;
         }
     }
 
-    pub fn write_bytes_offset(&mut self, b:&[u8], length:usize) {
+    pub fn write_bytes_offset(&mut self, b:&[u8], offset:usize, length:usize) {
         if !self.calculated_size_only {
             if self.position + length > self.limit {
                 panic!("write bytes error");
                 return;
             }
-            self.write_bytes_internal(b, length);
+            self.write_bytes_internal(b, offset, length);
         } else {
             self.capacity += length;
         }
@@ -343,7 +340,7 @@ impl SerializedBuffer {
                 panic!("write bytes error");
                 return;
             }
-            self.write_bytes_internal(&b.buffer[b.position()..], length);
+            self.write_bytes_internal(&b.buffer[b.position()..], 0, length);
             let lim = b.limit();
             b.set_position(lim);
         } else {
@@ -351,9 +348,7 @@ impl SerializedBuffer {
         }
     }
 
-    pub fn write_byte_array(&mut self, b: &[u8]) {
-        let length = b.len();
-
+    pub fn write_byte_array(&mut self, b: &[u8], offset: usize, length: usize) {
         if length <= 253 {
             if !self.calculated_size_only {
                 if self.position + 1 > self.limit {
@@ -390,7 +385,7 @@ impl SerializedBuffer {
                 return;
             }
 
-            self.write_bytes_internal(b, length);
+            self.write_bytes_internal(b, offset, length);
         } else {
             self.capacity += length;
         }
@@ -418,7 +413,7 @@ impl SerializedBuffer {
 
     pub fn write_byte_array_serialized_buffer(&mut self, b: &mut SerializedBuffer) {
         b.rewind();
-        self.write_byte_array(&b.buffer);
+        self.write_byte_array(&b.buffer, 0, b.limit);
     }
 
     pub fn write_f32(&mut self, f: f32) {
@@ -430,7 +425,7 @@ impl SerializedBuffer {
     }
 
     pub fn write_string(&mut self, s:String) {
-        self.write_byte_array(s.as_ref());
+        self.write_byte_array(s.as_ref(), 0, s.len());
     }
 
     pub fn read_i32(&mut self) -> i32 {

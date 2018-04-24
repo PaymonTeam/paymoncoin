@@ -1,179 +1,229 @@
 extern crate nix;
-extern crate ntrumls;
 
-use std::io::Error;
-use model::config::{Configuration, ConfigurationSettings};
+use std::io::{self, ErrorKind};
+
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use mio::net::TcpListener;
+#[cfg(any(target_os = "dragonfly",
+target_os = "freebsd", target_os = "ios", target_os = "macos"))]
+use mio::unix::UnixReady;
+
+use slab;
+
+use network::connection::Connection;
 use network::packet::{SerializedBuffer};
-use std::sync::{Arc, Weak, Mutex};
-use network::neighbor::Neighbor;
-use std::net::{TcpStream, SocketAddr, IpAddr};
-use std::sync::mpsc::Sender;
-use std::collections::VecDeque;
-use model::{TransactionObject, Transaction, TransactionType};
-use self::ntrumls::{NTRUMLS, PQParamSetID, PublicKey, PrivateKey};
-use storage::Hive;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
-use std::thread::JoinHandle;
-use std::time::Duration;
-use model::transaction;
-//#[macro_use]
-//use utils;
-use utils::{AM, AWM};
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
     panic!();
 }
 
+type Slab<T> = slab::Slab<T, Token>;
+
 pub struct Node {
-    hive: AWM<Hive>,
-    pub neighbors: AM<Vec<AM<Neighbor>>>,
-    config: Configuration,
-    node_tx: Sender<()>,
-    broadcast_queue: AM<VecDeque<Transaction>>,
-    receive_queue: AM<VecDeque<Transaction>>,
-    running: Arc<AtomicBool>,
-    thread_join_handles: VecDeque<JoinHandle<()>>,
+    sock: TcpListener,
+    token: Token,
+    conns: Slab<Connection>,
+    events: Events,
+    running: bool,
 }
 
 impl Node {
-    pub fn new(hive: Weak<Mutex<Hive>>, config: &Configuration, node_tx: Sender<()>) -> Node {
+    pub fn new(sock: TcpListener) -> Node {
         Node {
-            hive,
-            running: Arc::new(AtomicBool::new(true)),
-            neighbors: make_am!(Vec::new()),
-            config: config.clone(),
-            node_tx,
-            broadcast_queue: make_am!(VecDeque::new()),
-            receive_queue: make_am!(VecDeque::new()),
-            thread_join_handles: VecDeque::new(),
+            sock,
+            token: Token(1_000_000),
+            conns: Slab::with_capacity(128),
+            events: Events::with_capacity(1024),
+            running: true,
         }
     }
 
-    pub fn init(&mut self, replicator_jh: JoinHandle<()>) {
-        if let Some(s) = self.config.get_string(ConfigurationSettings::Neighbors) {
-            if s.len() > 0 {
-                for addr in s.split(" ") {
-                    if let Ok(addr) = addr.parse::<SocketAddr>() {
-                        if let Ok(mut neighbors) = self.neighbors.lock() {
-                            neighbors.push(Arc::new(Mutex::new(Neighbor::from_address(addr))));
-                        }
-                    } else {
-                        debug!("invalid address: {:?}", addr);
-                    }
-                }
-            }
-        }
+    pub fn run(&mut self, poll: &mut Poll) -> io::Result<()> {
+        self.register(poll)?;
 
-        let running_weak = Arc::downgrade(&self.running.clone());
-        let broadcast_queue_weak = Arc::downgrade(&self.broadcast_queue.clone());
-        let neighbors_weak = Arc::downgrade(&self.neighbors.clone());
-        let jh = thread::spawn(|| Node::broadcast_thread(running_weak, broadcast_queue_weak, neighbors_weak));
-        self.thread_join_handles.push_back(jh);
-
-        let running_weak = Arc::downgrade(&self.running.clone());
-        let receive_queue_weak = Arc::downgrade(&self.receive_queue.clone());
-        let broadcast_queue_weak = Arc::downgrade(&self.broadcast_queue.clone());
-        let hive_weak = self.hive.clone();
-        let jh = thread::spawn(|| Node::receive_thread(running_weak, receive_queue_weak, broadcast_queue_weak, hive_weak));
-        self.thread_join_handles.push_back(jh);
-
-        self.thread_join_handles.push_back(replicator_jh);
-    }
-
-    fn receive_thread(running: Weak<AtomicBool>, receive_queue: AWM<VecDeque<Transaction>>, broadcast_queue: AWM<VecDeque<Transaction>>, hive: AWM<Hive>) {
+        info!("Server run loop starting...");
         loop {
-            if let Some(arc) = running.upgrade() {
-                let b = arc.load(Ordering::SeqCst);
-                if !b { break; }
+            let cnt = poll.poll(&mut self.events, None)?;
 
-                if let Some(arc) = receive_queue.upgrade() {
-                    if let Ok(mut queue) = arc.lock() {
-                        if let Some(mut t) = queue.pop_front() {
-                            let validated = transaction::validate_transaction(&mut t);
-                            if validated {
-                                if let Some(arc) = hive.upgrade() {
-                                    if let Ok(mut hive) = arc.lock() {
-                                        let stored = hive.put_transaction(&t);
+            let mut lst = vec![];
 
-                                        if stored {
-                                            if let Some(arc) = broadcast_queue.upgrade() {
-                                                if let Ok(mut broadcast_queue) = arc.lock() {
-                                                    broadcast_queue.push_back(t);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                thread::sleep(Duration::from_secs(1));
+            for event in self.events.iter() {
+                lst.push(event);
             }
+
+            for event in lst {
+                self.ready(poll, event.token(), event.readiness());
+            }
+
+            self.tick(poll);
         }
     }
 
-    fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>) {
-        loop {
-            if let Some(arc) = running.upgrade() {
-                let b = arc.load(Ordering::SeqCst);
-                if !b { break; }
+    pub fn register(&mut self, poll: &mut Poll) -> io::Result<()> {
+        poll.register(
+            &self.sock,
+            self.token,
+            Ready::readable(),
+            PollOpt::edge()
+        ).or_else(|e| {
+            error!("Failed to register server {:?}, {:?}", self.token, e);
+            Err(e)
+        })
+    }
 
-                if let Some(arc) = broadcast_queue.upgrade() {
-                    if let Ok(mut queue) = arc.lock() {
-                        if let Some(t) = queue.pop_front() {
-                            if let Some(arc) = neighbors.upgrade() {
-                                if let Ok(neighbors) = arc.lock() {
-                                    for n in neighbors.iter() {
-                                        if let Ok(mut n) = n.lock() {
-                                            let transaction = t.object.clone();
-                                            n.send_packet(transaction);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+    fn tick(&mut self, poll: &mut Poll) {
+        trace!("Handling end of tick");
 
-                thread::sleep(Duration::from_secs(1));
+        let mut reset_tokens = Vec::new();
+
+        for c in self.conns.iter_mut() {
+            if c.is_reset() {
+                reset_tokens.push(c.token);
+            } else if c.is_idle() {
+                c.reregister(poll)
+                    .unwrap_or_else(|e| {
+                        warn!("Reregister failed {:?}", e);
+                        c.mark_reset();
+                        reset_tokens.push(c.token);
+                    });
             }
         }
-    }
 
-    pub fn run(&mut self) -> Result<(), Error> {
-//        if let Some(ref s) = self.receiver {
-//            if let Some(ref s) = s.upgrade() {
-//                let mut receiver = s.lock().unwrap();
-//                (*receiver).run();
-//            }
-//        }
-        return Ok(());
-    }
-
-    pub fn on_connection_data_received(&mut self, mut data: SerializedBuffer, addr: SocketAddr) {
-        if let Ok(mut neighbors) = self.neighbors.lock() {
-            let neighbor = match neighbors.iter().find(
-                |arc| {
-                    if let Ok(n) = arc.lock() { return n.addr == addr }
-                    false
-                }) {
-                Some(arc) => arc,
+        for token in reset_tokens {
+            match self.conns.remove(token) {
+                Some(_c) => {
+                    debug!("reset connection; token={:?}", token);
+                }
                 None => {
-                    info!("Received data from unknown neighbor {:?}", addr);
+                    warn!("Unable to remove connection for {:?}", token);
+                }
+            }
+        }
+    }
+
+//    #[cfg(any(target_os = "dragonfly",
+//    target_os = "freebsd", target_os = "ios", target_os = "macos"))]
+    fn ready(&mut self, poll: &mut Poll, token: Token, event: Ready) {
+//        debug!("{:?} event = {:?}", token, event);
+        let event = Ready::from(event);
+
+        if event.is_error() {
+            warn!("Error event for {:?}", token);
+            self.find_connection_by_token(token).mark_reset();
+            return;
+        }
+
+        if event.is_hup() {
+            trace!("Hup event for {:?}", token);
+            self.find_connection_by_token(token).mark_reset();
+            return;
+        }
+
+        let event = Ready::from(event);
+
+        if event.is_writable() {
+            trace!("Write event for {:?}", token);
+            assert_ne!(self.token, token, "Received writable event for Server");
+
+            let conn = self.find_connection_by_token(token);
+
+            if conn.is_reset() {
+                info!("{:?} has already been reset", token);
+                return;
+            }
+
+            conn.writable().unwrap_or_else(|e| {
+                warn!("Write event failed for {:?}, {:?}", token, e);
+                conn.mark_reset();
+            });
+        }
+
+        if event.is_readable() {
+            trace!("Read event for {:?}", token);
+            if self.token == token {
+                self.accept(poll);
+            } else {
+                if self.find_connection_by_token(token).is_reset() {
+                    info!("{:?} has already been reset", token);
+                    return;
+                }
+
+                self.readable(token).unwrap_or_else(|e| {
+                    warn!("Read event failed for {:?}: {:?}", token, e);
+                    self.find_connection_by_token(token).mark_reset();
+                });
+            }
+        }
+
+        if self.token != token {
+            self.find_connection_by_token(token).mark_idle();
+        }
+    }
+
+    fn accept(&mut self, poll: &mut Poll) {
+        debug!("server accepting new socket");
+
+        loop {
+            let sock = match self.sock.accept() {
+                Ok((sock, _)) => sock,
+                Err(e) => {
+                    if e.kind() == ErrorKind::WouldBlock {
+                        debug!("accept encountered WouldBlock");
+                    } else {
+                        error!("Failed to accept new socket, {:?}", e);
+                    }
                     return;
                 }
             };
+
+            let token = match self.conns.vacant_entry() {
+                Some(entry) => {
+                    debug!("registering {:?} with poller", entry.index());
+                    let c = Connection::new(sock, entry.index());
+                    entry.insert(c).index()
+                }
+                None => {
+                    error!("Failed to insert connection into slab");
+                    return;
+                }
+            };
+
+            match self.find_connection_by_token(token).register(poll) {
+                Ok(_) => {},
+                Err(e) => {
+                    error!("Failed to register {:?} connection with poller, {:?}", token, e);
+                    self.conns.remove(token);
+                }
+            }
         }
+    }
+
+    fn readable(&mut self, token: Token) -> io::Result<()> {
+        let mut packets_data = Vec::<SerializedBuffer>::new();
+
+        {
+            let connection = self.find_connection_by_token(token);
+            while let Some(buffer) = connection.readable()? {
+                packets_data.push(buffer);
+            }
+        }
+
+        for data in packets_data {
+            self.on_connection_data_received(token, data);
+        }
+
+        Ok(())
+    }
+
+    fn on_connection_data_received(&mut self, token: Token, mut data: SerializedBuffer) {
+        let connection = self.find_connection_by_token(token);
         let length = data.limit();
 
-//        if length == 4 {
-//            connection.mark_reset();
-//            return;
-//        }
+        if length == 4 {
+            connection.mark_reset();
+            return;
+        }
 
         let mark = data.position();
         let message_id = data.read_i64();
@@ -188,53 +238,20 @@ impl Node {
 
         use std::collections::HashMap;
         use network::rpc;
-        use network::packet::Serializable;
+        
+        let mut funcs = HashMap::<i32, fn(conn:&mut Connection)->()>::new();
 
-        match svuid {
-            TransactionObject::SVUID => {
-                let mut transaction_object = TransactionObject::new();
-                transaction_object.read_params(&mut data);
+        funcs.insert(rpc::KeepAlive::SVUID, |conn: &mut Connection| {
+            let keep_alive = rpc::KeepAlive{};
+            conn.send_packet(keep_alive, 1);
+        });
 
-                let mut transaction = Transaction::from_object(transaction_object);
-                if let Ok(mut queue) = self.receive_queue.lock() {
-                    queue.push_back(transaction);
-                }
-            }
-            rpc::AttachTransaction::SVUID => {
-                let mut transaction_object = TransactionObject::new();
-                transaction_object.read_params(&mut data);
-
-                let mut transaction = Transaction::from_object(transaction_object);
-                if let Ok(mut queue) = self.receive_queue.lock() {
-                    queue.push_back(transaction);
-                }
-            }
-            _ => {
-                warn!("Unknown SVUID {}", svuid);
-            }
+        if let Some(f) = funcs.get(&svuid) {
+            f(connection);
         }
-
-//        let mut funcs = HashMap::<i32, fn(n: TS<Neighbor>)->()>::new();
-//
-//        funcs.insert(TransactionObject::SVUID, |n: TS<Neighbor>| {
-//
-////            let keep_alive = rpc::KeepAlive{};
-////            conn.send_packet(keep_alive, 1);
-//        });
-//
-//        if let Some(f) = funcs.get(&svuid) {
-//            f(connection);
-//        }
     }
 
-    pub fn shutdown(&mut self) {
-        self.node_tx.send(());
-
-        info!("Shutting down node threads...");
-        self.running.store(false, Ordering::SeqCst);
-
-        while let Some(th) = self.thread_join_handles.pop_front() {
-            th.join();
-        }
+    fn find_connection_by_token(&mut self, token: Token) -> &mut Connection {
+        &mut self.conns[token]
     }
 }
