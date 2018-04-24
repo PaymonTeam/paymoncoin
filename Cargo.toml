@@ -32,3 +32,9 @@ name = "paymoncoin"
 path = "src/main.rs"
 doc = false
 debug = true
+
+[[bin]]
+name = "paymoncoin_client"
+path = "src/client.rs"
+doc = false
+debug = true

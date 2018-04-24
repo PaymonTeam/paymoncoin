@@ -1,7 +1,8 @@
+use rustc_serialize::json;
 use rustc_serialize::json::Json;
 
 use iron;
-use iron::{Iron, Request, Response, IronResult, AfterMiddleware, Chain};
+use iron::{Iron, Request, Response, IronResult, AfterMiddleware, Chain, Listening};
 use iron::prelude::*;
 use iron::status;
 use network::Node;
@@ -9,6 +10,18 @@ use network::paymoncoin::PaymonCoin;
 use utils::{AM, AWM};
 use std;
 use std::io::Read;
+use network::rpc;
+use network::packet::Serializable;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread;
+
+#[macro_export]
+macro_rules! format_success_response {
+    ($a:ident) => {
+        Ok(Response::with((iron::status::Ok, json::encode(&$a).unwrap())))
+    };
+}
 
 struct DefaultContentType;
 impl AfterMiddleware for DefaultContentType {
@@ -19,20 +32,41 @@ impl AfterMiddleware for DefaultContentType {
 }
 
 pub struct API {
+    listener: Listening,
+    running: Arc<(Mutex<bool>, Condvar)>, //Arc<AtomicBool>,
     pmnc: AM<PaymonCoin>
 }
 
 impl API {
-    pub fn new(pmnc: AM<PaymonCoin>, port: u16) -> Self {
+    pub fn new(pmnc: AM<PaymonCoin>, port: u16, running: Arc<(Mutex<bool>, Condvar)>) -> Self {
         let mut chain = Chain::new(API::info);
         chain.link_after(DefaultContentType);
-        Iron::new(chain)
+        let listener = Iron::new(chain)
             .http(format!("localhost:{}", port))
             .expect("failed to start API server");
 
+//        let running = AtomicBool::from(true);
         Self {
+            listener,
+            running,
             pmnc
         }
+    }
+
+    pub fn run(&mut self) {
+//        loop {
+//            if !self.running.load(Ordering::Relaxed) {
+//                break;
+//            }
+
+//            th/**/read::sleep_ms(1000);
+//        }
+        let &(ref lock, ref cvar) = &*self.running;
+        let mut is_running = lock.lock().unwrap();
+        while *is_running {
+            is_running = cvar.wait(is_running).unwrap();
+        }
+        self.listener.close().unwrap();
     }
 
     fn format_error_response(err: &str) -> Response {
@@ -67,7 +101,6 @@ impl API {
 
         match json.as_object() {
             Some(o) => {
-
                 if !o.contains_key("method") {
                     return Ok(API::format_error_response("No 'method' parameter"));
                 }
@@ -77,18 +110,30 @@ impl API {
                         match method {
                             "getNodeInfo" => {
                                 println!("getNodeInfo");
+                                let result = rpc::NodeInfo {
+                                    name: "PMNC 0.1".to_string()
+                                };
+                                format_success_response!(result)
                             }
-                            _ => return Ok(API::format_error_response("Unknown 'method' parameter"))
+                            "getBalances" => {
+                                println!("getBalances");
+                                let result = rpc::Balances {
+                                    balances: vec![1000u32, 2000u32, ]
+                                };
+                                format_success_response!(result)
+                            }
+                            _ => Ok(API::format_error_response("Unknown 'method' parameter"))
                         }
                     }
-                    None => return Ok(API::format_error_response("Invalid 'method' parameter"))
+                    None => Ok(API::format_error_response("Invalid 'method' parameter"))
                 }
             }
-            None => return Ok(API::format_error_response("Invalid request"))
-        };
-
-        let resp_body = "".to_string();
-        Ok(Response::with((iron::status::Ok, resp_body)))
+            None => Ok(API::format_error_response("Invalid request"))
+        }
     }
 
+    pub fn shutdown(&mut self) {
+//        self.listener.
+//        drop(self.listener);
+    }
 }

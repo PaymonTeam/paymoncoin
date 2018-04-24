@@ -7,6 +7,7 @@ extern crate memorydb;
 extern crate patricia_trie;
 extern crate env_logger;
 extern crate rustc_serialize;
+extern crate iron;
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
 
@@ -16,12 +17,13 @@ pub mod model;
 pub mod storage;
 
 use std::{
-    sync::{mpsc::channel, Arc, Weak, Mutex},
+    sync::{mpsc::channel, Condvar, Arc, Weak, Mutex, atomic::{AtomicBool, Ordering}},
     io::{self, Read},
     env,
     collections::VecDeque,
     thread,
     thread::Builder,
+    time::Duration,
 };
 
 use mio::Poll;
@@ -31,12 +33,25 @@ use network::node::*;
 use network::replicator_pool::ReplicatorPool;
 use model::config::{PORT, Configuration, ConfigurationSettings};
 use model::config;
-
+use network::paymoncoin::PaymonCoin;
 use env_logger::LogBuilder;
 use log::{LogRecord, LogLevelFilter};
 use storage::Hive;
+use network::api::API;
 
 fn main() {
+    let format = |record: &LogRecord| {
+        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
+    };
+
+    let mut builder = LogBuilder::new();
+    builder.format(format).filter(None, LogLevelFilter::Info);
+
+    if env::var("RUST_LOG").is_ok() {
+        builder.parse(&env::var("RUST_LOG").unwrap());
+    }
+
+    builder.init().unwrap();
 }
 
 #[test]
@@ -62,7 +77,8 @@ fn test_threads() {
         let mut neighbors = String::new();
         if port != 0 {
             let ports2 = [44832, 10001, 10002].iter();
-            let v: Vec<String> = ports2.filter(|p| **p != port).map(|p| format!("127.0.0.1:{}", p)).collect();
+            let v: Vec<String> = ports2.filter(|p| **p != port).map(|p| format!("127.0.0.1:{}",
+                                                                                p)).collect();
             neighbors = v.join(" ");
         }
         println!("{}", neighbors);
@@ -74,28 +90,60 @@ fn test_threads() {
                 config.set_int(ConfigurationSettings::Port, port);
             }
 
-            let mut hive = Arc::new(Mutex::new(Hive::new()));
+            let pmnc = Arc::new(Mutex::new(PaymonCoin::new(config)));
 
-            // used for shutdown replicator pool
-            let (tx, rx) = channel::<()>();
-            let mut node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), &config, tx)));
+            let node_arc = pmnc.lock().unwrap().run();
 
-            let node_copy = node.clone();
-            let replicator_jh = thread::spawn(move || {
-                let mut replicator_pool = ReplicatorPool::new(&config, Arc::downgrade(&node_copy), rx);
-                replicator_pool.run();
+            let pmnc_clone = pmnc.clone();
+//            let mut api_running = Arc::new(AtomicBool::from(true));
+//            let api_running_clone = api_running.clone();
+            let api_running = Arc::new((Mutex::new(true), Condvar::new()));
+            let api_running_clone = api_running.clone();
+
+            let api_jh = thread::spawn(move || {
+                let mut api = API::new(pmnc_clone, port as u16, api_running_clone);
+                api.run();
+                drop(api);
             });
 
+            thread::sleep(Duration::from_secs(6));
+
             {
-                let mut guard = node.lock().unwrap();
-                guard.init(replicator_jh);
-                guard.run().expect("Failed to run server");
+    //            api_running.store(false, Ordering::SeqCst);
+                let &(ref lock, ref cvar) = &*api_running;
+                let mut is_running = lock.lock().unwrap();
+                *is_running = false;
+                cvar.notify_one();
             }
 
-            use std::thread;
-            use std::time::Duration;
-            thread::sleep(Duration::from_secs(9));
-            node.lock().unwrap().shutdown();
+            api_jh.join();
+            node_arc.lock().unwrap().shutdown();
+
+//            thread::sleep(Duration::from_secs(9));
+
+//            let mut hive = Arc::new(Mutex::new(Hive::new()));
+//
+//            // used for shutdown replicator pool
+//            let (tx, rx) = channel::<()>();
+//            let mut node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), &config, tx)));
+//
+//
+//            let node_copy = node.clone();
+//            let replicator_jh = thread::spawn(move || {
+//                let mut replicator_pool = ReplicatorPool::new(&config, Arc::downgrade(&node_copy), rx);
+//                replicator_pool.run();
+//            });
+//
+//            {
+//                let mut guard = node.lock().unwrap();
+//                guard.init(replicator_jh);
+//                guard.run().expect("Failed to run server");
+//            }
+//
+//            use std::thread;
+//            use std::time::Duration;
+//            thread::sleep(Duration::from_secs(9));
+//            node.lock().unwrap().shutdown();
         }).unwrap();
 
         jhs.push_back(jh);

@@ -7,7 +7,7 @@ use network::packet::{SerializedBuffer};
 use std::sync::{Arc, Weak, Mutex};
 use network::neighbor::Neighbor;
 use std::net::{TcpStream, SocketAddr, IpAddr};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{Sender, Receiver};
 use std::collections::VecDeque;
 use model::{TransactionObject, Transaction, TransactionType};
 use self::ntrumls::{NTRUMLS, PQParamSetID, PublicKey, PrivateKey};
@@ -31,6 +31,7 @@ pub struct Node {
     pub neighbors: AM<Vec<AM<Neighbor>>>,
     config: Configuration,
     node_tx: Sender<()>,
+    pmnc_rx: Receiver<()>,
     broadcast_queue: AM<VecDeque<Transaction>>,
     receive_queue: AM<VecDeque<Transaction>>,
     running: Arc<AtomicBool>,
@@ -38,13 +39,15 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(hive: Weak<Mutex<Hive>>, config: &Configuration, node_tx: Sender<()>) -> Node {
+    pub fn new(hive: Weak<Mutex<Hive>>, config: &Configuration, node_tx: Sender<()>, pmnc_rx:
+    Receiver<()>) -> Node {
         Node {
             hive,
             running: Arc::new(AtomicBool::new(true)),
             neighbors: make_am!(Vec::new()),
             config: config.clone(),
             node_tx,
+            pmnc_rx,
             broadcast_queue: make_am!(VecDeque::new()),
             receive_queue: make_am!(VecDeque::new()),
             thread_join_handles: VecDeque::new(),

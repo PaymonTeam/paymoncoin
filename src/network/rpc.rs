@@ -7,6 +7,7 @@ use model::{
 /**
     GetNodeInfo
 */
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct GetNodeInfo {}
 
 impl GetNodeInfo {
@@ -25,8 +26,9 @@ impl Serializable for GetNodeInfo {
 /**
     NodeInfo
 */
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct NodeInfo {
-
+    pub name: String,
 }
 
 impl NodeInfo {
@@ -36,9 +38,11 @@ impl NodeInfo {
 impl Serializable for NodeInfo {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
         stream.write_i32(Self::SVUID);
+        stream.write_string(self.name.clone());
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        self.name = stream.read_string();
     }
 }
 
@@ -121,6 +125,7 @@ impl Serializable for TransactionsToApprove {
 /**
     GetBalances
 */
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct GetBalances {}
 
 impl GetBalances { pub const SVUID : i32 = 7; }
@@ -134,6 +139,7 @@ impl Serializable for GetBalances {
 /**
     Balances
 */
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct Balances {
     pub balances: Vec<u32>,
 }
