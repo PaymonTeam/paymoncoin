@@ -207,6 +207,7 @@ impl Transaction {
     }
 
     pub fn get_approvers(&self, hive: &Hive) -> HashSet<Hash> {
+        //TODO get approvers from Hive
         let result: HashSet<Hash> = HashSet::new();
         return result;
     }
