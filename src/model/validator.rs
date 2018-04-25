@@ -8,7 +8,7 @@ use std::collections::LinkedList;
 use rand::Rng;
 use std::i64::MAX;
 use std::collections::hash_map::Entry;
-
+use utils::defines::AM;
 extern crate rand;
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -17,8 +17,7 @@ struct Pair(Hash, i64);
 pub struct Validator {}
 
 pub struct MonteCarlo {
-    // TODO: использовать utils::AM
-    hive: Hive,
+    hive: AM<Hive>,
 }
 
 impl MonteCarlo {
@@ -29,10 +28,9 @@ impl MonteCarlo {
         }
     }
 
-    // TODO: сделать по-другому
-//    pub fn set_hive(&mut self, hive_: &Hive) {
-//        self.hive = *hive_.clone();
-//    }
+    pub fn set_hive(&mut self, hive_: &Hive) {
+        self.hive = AM::clone(hive_);
+    }
 
     pub fn random_walk(&self,
                        visited_hashes: &HashSet<Hash>,
@@ -83,8 +81,12 @@ impl MonteCarlo {
                 let mut hash_iterator = tip_set.iter();
 
                 match hash_iterator.next() {
-                    // FIXME: нельзя просто делать unwrap, иначе это может вызвать ошибку
-                    Some(hash) => tip = tip_set.get(&hash).unwrap().clone(),
+                    Some(hash) => {
+                        tip = match tip_set.get(&hash){
+                            Some(hash) => *hash,
+                            None => HASH_NULL,
+                        };
+                    },
                     None => tip = HASH_NULL
                 }
             } else {
@@ -146,8 +148,11 @@ impl MonteCarlo {
         for i in *iterations..0 {
             tail = self.random_walk(visited_hashes, diff, tip, extra_tip, ratings, max_depth, max_depth_ok);
             if monte_carlo_integrations.contains_key(&tail) {
-                // TODO: unwrap
-                MonteCarlo::put(monte_carlo_integrations, &tail, &(*(&map_clone.get(&tail).unwrap()) + 1));
+                let taken_from_map = match map_clone.get(&tail){
+                    Some(value) => *value,
+                    None => 0i64,
+                };
+                MonteCarlo::put(monte_carlo_integrations, &tail, &(taken_from_map + 1));
             } else {
                 MonteCarlo::put(monte_carlo_integrations, &tail, &1);
             }
@@ -256,8 +261,10 @@ impl MonteCarlo {
         let result: i64;
         match map.contains_key(&key) {
             true => {
-                // TODO: unwrap
-                result = *map.get(&key).unwrap();
+                result = match map.get(&key){
+                    Some(long) => *long,
+                    None => 0i64,
+                };
                 map.insert(*key, *value);
                 return Some(result);
             }
