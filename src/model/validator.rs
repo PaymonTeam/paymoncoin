@@ -9,6 +9,8 @@ use rand::Rng;
 use std::i64::MAX;
 use std::collections::hash_map::Entry;
 use utils::defines::AM;
+use std::sync::{Arc, Mutex};
+
 extern crate rand;
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -22,13 +24,13 @@ pub struct MonteCarlo {
 
 impl MonteCarlo {
     pub fn new() -> Self {
-        let hive = Hive::new();
+        let hive = Arc::new(Mutex::new(Hive::new()));
         MonteCarlo {
             hive,
         }
     }
 
-    pub fn set_hive(&mut self, hive_: &Hive) {
+    pub fn set_hive(&mut self, hive_: &AM<Hive>) {
         self.hive = AM::clone(hive_);
     }
 

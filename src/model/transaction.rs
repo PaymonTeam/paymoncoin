@@ -10,7 +10,7 @@ use storage::hive::Hive;
 use std::collections::HashSet;
 use std::clone::Clone;
 use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
-
+use utils::defines::AM;
 pub const MIN_WEIGHT_MAGNITUDE: u8 = 8;
 pub const HASH_SIZE: usize = 20;
 pub const ADDRESS_SIZE: usize = 21;
@@ -206,7 +206,7 @@ impl Transaction {
         self.object.current_index
     }
 
-    pub fn get_approvers(&self, hive: &Hive) -> HashSet<Hash> {
+    pub fn get_approvers(&self, hive: &AM<Hive>) -> HashSet<Hash> {
         //TODO get approvers from Hive
         let result: HashSet<Hash> = HashSet::new();
         return result;
