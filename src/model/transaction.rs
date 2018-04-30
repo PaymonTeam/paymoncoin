@@ -265,6 +265,7 @@ pub struct TransactionObject {
     pub value: u32,
     pub data_type: TransactionType,
     pub signature: Signature,
+    pub snapshot: u32,
 }
 
 pub struct Transaction {
@@ -277,10 +278,13 @@ impl Transaction {
     pub fn get_current_index(&self) -> u32 {
         self.object.current_index
     }
-
+    pub fn get_hash(&self) -> Hash{
+        return self.object.hash;
+    }
     pub fn get_approvers(&self, hive: &AM<Hive>) -> HashSet<Hash> {
         //TODO get approvers from Hive
         let result: HashSet<Hash> = HashSet::new();
+        //while hive.
         return result;
     }
 
@@ -432,6 +436,7 @@ impl TransactionObject {
             value: 0u32,
             data_type: TransactionType::HashOnly,
             signature: Signature(Vec::new()),
+            snapshot: 0u32,
         }
     }
 
@@ -454,7 +459,7 @@ impl TransactionObject {
         let current_index = 0u32;
         let last_index = 0u32;
         let value = 0u32;
-
+        let snapshot = 0u32;
         thread_rng().fill_bytes(&mut signature.0);
         thread_rng().fill_bytes(&mut branch_transaction);
         thread_rng().fill_bytes(&mut address);
@@ -478,7 +483,11 @@ impl TransactionObject {
             timestamp,
             value,
             data_type: TransactionType::Full,
+            snapshot,
         }
+    }
+    pub fn get_snapshot_index(&self) -> u32{
+        return self.snapshot;
     }
 }
 

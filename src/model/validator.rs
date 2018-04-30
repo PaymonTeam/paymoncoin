@@ -1,38 +1,116 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, LinkedList};
 use std::iter::Iterator;
-use model::transaction::*;
-use network::packet::{Serializable, SerializedBuffer};
-use storage::hive::Hive;
-use std::collections::LinkedList;
-use rand::Rng;
-use std::i64::MAX;
-use std::collections::hash_map::Entry;
-use utils::defines::AM;
 use std::sync::{Arc, Mutex};
 
+use model::transaction::*;
+use storage::hive::Hive;
+use model::milestone::Milestone;
+use utils::defines::AM;
+
+use rand::Rng;
 extern crate rand;
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 struct Pair(Hash, i64);
 
-pub struct Validator {}
-
 pub struct MonteCarlo {
     hive: AM<Hive>,
+    max_depth: u32,
+    milestone: Milestone,
+    milestone_start_index: u32,
 }
 
 impl MonteCarlo {
     pub fn new() -> Self {
         let hive = Arc::new(Mutex::new(Hive::new()));
+        let max_depth = 0u32;
+        let milestone = Milestone::new();
+        let milestone_start_index = 0u32;
         MonteCarlo {
             hive,
+            max_depth,
+            milestone,
+            milestone_start_index
         }
     }
 
     pub fn set_hive(&mut self, hive_: &AM<Hive>) {
         self.hive = AM::clone(hive_);
     }
+    pub fn set_milestone(&mut self, milestone_: &Milestone){
+        self.milestone = milestone_.clone();
+    }
+
+
+    pub fn transaction_to_approve(&self,
+                                visited_hashes: &HashSet<Hash> ,
+                                diff: &HashMap<Hash, i64> ,
+                                reference: &Hash,
+                                extra_tip: &Hash,
+                                depth: &mut u32,
+                                iterations: &u32) -> Option<Hash> {
+        if *depth > self.max_depth {
+
+            *depth = self.max_depth;
+        }
+        //TODO milestone
+        if self.milestone.latestSolidSubtangleMilestoneIndex > self.milestone_start_index ||
+            self.milestone.latestMilestoneIndex == self.milestone_start_index {
+            let mut ratings: HashMap<Hash, i64> = HashMap::new();
+            let mut analyzed_tips: HashSet<Hash> = HashSet::new();
+            let mut max_depth_ok: HashSet<Hash> = HashSet::new();
+            //TODO entry_point
+            let tip = self.entry_point(reference,
+                                  extra_tip,
+                                  depth);
+            self.serial_update_ratings(visited_hashes,
+                                  &tip,
+                                  & mut ratings,
+                                  & mut analyzed_tips,
+                                  extra_tip);
+            analyzed_tips.clear();
+            //TODO update_diff
+            if /*ledgerValidator.update_diff(visitedHashes, diff, tip)*/ true {
+                return Some(self.markov_chain_monte_carlo(visited_hashes,
+                                                     diff,
+                                                     &tip,
+                                                     extra_tip,
+                                                     & mut ratings,
+                                                     iterations,
+                                                          &(self.milestone.latestSolidSubtangleMilestoneIndex - (*depth) * 2),
+                                                     & mut max_depth_ok));
+            } else {
+                println!("Update Diff error");
+            }
+        }
+        return None;
+    }
+    fn entry_point(&self, reference: &Hash , extra_tip: &Hash, depth: &u32) -> Hash {
+        if *extra_tip == HASH_NULL {
+            //trunk
+            if *reference != HASH_NULL{
+                return *reference;
+            }else{
+                return self.milestone.latestSolidSubtangleMilestone;
+            }
+
+        }
+        //TODO milestone
+        //branch (extraTip)
+        /*
+        let milestone_index = Math.max(milestone.latestSolidSubtangleMilestoneIndex - depth - 1, 0);
+        let milestone_obj: Milestone =
+            MilestoneViewModel.findClosestNextMilestone(tangle, milestoneIndex, testnet, milestoneStartIndex);
+        if (milestoneViewModel != null && milestoneViewModel.getHash() != null) {
+            return milestoneViewModel.getHash();
+        }
+
+        return milestone.latestSolidSubtangleMilestone;
+    */
+        return HASH_NULL;
+    }
+
+
 
     pub fn random_walk(&self,
                        visited_hashes: &HashSet<Hash>,
@@ -41,7 +119,7 @@ impl MonteCarlo {
                        extra_tip: &Hash,
                        ratings: &mut HashMap<Hash, i64>,
                        max_depth: &u32,
-                       max_depth_ok: &HashSet<Hash>) -> Hash {
+                       max_depth_ok: &mut HashSet<Hash>) -> Hash {
         let mut rnd = rand::thread_rng(); // f32 randomer
         let mut tip = start.clone();
         let mut tail = tip.clone();
@@ -69,7 +147,13 @@ impl MonteCarlo {
                     break;
                 } else if !ledgerValidator.updateDiff(myApprovedHashes, myDiff, transactionViewModel.getHash()) {
                     break;
-                }  else*/ if transaction_obj.calculate_hash() == *extra_tip {
+                }  else*/
+                if MonteCarlo::below_max_depth(&transaction_obj.get_hash(),
+                                               max_depth,
+                                               max_depth_ok) {
+                    break;
+                }
+                if transaction_obj.calculate_hash() == *extra_tip {
                     break;
                 }
             }
@@ -95,12 +179,12 @@ impl MonteCarlo {
                 // walk to the next approver
                 tips = MonteCarlo::set_to_vec(&tip_set);
                 if !ratings.contains_key(&tip) {
-                    MonteCarlo::serial_update_ratings(&self,
-                                                      &my_approved_hashes,
-                                                      &tip,
-                                                      ratings,
-                                                      &mut analyzed_tips,
-                                                      &extra_tip);
+                    self.serial_update_ratings(
+                        &my_approved_hashes,
+                        &tip,
+                        ratings,
+                        &mut analyzed_tips,
+                        &extra_tip);
                     analyzed_tips.clear();
                 }
 
@@ -141,7 +225,7 @@ impl MonteCarlo {
                                     ratings: &mut HashMap<Hash, i64>,
                                     iterations: &u32,
                                     max_depth: &u32,
-                                    max_depth_ok: &HashSet<Hash>,
+                                    max_depth_ok: &mut HashSet<Hash>,
                                     /*Random seed*/) -> Hash {
         let mut rnd = rand::thread_rng();
         let mut monte_carlo_integrations: &mut HashMap<Hash, i64> = &mut HashMap::new();
@@ -285,6 +369,70 @@ impl MonteCarlo {
         };
         return result;
     }
+
+    fn below_max_depth(tip: &Hash, depth: &u32, max_depth_ok: & mut HashSet<Hash> )-> bool {
+//if tip is confirmed stop
+        if TransactionObject::from_hash(*tip).get_snapshot_index() >= *depth {
+            return false;
+        }
+//if tip unconfirmed, check if any referenced tx is confirmed below maxDepth
+        let mut non_analyzed_transactions = LinkedList::new();
+        non_analyzed_transactions.push_front(*tip);
+        let mut analyzed_transcations:HashSet <Hash>  = HashSet::new();
+        let mut hash:Hash;
+        while non_analyzed_transactions.front() != None {
+            hash = match non_analyzed_transactions.front() {
+                Some(h) => *h,
+                None => break,
+            };
+            if analyzed_transcations.insert(hash) {
+                let mut transaction: Transaction = Transaction::from_hash(hash);
+                //transaction.from_hash(&hash);
+                if transaction.object.get_snapshot_index() != 0 && transaction.object.get_snapshot_index() < *depth {
+                    return true;
+                }
+                if transaction.object.get_snapshot_index() == 0 {
+                    if max_depth_ok.contains(&hash) {
+                        return true;
+                    } else {
+                        non_analyzed_transactions.push_back(transaction.get_trunk_transaction_hash());
+                        non_analyzed_transactions.push_back(transaction.get_branch_transaction_hash());
+                    }
+                }
+            }
+        }
+        max_depth_ok.insert(*tip);
+        return false;
+    }
+
+    pub fn recursive_update_ratings(&self,
+                                    txHash: &Hash,
+                                    ratings: &mut HashMap<Hash, i64>,
+                                    analyzed_tips: &mut HashSet<Hash> ) -> i64 {
+        let mut rating = 1;
+        if analyzed_tips.insert(*txHash) {
+            let mut transaction = Transaction::from_hash(*txHash);
+            let mut approver_hashes = transaction.get_approvers(&self.hive);
+            for approver in approver_hashes.iter() {
+                rating = cap_sum(&rating, &MonteCarlo::recursive_update_ratings(self,&approver,
+                                                                               ratings,
+                                                                               analyzed_tips),
+                                 &(<i64>::max_value() / 2));
+            }
+            MonteCarlo::put(ratings ,txHash, &rating);
+        } else {
+            if ratings.contains_key(txHash) {
+                rating = match ratings.get(txHash){
+                    Some(x) => *x,
+                    None => 0,
+                };
+            } else {
+                rating = 0;
+            }
+        }
+        return rating;
+    }
+
 }
 
 fn cap_sum(a: &i64, b: &i64, max: &i64) -> i64 {
@@ -293,33 +441,3 @@ fn cap_sum(a: &i64, b: &i64, max: &i64) -> i64 {
     }
     return *a + *b;
 }
-/*
-fn belowMaxDepth(tip:&Hash, depth:&i32, max_depth_ok: HashSet<Hash> )-> bool {
-//if tip is confirmed stop
-    /*if TransactionObject.fromHash(tangle, tip).snapshotIndex() >= depth {
-        return false;
-    }*/
-//if tip unconfirmed, check if any referenced tx is confirmed below maxDepth
-    let mut non_analyzed_transactions = LinkedList::new() ;
-    let mut analyzed_transcations:HashSet <Hash>  = HashSet::new();
-    let mut hash:Hash;
-    while (hash = non_analyzed_transactions.front()) != None {
-        if analyzed_transcations.insert(hash) {
-            let mut  transaction: Transaction = Transaction::new();
-            transaction.from_hash(&hash);
-           /* if transaction.snapshotIndex() != 0 && transaction.snapshotIndex() < depth {
-                return true;
-            }*/
-            if transaction.snapshot_index() == 0 {
-                if max_depth_ok.contains(hash) {
-
-                } else {
-                    non_analyzed_transactions.offer(transaction.get_trunk_transaction_hash());
-                    non_analyzed_transactions.offer(transaction.get_branch_transaction_hash());
-                }
-            }
-        }
-    }
-    maxDepthOk.add(tip);
-    return false;
-}*/
