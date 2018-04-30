@@ -11,36 +11,34 @@ use std::collections::HashSet;
 use std::clone::Clone;
 use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
 use utils::defines::AM;
+use std::str::FromStr;
+use self::rustc_serialize::{
+    hex::{FromHex, ToHex},
+    Encodable, Decodable, Encoder, Decoder
+};
+
 pub const MIN_WEIGHT_MAGNITUDE: u8 = 8;
 pub const HASH_SIZE: usize = 20;
 pub const ADDRESS_SIZE: usize = 21;
-// HASH_SIZE + 1 (checksum byte)
-pub const TRANSACTION_SIZE: usize = 173 + 4;
+pub const TRANSACTION_SIZE: usize = 173 + 4; // HASH_SIZE + 1 (checksum byte)
+
+pub const HASH_NULL: Hash = Hash([0u8; HASH_SIZE]);
+pub const ADDRESS_NULL: Address = Address([0u8; ADDRESS_SIZE]);
 
 #[derive(PartialEq, Clone, Copy, Eq, Hash)]
 pub struct Hash([u8; HASH_SIZE]);
 
 impl Hash {
+    // TODO:
     pub fn trailing_zeros(&self) -> u16 {
-//        let mut index ;
-        let mut zeros = 0u16;
+        unimplemented!();
 
-//        final int[] trits;
-//        index = SIZE_IN_TRITS;
-//        zeros = 0;
-//        trits = trits();
-//        while(index-- > 0 && trits[index] == 0) {
-//        zeros++;
-//        }
+        let mut zeros = 0u16;
         zeros
     }
 
     pub fn is_null(&self) -> bool {
-        if *self != HASH_NULL {
-            return true;
-        } else {
-            return false;
-        }
+        *self == HASH_NULL
     }
 }
 
@@ -80,7 +78,14 @@ impl Encodable for Hash {
 
 impl Decodable for Hash {
     fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
-        Ok(Hash(d.read_str()?.from_hex().map_err(|e| d.error("failed to decode Hash")?)))
+        let v = d.read_str()?.from_hex().map_err(|e| d.error("failed to decode Hash"))?;
+        if v.len() < HASH_SIZE {
+            return Err(d.error("invalid hash size"));
+        }
+
+        let mut hash = HASH_NULL.clone();
+        hash.clone_from_slice(&v[..HASH_SIZE]);
+        Ok(hash)
     }
 }
 
@@ -162,7 +167,7 @@ impl Encodable for Address {
 impl Decodable for Address {
     fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
         let s = d.read_str()?;
-        Address::from_str(s).map_err(|e| d.error("failed to decode Address"))?
+        Ok(Address::from_str(&s).map_err(|e| d.error("failed to decode Address"))?)
     }
 }
 
@@ -238,9 +243,6 @@ impl Serializable for Signature {
     }
 }
 
-pub const HASH_NULL: Hash = Hash([0u8; HASH_SIZE]);
-pub const ADDRESS_NULL: Address = Address([0u8; ADDRESS_SIZE]);
-
 #[derive(Debug, PartialEq, Clone, RustcEncodable, RustcDecodable)]
 pub enum TransactionType {
     HashOnly,
@@ -278,9 +280,11 @@ impl Transaction {
     pub fn get_current_index(&self) -> u32 {
         self.object.current_index
     }
+
     pub fn get_hash(&self) -> Hash{
         return self.object.hash;
     }
+
     pub fn get_approvers(&self, hive: &AM<Hive>) -> HashSet<Hash> {
         //TODO get approvers from Hive
         let result: HashSet<Hash> = HashSet::new();

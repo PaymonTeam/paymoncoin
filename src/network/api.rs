@@ -66,7 +66,7 @@ impl API {
 //                break;
 //            }
 
-//            th/**/read::sleep_ms(1000);
+//            thread::sleep_ms(1000);
 //        }
         let &(ref lock, ref cvar) = &*self.running;
         let mut is_running = lock.lock().unwrap();
