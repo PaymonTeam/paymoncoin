@@ -23,10 +23,11 @@ use std::io;
 use std::num;
 use std::sync::Arc;
 
-use model::transaction::{HASH_SIZE, ADDRESS_SIZE, TransactionObject, Transaction, Address, ADDRESS_NULL, HASH_NULL};
+use model::transaction::{HASH_SIZE, ADDRESS_SIZE, TransactionObject, Transaction, Address, Hash,
+                         ADDRESS_NULL, HASH_NULL};
 use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
 
-static CF_NAMES: [&str; 3] = ["transaction", "transaction-metadata", "address"];
+static CF_NAMES: [&str; 4] = ["transaction", "transaction-metadata", "address", "approvee"];
 const SUPPLY : u32 = 10_000;
 
 pub enum Error {
@@ -39,7 +40,8 @@ pub enum Error {
 pub enum CFType {
     Transaction = 0,
     TransactionMetadata,
-    Address
+    Address,
+    Approvee,
 }
 
 pub struct Hive {
@@ -71,6 +73,10 @@ impl Hive {
         }
     }
 
+    pub fn put_approvee(&mut self, approvee: Hash, approved: Hash) -> bool {
+        self.storage_put(CFType::Approvee, &approved, &approvee)
+    }
+
     pub fn put_transaction(&mut self, t: &Transaction) -> bool {
         self.storage_put(CFType::Transaction, &t.object.hash, &t.object)
     }
@@ -84,6 +90,26 @@ impl Hive {
         let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Transaction as usize]).unwrap(), key);
         match vec {
             Ok(res) => Some(Transaction::from_bytes(SerializedBuffer::from_slice(&res?))),
+            Err(e) => {
+                warn!("get transaction from storage error ({})", e);
+                None
+            }
+        }
+    }
+
+    pub fn storage_load_approvee(&mut self, hash: &Hash) -> Option<Hash> {
+        let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Approvee as usize]).unwrap
+        (), hash);
+        match vec {
+            Ok(res) => {
+                let buf = SerializedBuffer::from_slice(&res?);
+                if buf.len() < HASH_SIZE {
+                    return None;
+                }
+                let mut hash = HASH_NULL;
+                hash.clone_from_slice(&buf[..HASH_SIZE]);
+                Some(hash)
+            },
             Err(e) => {
                 warn!("get transaction from storage error ({})", e);
                 None
@@ -177,24 +203,12 @@ impl Hive {
     }
 
     fn add_transaction(&mut self, transaction: &TransactionObject) -> Result<(), Error> {
-//        self.tree.insert(b"k", b"val");
-
+        unimplemented!();
         Ok(())
     }
 
     fn find_transaction(&mut self) {
-//        let res = self.tree.get(b"k");
-//        match res {
-//            Ok(Some(val)) => {
-//                println!("val={}", String::from_utf8_lossy(&val));
-//                Ok(())
-//            },
-//            Ok(None) => {
-//                println!("Nothing found");
-//                Err("transaction not found")
-//            },
-//            Err(e) => Err(e)
-//        }
+        unimplemented!();
     }
 
     pub fn load_balances(&mut self) -> Result<(), Error> {
