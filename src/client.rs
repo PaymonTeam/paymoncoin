@@ -1,11 +1,305 @@
+extern crate byteorder;
+extern crate mio;
+extern crate rand;
+extern crate slab;
+extern crate ethcore_bigint as bigint;
+extern crate memorydb;
+extern crate patricia_trie;
+extern crate env_logger;
+extern crate rustc_serialize;
+extern crate iron;
+extern crate ntrumls;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate native_windows_gui as nwg;
+
+#[macro_use]
+pub mod utils;
+pub mod network;
+pub mod model;
+pub mod storage;
+
 use std::io::{self, Read};
+use nwg::{Event, Ui, simple_message, fatal_message, dispatch_events};
+use rustc_serialize::json;
+use rustc_serialize::json::{Json, ToJson};
+use network::rpc;
+use network::api::APIRequest;
+use std::collections::BTreeMap;
+use std::io::BufReader;
+use std::io::Write;
+use std::net::SocketAddr;
 
+use AppId::*;
+use ntrumls::{PrivateKey, PublicKey, NTRUMLS, PQParamSetID};
+use storage::Hive;
+use model::{Transaction, TransactionObject};
+use model::transaction::{Address, Hash};
+
+use rand::Rng;
+use self::rustc_serialize::hex::{ToHex, FromHex};
+use std::str::FromStr;
+
+#[derive(Debug, Clone, Hash)]
+pub enum AppId {
+    // Controls
+    MainWindow,
+
+    PrivateKeyInput,
+    GeneratePrivateKeyButton,
+    CopyPrivateKeyButton,
+
+    AddressInput,
+    GenerateAddressButton,
+    CopyAddressButton,
+
+    NodesCB,
+    NodeAddressInput,
+    NodeRemoveButton,
+    NodeAddButton,
+
+    SendToInput,
+    SendAmountInput,
+    SendButton,
+
+    StatusLabel,
+
+    TransactionsList,
+
+    Label(u8),
+
+    // Events
+    GeneratePrivateKey,
+    GenerateAddress,
+    AddNeighbor,
+    RemoveNeighbor,
+    Send,
+    MainWindowLoad,
+
+    // Resources
+    MainFont,
+    TextFont,
+}
+
+static mut SK:Option<PrivateKey> = None;
+static mut PK:Option<PublicKey> = None;
+static mut NEIGHBORS:Option<Vec<SocketAddr>> = None;
+static mut NTRUMLS_INSTANCE:Option<NTRUMLS> = None;
+
+fn send_coins(addr: Address, amount: u32) {
+    println!("sending {} to {:?}", amount, addr);
+    let mut st = json::encode(&rpc::GetNodeInfo {}).unwrap();
+//    let mut st = json::encode(&rpc::NodeInfo { name: "123".to_string() }).unwrap();
+    let mut s = Json::from_str(&st).unwrap();
+    s.as_object_mut().unwrap().insert("method".to_string(), "getNodeInfo".to_string().to_json());
+
+    unsafe {
+        if let Some(ref n) = NEIGHBORS {
+            send_request(s, n[0].clone());
+        }
+    }
+}
+
+fn send_request(request: Json, addr: SocketAddr) {
+    let content = request.to_string();
+    let content_length = content.len();
+
+    println!("{}", content);
+
+    let incoming_request = format!("POST / HTTP/1\
+    .0\r\ncontent-type:application/json\r\nX-PMNC-API-Version: 0\
+    .1\r\nHost:localhost\r\ncontent-length:{}\r\n\r\n{}", content_length, content);
+
+    if let Ok(mut s) = std::net::TcpStream::connect(addr) {
+        println!("connected");
+        s.write(incoming_request.as_bytes()).unwrap();
+        let mut reader = BufReader::new(&mut s);
+        let mut resp = String::new();
+        reader.read_to_string(&mut resp);
+        println!("resp={}", resp);
+    } else {
+        println!("failed");
+    }
+}
+
+fn send_transaction() {
+}
+
+fn add_neighbor(addr: String) -> bool {
+    unsafe {
+        if NEIGHBORS.is_none() {
+            NEIGHBORS = Some(vec![]);
+        }
+    }
+    if let Ok(ip) = addr.parse::<SocketAddr>() {
+        unsafe {
+            if let Some(ref mut n) = NEIGHBORS {
+                if !n.contains(&ip) {
+                    n.push(ip.clone());
+                }
+//              NEIGHBORS.unwrap().push(ip.clone());
+            }
+        }
+        return true;
+    }
+    false
+}
+
+fn generate_private_key() -> (String, String) {
+    let mut sk_data = [0u8; 32 * 8];
+    rand::thread_rng().fill_bytes(&mut sk_data);
+    let addr = Hive::generate_address(&sk_data, 0);
+
+    (sk_data.to_hex().to_uppercase(), format!("{:?}", addr))
+}
+
+fn generate_address_from_private_key(sk_string: String) -> Result<String, String> {
+    let mut sk_data = [0u8; 32 * 8];
+
+    match sk_string.from_hex() {
+        Ok(data) => {
+            sk_data.copy_from_slice(&data[..(32 * 8)]);
+            let addr = Hive::generate_address(&sk_data, 0);
+            Ok(format!("{:?}", addr))
+        }
+        Err(e) => Err(format!("{:?}", e))
+    }
+}
+
+nwg_template!(
+    head: setup_ui<AppId>,
+    controls: [
+        (MainWindow, nwg_window!( title="PaymonCoin"; size=(640, 480) )),
+
+    // private key
+        (Label(0), nwg_label!( parent=MainWindow; text="Private key"; position=(5,15); size=(75,25); font=Some(TextFont) )),
+        (PrivateKeyInput, nwg_textinput!( parent=MainWindow; position=(80,13); size=(185,22); font=Some(TextFont) )),
+        (GeneratePrivateKeyButton, nwg_button!( parent=MainWindow; text="Generate"; position=
+        (270, 13); size=(80,22); font=Some(MainFont) )),
+        (CopyPrivateKeyButton, nwg_button!( parent=MainWindow; text="Copy"; position=
+        (270+85, 13); size=(80,22); font=Some(MainFont) )),
+
+    // address
+        (Label(1), nwg_label!( parent=MainWindow; text="Address"; position=(5,40); size=(75,
+        25); font=Some(TextFont) )),
+        (AddressInput, nwg_textinput!( parent=MainWindow; position=(80,13+25); size=(185,22);
+        font=Some(TextFont) )),
+        (GenerateAddressButton, nwg_button!( parent=MainWindow; text="Generate"; position=
+        (270, 13+25); size=(80,22); font=Some(MainFont) )),
+        (CopyAddressButton, nwg_button!( parent=MainWindow; text="Copy"; position=
+        (270+85, 13+25); size=(80,22); font=Some(MainFont) )),
+
+    // neighbors
+        (Label(2), nwg_label!( parent=MainWindow; text="Neighbors"; position=(5,40+35); size=(75,
+        25); font=Some(TextFont) )),
+        (NodesCB, nwg_listbox!( data=String; parent=MainWindow; position=(80,13+25+35); size=(185,
+        70); font=Some(TextFont) )),
+        (NodeAddressInput, nwg_textinput!( parent=MainWindow; position=(80+185+5,13+25+35); size=
+        (185,22); font=Some(TextFont) )),
+        (NodeAddButton, nwg_button!( parent=MainWindow; text="Add"; position=
+        (270, 13+25+35+25); size=(80,22); font=Some(MainFont) )),
+        (NodeRemoveButton, nwg_button!( parent=MainWindow; text="Remove"; position=
+        (270+85, 13+25+35+25); size=(80,22); font=Some(MainFont) )),
+
+    // sending
+        (Label(3), nwg_label!( parent=MainWindow; text="Send"; position=(5,40+35+85); size=(75,
+        25); font=Some(TextFont) )),
+        (SendToInput, nwg_textinput!( parent=MainWindow; position=(80,13+25+35+85); size=
+        (185,22); font=Some(TextFont); placeholder=Some("To address") )),
+        (SendAmountInput, nwg_textinput!( parent=MainWindow; position=(80,13+25+35+85+25);
+        size=(185,22); font=Some(TextFont); placeholder=Some("Amount") )),
+        (SendButton, nwg_button!( parent=MainWindow; text="Send"; position=
+        (270, 13+25+35+85); size=(80,22); font=Some(MainFont) )),
+
+    // status
+        (Label(4), nwg_label!( parent=MainWindow; text="Status: "; position=(5,
+        40+35+85+60); size=(75,25); font=Some(TextFont) )),
+        (StatusLabel, nwg_label!( parent=MainWindow; text=""; position=(5+75,
+        40+35+85+60); size=(500,25); font=Some(TextFont) )),
+
+    //transactions
+        (Label(5), nwg_label!( parent=MainWindow; text="Transactions"; position=(5,
+        40+35+85+60+35); size=(75,25); font=Some(TextFont) )),
+        (TransactionsList, nwg_listbox!( data=String; parent=MainWindow; position=(5,
+        40+35+85+60+35+25); size=(630, 200); font=Some(TextFont) ))
+    ];
+    events: [
+        (GeneratePrivateKeyButton, GeneratePrivateKey, Event::Click, |ui,_,_,_| {
+//            simple_message("msg", &format!("Hello {}!", your_name.get_text()) );
+            let (mut sk_input, mut address_input) = nwg_get_mut!(ui; [(PrivateKeyInput,
+nwg::TextInput), (AddressInput, nwg::TextInput)]);
+            let (sk_string, address_string) = generate_private_key();
+            sk_input.set_text(&sk_string);
+            address_input.set_text(&address_string);
+        }),
+        (GenerateAddressButton, GenerateAddress, Event::Click, |ui,_,_,_| {
+            let (mut sk_input, mut address_input) = nwg_get_mut!(ui; [(PrivateKeyInput,
+nwg::TextInput), (AddressInput, nwg::TextInput)]);
+            let mut status_label = nwg_get_mut!(ui; (StatusLabel, nwg::Label));
+
+            let sk_string = sk_input.get_text();
+            match generate_address_from_private_key(sk_string.clone()) {
+                Ok(address_string) => address_input.set_text(&address_string),
+                Err(e) => status_label.set_text(&e)
+            };
+        }),
+        (NodeAddButton, AddNeighbor, Event::Click, |ui,_,_,_| {
+            let mut neighbors_list = nwg_get_mut!(ui; (NodesCB, nwg::ListBox<String>));
+            let mut node_address_input = nwg_get_mut!(ui; (NodeAddressInput, nwg::TextInput));
+
+            let s = node_address_input.get_text();
+            if add_neighbor(s.clone()) {
+                neighbors_list.push(s);
+                neighbors_list.sync();
+            }
+//            let sk_string = sk_input.get_text();
+//            match generate_address_from_private_key(sk_string.clone()) {
+//                Ok(address_string) => address_input.set_text(&address_string),
+//                Err(e) => status_label.set_text(&e)
+//            };
+        }),
+        (SendButton, Send, Event::Click, |ui,_,_,_| {
+            let (mut send_address_input, mut send_amount_input) = nwg_get_mut!(ui; [
+            (SendToInput, nwg::TextInput), (SendAmountInput, nwg::TextInput)]);
+            let mut status_label = nwg_get_mut!(ui; (StatusLabel, nwg::Label));
+
+            if let Ok(addr) = send_address_input.get_text().parse::<Address>() {
+                if let Ok(amount) = send_amount_input.get_text().parse::<u32>() {
+                    send_coins(addr, amount);
+                } else {
+                    status_label.set_text("Wrong amount");
+                }
+            } else {
+                status_label.set_text("Wrong participant address");
+            }
+        })
+    ];
+    resources: [
+        (MainFont, nwg_font!(family="Arial"; size=16)),
+        (TextFont, nwg_font!(family="Arial"; size=16))
+    ];
+    values: []
+);
+
+#[cfg(windows)]
 fn main() {
-    let mut buffer = String::new();
-    let stdin = io::stdin();
-    let mut handle = stdin.lock();
+    unsafe {
+        NTRUMLS_INSTANCE = Some(NTRUMLS::with_param_set(PQParamSetID::Security269Bit));
+    }
 
-    handle.read_to_string(&mut buffer).expect("failed to io::read");
+    let app: Ui<AppId>;
 
-    println!("{}", buffer);
+    match Ui::new() {
+        Ok(_app) => { app = _app; }
+        Err(e) => { fatal_message("Fatal Error", &format!("{:?}", e)); }
+    }
+
+    if let Err(e) = setup_ui(&app) {
+        fatal_message("Fatal Error", &format!("{:?}", e));
+    }
+
+    dispatch_events();
 }

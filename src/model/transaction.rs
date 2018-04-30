@@ -10,6 +10,11 @@ use storage::hive::Hive;
 use std::collections::HashSet;
 use std::clone::Clone;
 use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
+use std::str::FromStr;
+use rustc_serialize::{
+    hex::{FromHex, ToHex},
+    Encodable, Decodable, Encoder, Decoder
+};
 
 pub const MIN_WEIGHT_MAGNITUDE: u8 = 8;
 pub const HASH_SIZE: usize = 20;
@@ -17,7 +22,7 @@ pub const ADDRESS_SIZE: usize = 21;
 // HASH_SIZE + 1 (checksum byte)
 pub const TRANSACTION_SIZE: usize = 173 + 4;
 
-#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
+#[derive(PartialEq, Clone, Copy, Eq, Hash)]
 pub struct Hash([u8; HASH_SIZE]);
 
 impl Hash {
@@ -69,6 +74,36 @@ impl Serializable for Hash {
     }
 }
 
+impl Encodable for Hash {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        let strs: Vec<String> = self.0.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        s.emit_str(&format!("{}", strs.join("")))
+    }
+}
+
+impl Decodable for Hash {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
+        Ok(Hash(d.read_str()?.from_hex().map_err(|e| d.error("failed to decode Hash")?)))
+    }
+}
+
+impl super::super::std::fmt::Debug for Hash {
+    fn fmt(&self, f: &mut super::super::std::fmt::Formatter) -> super::super::std::fmt::Result {
+//        use self::rustc_serialize::hex::ToHex;
+        let strs: Vec<String> = self.0.iter()
+            .map(|b| format!("{:02X}", b))
+            .collect();
+        write!(f, "Hash({})", strs.join(""))
+//        write!(f, "P{}", self.0.to_hex())
+    }
+}
+
+#[derive(Copy, PartialEq, Eq, Clone, Debug)]
+pub enum AddressError {
+    InvalidAddress,
+}
 
 #[derive(PartialEq, Copy, Clone, Eq, Hash)]
 pub struct Address(pub [u8; ADDRESS_SIZE]);
@@ -98,10 +133,52 @@ impl Serializable for Address {
     }
 }
 
+impl FromStr for Address {
+    type Err = AddressError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if !s.starts_with("P") {
+            return Err(AddressError::InvalidAddress);
+        }
+
+        match s[1..].to_string().from_hex() {
+            Err(_) => return Err(AddressError::InvalidAddress),
+            Ok(vec) => {
+                let bytes:&[u8] = vec.as_ref();
+                let mut ret_bytes = [0u8; 21];
+
+                if bytes.len() == 21 {
+                    ret_bytes.copy_from_slice(&bytes);
+                    return Ok(Address(ret_bytes))
+                } else {
+                    return Err(AddressError::InvalidAddress);
+                }
+            }
+        };
+    }
+}
+
+impl Encodable for Address {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_str(&format!("{:?}", self))
+    }
+}
+
+impl Decodable for Address {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
+        let s = d.read_str()?;
+        Address::from_str(s).map_err(|e| d.error("failed to decode Address"))?
+    }
+}
+
 impl super::super::std::fmt::Debug for Address {
     fn fmt(&self, f: &mut super::super::std::fmt::Formatter) -> super::super::std::fmt::Result {
-        use self::rustc_serialize::hex::ToHex;
-        write!(f, "P{}", self.0.to_hex())
+//        use self::rustc_serialize::hex::ToHex;
+        let strs: Vec<String> = self.0.iter()
+            .map(|b| format!("{:02X}", b))
+            .collect();
+        write!(f, "P{}", strs.join(""))
+//        write!(f, "P{}", self.0.to_hex())
     }
 }
 
@@ -169,13 +246,13 @@ impl Serializable for Signature {
 pub const HASH_NULL: Hash = Hash([0u8; HASH_SIZE]);
 pub const ADDRESS_NULL: Address = Address([0u8; ADDRESS_SIZE]);
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, RustcEncodable, RustcDecodable)]
 pub enum TransactionType {
     HashOnly,
     Full,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, RustcEncodable, RustcDecodable)]
 pub struct TransactionObject {
     pub address: Address,
     pub attachment_timestamp: u64,

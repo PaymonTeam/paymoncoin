@@ -94,7 +94,7 @@ impl ReplicatorPool {
                                             }
                                         }
                                         Err(e) => {
-                                            println!("Couldn't connect to neighbor: {:?}", e);
+                                            error!("Couldn't connect to neighbor: {:?}", e);
                                         }
                                     }
                                 }

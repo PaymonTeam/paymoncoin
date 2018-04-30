@@ -37,12 +37,19 @@ pub struct API {
     pmnc: AM<PaymonCoin>
 }
 
+#[derive(RustcDecodable, RustcEncodable)]
+pub struct APIRequest<T : Serializable> {
+    pub method: String,
+    pub object: T,
+}
+
 impl API {
     pub fn new(pmnc: AM<PaymonCoin>, port: u16, running: Arc<(Mutex<bool>, Condvar)>) -> Self {
+        info!("Running API on port {}", port);
         let mut chain = Chain::new(API::info);
         chain.link_after(DefaultContentType);
         let listener = Iron::new(chain)
-            .http(format!("localhost:{}", port))
+            .http(format!("127.0.0.1:{}", port))
             .expect("failed to start API server");
 
 //        let running = AtomicBool::from(true);

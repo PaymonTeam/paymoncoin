@@ -29,11 +29,6 @@ use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
 static CF_NAMES: [&str; 3] = ["transaction", "transaction-metadata", "address"];
 const SUPPLY : u32 = 10_000;
 
-#[derive(Copy, PartialEq, Eq, Clone, Debug)]
-pub enum AddressError {
-    InvalidAddress,
-}
-
 pub enum Error {
     IO(io::Error),
     Parse(num::ParseIntError),
@@ -200,36 +195,6 @@ impl Hive {
 //            },
 //            Err(e) => Err(e)
 //        }
-    }
-
-    pub fn address_to_string(bytes: [u8; ADDRESS_SIZE]) -> String {
-        let strs: Vec<String> = bytes.iter()
-            .map(|b| format!("{:02X}", b))
-            .collect();
-        format!("P{}", strs.join(""))
-    }
-
-    pub fn address_to_bytes(address: String) -> Result<[u8; ADDRESS_SIZE], AddressError> {
-        use self::rustc_serialize::hex::FromHex;
-
-        if !address.starts_with("P") {
-            return Err(AddressError::InvalidAddress);
-        }
-
-        match address[1..].to_string().from_hex() {
-            Err(_) => return Err(AddressError::InvalidAddress),
-            Ok(vec) => {
-                let bytes:&[u8] = vec.as_ref();
-                let mut ret_bytes = [0u8; 21];
-
-                if bytes.len() == 21 {
-                    ret_bytes.copy_from_slice(&bytes);
-                    return Ok(ret_bytes)
-                } else {
-                    return Err(AddressError::InvalidAddress);
-                }
-            }
-        };
     }
 
     pub fn load_balances(&mut self) -> Result<(), Error> {
