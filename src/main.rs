@@ -71,12 +71,12 @@ fn test_threads() {
 
     let mut jhs = VecDeque::new();
 
-    let ports = [0, 10001, 10002].iter();
+    let ports = [0, 70, 10002].iter();
     for port in ports {
         let port = *port;
         let mut neighbors = String::new();
         if port != 0 {
-            let ports2 = [44832, 10001, 10002].iter();
+            let ports2 = [44832, 70, 10002].iter();
             let v: Vec<String> = ports2.filter(|p| **p != port).map(|p| format!("127.0.0.1:{}",
                                                                                 p)).collect();
             neighbors = v.join(" ");
@@ -101,12 +101,12 @@ fn test_threads() {
             let api_running_clone = api_running.clone();
 
             let api_jh = thread::spawn(move || {
-                let mut api = API::new(pmnc_clone, port as u16, api_running_clone);
+                let mut api = API::new(pmnc_clone, (port + 10) as u16, api_running_clone);
                 api.run();
                 drop(api);
             });
 
-            thread::sleep(Duration::from_secs(6));
+            thread::sleep(Duration::from_secs(10000));
 
             {
     //            api_running.store(false, Ordering::SeqCst);

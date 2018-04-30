@@ -1,6 +1,6 @@
 use network::packet::{Serializable, SerializedBuffer};
 use model::{
-    Transaction,
+    Transaction, TransactionObject,
     transaction::Hash
 };
 
@@ -49,8 +49,9 @@ impl Serializable for NodeInfo {
 /**
     AttachTransaction
 */
+//#[derive(RustcDecodable, RustcEncodable)]
 pub struct AttachTransaction {
-    pub transaction: Transaction,
+    pub transaction: TransactionObject,
 }
 
 impl AttachTransaction { pub const SVUID : i32 = 4; }
@@ -69,8 +70,9 @@ impl Serializable for AttachTransaction {
 /**
     BroadcastTransaction
 */
+//#[derive(RustcDecodable, RustcEncodable)]
 pub struct BroadcastTransaction {
-    pub transaction: Transaction,
+    pub transaction: TransactionObject,
 }
 
 impl BroadcastTransaction { pub const SVUID : i32 = 15235324; }
