@@ -32,23 +32,6 @@ impl Milestone{
 impl Clone for Milestone{
     fn clone(&self) -> Milestone {
 
-        /*match *self {
-            Milestone { index: ref __self_0_0,
-                        hash: ref __self_0_1,
-                        latestSolidSubtangleMilestoneIndex: ref __self_0_2,
-                        latestMilestoneIndex: ref __self_0_3,
-                        latestSolidSubtangleMilestone: ref __self_0_4,
-                        latestMilestone: ref __self_0_5} => {
-
-                ::std::clone::assert_receiver_is_clone(&(*__self_0_0));
-                ::std::clone::assert_receiver_is_clone(&(*__self_0_1));
-                ::std::clone::assert_receiver_is_clone(&(*__self_0_2));
-                ::std::clone::assert_receiver_is_clone(&(*__self_0_3));
-                ::std::clone::assert_receiver_is_clone(&(*__self_0_4));
-                ::std::clone::assert_receiver_is_clone(&(*__self_0_5));
-                *self
-            }
-        }*/
         let index = self.index.clone();
         let hash = self.hash.clone();
         let latestSolidSubtangleMilestoneIndex = self.latestSolidSubtangleMilestoneIndex.clone();

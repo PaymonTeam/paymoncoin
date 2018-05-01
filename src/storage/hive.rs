@@ -25,6 +25,7 @@ use std::sync::Arc;
 
 use model::transaction::{HASH_SIZE, ADDRESS_SIZE, TransactionObject, Transaction, Address, Hash,
                          ADDRESS_NULL, HASH_NULL};
+use model::approvee::Approvee;
 use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
 
 static CF_NAMES: [&str; 4] = ["transaction", "transaction-metadata", "address", "approvee"];
@@ -57,6 +58,10 @@ impl Hive {
             db,
             balances: HashMap::new(),
         }
+    }
+    pub fn load_approvee(hash: &Hash) -> Approvee{
+        //TODO load
+        unimplemented!()
     }
 
     pub fn init(&mut self) {
