@@ -70,7 +70,7 @@ impl Serializable for AttachTransaction {
 /**
     BroadcastTransaction
 */
-//#[derive(RustcDecodable, RustcEncodable)]
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct BroadcastTransaction {
     pub transaction: TransactionObject,
 }

@@ -33,7 +33,7 @@ impl AfterMiddleware for DefaultContentType {
 
 pub struct API {
     listener: Listening,
-    running: Arc<(Mutex<bool>, Condvar)>, //Arc<AtomicBool>,
+    running: Arc<(Mutex<bool>, Condvar)>,
     pmnc: AM<PaymonCoin>
 }
 
@@ -46,13 +46,12 @@ pub struct APIRequest<T : Serializable> {
 impl API {
     pub fn new(pmnc: AM<PaymonCoin>, port: u16, running: Arc<(Mutex<bool>, Condvar)>) -> Self {
         info!("Running API on port {}", port);
-        let mut chain = Chain::new(API::info);
+        let mut chain = Chain::new(API::api);
         chain.link_after(DefaultContentType);
         let listener = Iron::new(chain)
             .http(format!("127.0.0.1:{}", port))
             .expect("failed to start API server");
 
-//        let running = AtomicBool::from(true);
         Self {
             listener,
             running,
@@ -61,13 +60,6 @@ impl API {
     }
 
     pub fn run(&mut self) {
-//        loop {
-//            if !self.running.load(Ordering::Relaxed) {
-//                break;
-//            }
-
-//            thread::sleep_ms(1000);
-//        }
         let &(ref lock, ref cvar) = &*self.running;
         let mut is_running = lock.lock().unwrap();
         while *is_running {
@@ -80,7 +72,7 @@ impl API {
         Response::with((iron::status::Ok, format!("{{\"error\":\"{}\"}}\n", err.to_string())))
     }
 
-    fn info(req: &mut Request) -> IronResult<Response> {
+    fn api(req: &mut Request) -> IronResult<Response> {
         if req.method != iron::method::Post {
             return Ok(API::format_error_response("Wrong HTTP method"));
         }
@@ -101,10 +93,10 @@ impl API {
         req.body.read_to_end(&mut body).map_err(|e| IronError::new(e,
                                                                    (status::InternalServerError,
                                                                    "Error reading request")))?;
-        let mut json = Json::from_str(
-            std::str::from_utf8(&body)
-                .map_err(|e| IronError::new(e, (status::InternalServerError, "Invalid UTF-8 string")))?)
-            .map_err(|e| IronError::new(e, (status::InternalServerError, "Invalid JSON")))?;
+        let json_str = std::str::from_utf8(&body).map_err(|e| IronError::new(e,
+                                                                             (status::InternalServerError, "Invalid UTF-8 string")))?;
+        let mut json = Json::from_str(json_str).map_err(|e| IronError::new(e,
+                                                                            (status::InternalServerError, "Invalid JSON")))?;
 
         match json.as_object() {
             Some(o) => {
@@ -115,6 +107,16 @@ impl API {
                 match o.get("method").unwrap().as_string() {
                     Some(method) => {
                         match method {
+                            "broadcastTransaction" => {
+                                println!("broadcastTransaction");
+                                match json::decode::<rpc::BroadcastTransaction>(&json_str) {
+                                    Ok(bt) => {
+                                        
+                                        return Ok(Response::with((iron::status::Ok, "{}")));
+                                    }
+                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                };
+                            }
                             "getNodeInfo" => {
                                 println!("getNodeInfo");
                                 let result = rpc::NodeInfo {
@@ -140,7 +142,5 @@ impl API {
     }
 
     pub fn shutdown(&mut self) {
-//        self.listener.
-//        drop(self.listener);
     }
 }
