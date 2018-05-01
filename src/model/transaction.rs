@@ -27,14 +27,20 @@ pub const HASH_NULL: Hash = Hash([0u8; HASH_SIZE]);
 pub const ADDRESS_NULL: Address = Address([0u8; ADDRESS_SIZE]);
 
 #[derive(PartialEq, Clone, Copy, Eq, Hash)]
-pub struct Hash([u8; HASH_SIZE]);
+pub struct Hash(pub [u8; HASH_SIZE]);
 
 impl Hash {
-    // TODO:
     pub fn trailing_zeros(&self) -> u16 {
-        unimplemented!();
-
         let mut zeros = 0u16;
+        for i in 0..MIN_WEIGHT_MAGNITUDE as usize {
+            let x = self.0[i / 8];
+            let y = (0b10000000 >> (i % 8)) as u8;
+
+            if x & y != 0 {
+                break;
+            }
+            zeros += 1u16;
+        }
         zeros
     }
 

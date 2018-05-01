@@ -157,7 +157,7 @@ fn test_threads() {
 #[test]
 fn hive_test() {
     use model::{Transaction, TransactionObject};
-    use model::transaction::ADDRESS_NULL;
+    use model::transaction::{Hash, ADDRESS_NULL, HASH_SIZE};
     use storage::hive::{CFType};
 
     use self::rustc_serialize::hex::{ToHex, FromHex};
@@ -165,6 +165,16 @@ fn hive_test() {
 
     let mut hive = Hive::new();
     hive.init();
+
+    let h0 = Hash([1u8; HASH_SIZE]);
+    let h1 = Hash([2u8; HASH_SIZE]);
+    let h2 = Hash([3u8; HASH_SIZE]);
+
+    assert!(hive.put_approvee(h1, h0));
+    assert!(hive.put_approvee(h2, h0));
+
+    let hashes = hive.storage_load_approvee(&h0).expect("failed to load hashes");
+    println!("{:?}", hashes);
 
     let mut t0 = TransactionObject::new_random();
     hive.storage_put(CFType::Transaction, &t0.hash, &t0);

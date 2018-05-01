@@ -79,7 +79,7 @@ impl Hive {
     }
 
     pub fn put_approvee(&mut self, approvee: Hash, approved: Hash) -> bool {
-        self.storage_put(CFType::Approvee, &approved, &approvee)
+        self.storage_merge(CFType::Approvee, &approved, &approvee)
     }
 
     pub fn put_transaction(&mut self, t: &Transaction) -> bool {
@@ -89,6 +89,15 @@ impl Hive {
     pub fn storage_put<T>(&mut self, t: CFType, key: &[u8], packet: &T) -> bool where T : Serializable {
         let object = get_serialized_object(packet, false);
         self.db.put_cf(self.db.cf_handle(CF_NAMES[t as usize]).unwrap(), key, &object).is_ok()
+    }
+
+    pub fn storage_merge<T>(&mut self, t: CFType, key: &[u8], packet: &T) -> bool where T : Serializable {
+        let object = get_serialized_object(packet, false);
+        match self.db.merge_cf(self.db.cf_handle(CF_NAMES[t as usize]).unwrap(), key, &object) {
+            Ok(_) => return true,
+            Err(e) => println!("{:?}", e)
+        };
+        false
     }
 
     pub fn storage_get_transaction(&mut self, key: &[u8]) -> Option<Transaction> {
@@ -102,18 +111,24 @@ impl Hive {
         }
     }
 
-    pub fn storage_load_approvee(&mut self, hash: &Hash) -> Option<Hash> {
+    pub fn storage_load_approvee(&mut self, hash: &Hash) -> Option<Vec<Hash>> {
         let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Approvee as usize]).unwrap
         (), hash);
         match vec {
             Ok(res) => {
                 let buf = SerializedBuffer::from_slice(&res?);
-                if buf.len() < HASH_SIZE {
+                if buf.len() < HASH_SIZE || buf.len() % HASH_SIZE != 0 {
                     return None;
                 }
-                let mut hash = HASH_NULL;
-                hash.clone_from_slice(&buf[..HASH_SIZE]);
-                Some(hash)
+                let mut arr = vec![];
+                let mut pos = 0;
+                while pos < buf.len() {
+                    let mut hash = HASH_NULL;
+                    hash.clone_from_slice(&buf[pos..(pos+HASH_SIZE)]);
+                    arr.push(hash);
+                    pos += HASH_SIZE;
+                }
+                Some(arr)
             },
             Err(e) => {
                 warn!("get transaction from storage error ({})", e);
@@ -139,14 +154,45 @@ impl Hive {
     }
 
     fn init_db() -> DB {
+        use self::rocksdb::merge_operator::MergeOperands;
+        fn concat_merge(new_key: &[u8],
+                        existing_val: Option<&[u8]>,
+                        operands: &mut MergeOperands)
+                        -> Option<Vec<u8>> {
+
+            let mut result: Vec<u8> = Vec::with_capacity(operands.size_hint().0);
+            existing_val.map(|v| {
+                for e in v {
+                    result.push(*e)
+                }
+            });
+            for op in operands {
+                for e in op {
+                    result.push(*e)
+                }
+            }
+            Some(result)
+        }
+
         let mut opts = Options::default();
         opts.set_max_background_compactions(2);
         opts.set_max_background_flushes(2);
+        opts.set_merge_operator("bytes_concat", concat_merge, None);
+
+        let cfs_v = CF_NAMES.to_vec().iter().map(|name| {
+            let mut opts = Options::default();
+//                opts.set_merge_operator()
+            opts.set_max_write_buffer_number(2);
+            opts.set_write_buffer_size(2 * 1024 * 1024);
+            opts.set_merge_operator("bytes_concat", concat_merge, None);
+
+            ColumnFamilyDescriptor::new(*name, opts)
+        }).collect();
 
         use std::thread;
         let path = format!("db/data{:?}", thread::current().id());
 
-        match DB::open_cf(&opts, path.clone(), &CF_NAMES) {
+        match DB::open_cf_descriptors(&opts, path.clone(), cfs_v) {
             Ok(mut db) => {
                 Hive::clear_db(&mut db);
                 return db;
@@ -155,21 +201,25 @@ impl Hive {
                 opts.create_if_missing(true);
                 let mut db = DB::open(&opts, path.clone()).expect("failed to create database");
 
-                let opts = Options::default();
+                let mut opts = Options::default();
                 for name in CF_NAMES.iter() {
                     db.create_cf(name, &opts);
                 }
+
+                opts.set_merge_operator("bytes_concat", concat_merge, None);
 
                 let cfs_v = CF_NAMES.to_vec().iter().map(|name| {
                     let mut opts = Options::default();
 //                opts.set_merge_operator()
                     opts.set_max_write_buffer_number(2);
                     opts.set_write_buffer_size(2 * 1024 * 1024);
+                    opts.set_merge_operator("bytes_concat", concat_merge, None);
 
                     ColumnFamilyDescriptor::new(*name, opts)
                 }).collect();
 
                 drop(db);
+
                 let db = DB::open_cf_descriptors(&opts, path, cfs_v).expect("failed to open database");
                 return db;
             }
