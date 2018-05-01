@@ -14,34 +14,25 @@ extern crate rand;
 #[derive(Hash, Eq, PartialEq, Debug)]
 struct Pair(Hash, i64);
 
-pub struct MonteCarlo {
+pub struct TipsManager {
     hive: AM<Hive>,
     max_depth: u32,
-    milestone: Milestone,
+    milestone: AM<Milestone>,
     milestone_start_index: u32,
 }
 
-impl MonteCarlo {
-    pub fn new() -> Self {
-        let hive = Arc::new(Mutex::new(Hive::new()));
+impl TipsManager {
+    pub fn new(hive: AM<Hive>, milestone: AM<Milestone>) -> Self {
         let max_depth = 0u32;
-        let milestone = Milestone::new();
         let milestone_start_index = 0u32;
-        MonteCarlo {
+
+        TipsManager {
             hive,
             max_depth,
             milestone,
             milestone_start_index
         }
     }
-
-    pub fn set_hive(&mut self, hive_: &AM<Hive>) {
-        self.hive = AM::clone(hive_);
-    }
-    pub fn set_milestone(&mut self, milestone_: &Milestone){
-        self.milestone = milestone_.clone();
-    }
-
 
     pub fn transaction_to_approve(&self,
                                 visited_hashes: &HashSet<Hash> ,
@@ -140,17 +131,21 @@ impl MonteCarlo {
             tip_set = transaction_obj.get_approvers(&self.hive).clone();
 
             if transaction_obj.get_current_index() == 0 {
-                if transaction_obj.get_type() == TransactionType::HashOnly {
+                /*if transactionObj.getType() == transactionObj.PREFILLED_SLOT {
                     break;
-                } /*else if !transactionValidator.checkSolidity(transactionViewModel.getHash(), false) {
+                } else if !transactionValidator.checkSolidity(transactionViewModel.getHash(), false) {
+                    break;
+                } else if belowMaxDepth(transactionViewModel.getHash(), maxDepth, maxDepthOk) {
                     break;
                 } else if !ledgerValidator.updateDiff(myApprovedHashes, myDiff, transactionViewModel.getHash()) {
                     break;
-                }*/ else if MonteCarlo::below_max_depth(&transaction_obj.get_hash(),
-                                                        max_depth,
-                                                        max_depth_ok) {
+                }  else*/
+                if TipsManager::below_max_depth(&transaction_obj.get_hash(),
+                                                max_depth,
+                                                max_depth_ok) {
                     break;
-                } else if transaction_obj.calculate_hash() == *extra_tip {
+                }
+                if transaction_obj.calculate_hash() == *extra_tip {
                     break;
                 }
             }
@@ -174,7 +169,7 @@ impl MonteCarlo {
                 }
             } else {
                 // walk to the next approver
-                tips = MonteCarlo::set_to_vec(&tip_set);
+                tips = TipsManager::set_to_vec(&tip_set);
                 if !ratings.contains_key(&tip) {
                     self.serial_update_ratings(
                         &my_approved_hashes,
@@ -192,9 +187,9 @@ impl MonteCarlo {
                     None => break
                 };
                 for i in 0..tips.capacity() {
-                    walk_ratings[i] = ((tip_rating - MonteCarlo::get_or_default(ratings,
-                                                                                &tips[i],
-                                                                                0i64)) as f32).powf(-3 as f32);
+                    walk_ratings[i] = ((tip_rating - TipsManager::get_or_default(ratings,
+                                                                                 &tips[i],
+                                                                                 0i64)) as f32).powf(-3 as f32);
                     max_rating += walk_ratings[i];
                 }
 
@@ -237,9 +232,9 @@ impl MonteCarlo {
                     Some(value) => *value,
                     None => 0i64,
                 };
-                MonteCarlo::put(monte_carlo_integrations, &tail, &(taken_from_map + 1));
+                TipsManager::put(monte_carlo_integrations, &tail, &(taken_from_map + 1));
             } else {
-                MonteCarlo::put(monte_carlo_integrations, &tail, &1);
+                TipsManager::put(monte_carlo_integrations, &tail, &1);
             }
         }
 
@@ -309,9 +304,9 @@ impl MonteCarlo {
                     hashes_to_rate.push_front(*approver);
                 }
             }
-            if !added_back && MonteCarlo::add(analyzed_tips, &current_hash) {
-                let rating: i64 = MonteCarlo::rating_calc(&extra_tip, &visited_hashes, &current_hash, &approvers, ratings);
-                MonteCarlo::put(ratings, &current_hash, &rating);
+            if !added_back && TipsManager::add(analyzed_tips, &current_hash) {
+                let rating: i64 = TipsManager::rating_calc(&extra_tip, &visited_hashes, &current_hash, &approvers, ratings);
+                TipsManager::put(ratings, &current_hash, &rating);
             }
         }
     }
@@ -413,12 +408,12 @@ impl MonteCarlo {
             let mut transaction = Transaction::from_hash(*txHash);
             let mut approver_hashes = transaction.get_approvers(&self.hive);
             for approver in approver_hashes.iter() {
-                rating = cap_sum(&rating, &MonteCarlo::recursive_update_ratings(self,&approver,
-                                                                               ratings,
-                                                                               analyzed_tips),
+                rating = cap_sum(&rating, &TipsManager::recursive_update_ratings(self, &approver,
+                                                                                 ratings,
+                                                                                 analyzed_tips),
                                  &(<i64>::max_value() / 2));
             }
-            MonteCarlo::put(ratings ,txHash, &rating);
+            TipsManager::put(ratings, txHash, &rating);
         } else {
             if ratings.contains_key(txHash) {
                 rating = match ratings.get(txHash){

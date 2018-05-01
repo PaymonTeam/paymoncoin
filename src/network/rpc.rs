@@ -91,6 +91,7 @@ impl Serializable for BroadcastTransaction {
 /**
     GetTransactionsToApprove
 */
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct GetTransactionsToApprove {}
 
 impl GetTransactionsToApprove { pub const SVUID : i32 = 5; }
@@ -104,6 +105,7 @@ impl Serializable for GetTransactionsToApprove {
 /**
     TransactionsToApprove
 */
+#[derive(RustcDecodable, RustcEncodable)]
 pub struct TransactionsToApprove {
     pub trunk: Hash,
     pub branch: Hash,
