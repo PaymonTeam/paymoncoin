@@ -3,6 +3,7 @@ use std::iter::Iterator;
 use std::sync::{Arc, Mutex};
 
 use model::transaction::*;
+
 use storage::hive::Hive;
 use model::milestone::Milestone;
 use utils::defines::AM;
@@ -195,7 +196,9 @@ impl MonteCarlo {
                     None => break
                 };
                 for i in 0..tips.capacity() {
-                    walk_ratings[i] = ((tip_rating - MonteCarlo::get_or_default(ratings, &tips[i], 0i64)) as f32).powf(-3 as f32);
+                    walk_ratings[i] = ((tip_rating - MonteCarlo::get_or_default(ratings,
+                                                                                &tips[i],
+                                                                                0i64)) as f32).powf(-3 as f32);
                     max_rating += walk_ratings[i];
                 }
 
