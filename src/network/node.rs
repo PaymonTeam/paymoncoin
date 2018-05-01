@@ -20,6 +20,7 @@ use model::transaction;
 //#[macro_use]
 //use utils;
 use utils::{AM, AWM};
+use network::rpc;
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
@@ -148,13 +149,16 @@ impl Node {
     }
 
     pub fn run(&mut self) -> Result<(), Error> {
-//        if let Some(ref s) = self.receiver {
-//            if let Some(ref s) = s.upgrade() {
-//                let mut receiver = s.lock().unwrap();
-//                (*receiver).run();
-//            }
-//        }
         return Ok(());
+    }
+
+    // TODO: return Result
+    pub fn on_api_broadcast_transaction_received(&mut self, bt: rpc::BroadcastTransaction) {
+        if let Ok(mut queue) = self.receive_queue.lock() {
+            let mut transaction = Transaction::from_object(bt.transaction);
+            queue.push_back(transaction);
+//            return Ok(());
+        }
     }
 
     pub fn on_connection_data_received(&mut self, mut data: SerializedBuffer, addr: SocketAddr) {
@@ -190,7 +194,6 @@ impl Node {
         let svuid = data.read_i32();
 
         use std::collections::HashMap;
-        use network::rpc;
         use network::packet::Serializable;
 
         match svuid {

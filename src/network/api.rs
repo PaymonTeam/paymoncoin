@@ -31,10 +31,10 @@ impl AfterMiddleware for DefaultContentType {
     }
 }
 
+static mut PMNC: Option<AM<PaymonCoin>> = None;
 pub struct API {
     listener: Listening,
     running: Arc<(Mutex<bool>, Condvar)>,
-    pmnc: AM<PaymonCoin>
 }
 
 #[derive(RustcDecodable, RustcEncodable)]
@@ -52,10 +52,13 @@ impl API {
             .http(format!("127.0.0.1:{}", port))
             .expect("failed to start API server");
 
+        unsafe {
+            PMNC = Some(pmnc);
+        }
+
         Self {
             listener,
             running,
-            pmnc
         }
     }
 
@@ -111,8 +114,37 @@ impl API {
                                 println!("broadcastTransaction");
                                 match json::decode::<rpc::BroadcastTransaction>(&json_str) {
                                     Ok(bt) => {
-                                        
+                                        unsafe {
+                                            if let Some(ref arc) = PMNC {
+                                                if let Ok(pmnc) = arc.lock() {
+                                                    if let Ok(mut node) = pmnc.node.lock() {
+                                                        node.on_api_broadcast_transaction_received(bt);
+                                                    }
+                                                }
+                                            }
+                                        }
                                         return Ok(Response::with((iron::status::Ok, "{}")));
+                                    }
+                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                };
+                            }
+                            "getTransactionsToApprove" => {
+                                println!("getTransactionsToApprove");
+                                match json::decode::<rpc::GetTransactionsToApprove>(&json_str) {
+                                    Ok(bt) => {
+                                        unsafe {
+                                            if let Some(ref arc) = PMNC {
+                                                if let Ok(pmnc) = arc.lock() {
+                                                    if let Ok(mut node) = pmnc.node.lock() {
+//                                                        let result = rpc::TransactionsToApprove {
+//                                                            branch, trunk
+//                                                        };
+//                                                        return format_success_response!(result);
+                                                    }
+                                                }
+                                            }
+                                        };
+                                        return Ok(API::format_error_response("Internal error"));
                                     }
                                     Err(e) => return Ok(API::format_error_response("Invalid data"))
                                 };
