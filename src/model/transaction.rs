@@ -2,6 +2,7 @@ extern crate rustc_serialize;
 extern crate crypto;
 extern crate ntrumls;
 
+use model::approvee::*;
 use network::packet::{Serializable, SerializedBuffer};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
@@ -257,6 +258,7 @@ pub enum TransactionType {
 
 #[derive(Debug, PartialEq, Clone, RustcEncodable, RustcDecodable)]
 pub struct TransactionObject {
+    pub approvers: Option<Approvee>,
     pub address: Address,
     pub attachment_timestamp: u64,
     pub attachment_timestamp_lower_bound: u64,
@@ -292,10 +294,14 @@ impl Transaction {
     }
 
     pub fn get_approvers(&self, hive: &AM<Hive>) -> HashSet<Hash> {
-        //TODO get approvers from Hive
-        let result: HashSet<Hash> = HashSet::new();
-        //while hive.
-        return result;
+        let mut res = self.object.approvers.clone();
+        match res {
+            Some(aprv) => aprv.get_hashes(),
+            None => match Approvee::load(hive, &self.object.hash){
+                Some(aprv) => aprv.get_hashes(),
+                None => HashSet::new()
+            }
+        }
     }
 
     pub fn from_hash(hash: Hash) -> Self {
@@ -430,6 +436,7 @@ impl TransactionObject {
 
     pub fn from_hash(hash: Hash) -> Self {
         TransactionObject {
+            approvers: None,
             address: ADDRESS_NULL,
             attachment_timestamp: 0u64,
             attachment_timestamp_lower_bound: 0u64,
@@ -477,6 +484,7 @@ impl TransactionObject {
         thread_rng().fill_bytes(&mut bundle);
 
         TransactionObject {
+            approvers: None,
             signature,
             address,
             attachment_timestamp,
