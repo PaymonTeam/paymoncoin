@@ -286,11 +286,15 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn get_current_index(&self) -> u32 {
-        self.object.current_index
+        self.object.current_index.clone()
+    }
+
+    pub fn get_type(&self) -> TransactionType{
+        self.object.data_type.clone()
     }
 
     pub fn get_hash(&self) -> Hash{
-        return self.object.hash;
+        self.object.hash.clone()
     }
 
     pub fn get_approvers(&self, hive: &AM<Hive>) -> HashSet<Hash> {
@@ -316,13 +320,11 @@ impl Transaction {
     }
 
     pub fn get_trunk_transaction_hash(&self) -> Hash {
-        let result = self.object.trunk_transaction.clone();
-        return result;
+        self.object.trunk_transaction.clone()
     }
 
     pub fn get_branch_transaction_hash(&self) -> Hash {
-        let result = self.object.branch_transaction.clone();
-        return result;
+        self.object.branch_transaction.clone()
     }
 
     pub fn from_bytes(mut bytes: SerializedBuffer) -> Self {

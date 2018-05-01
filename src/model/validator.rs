@@ -140,21 +140,17 @@ impl MonteCarlo {
             tip_set = transaction_obj.get_approvers(&self.hive).clone();
 
             if transaction_obj.get_current_index() == 0 {
-                /*if transactionObj.getType() == transactionObj.PREFILLED_SLOT {
+                if transaction_obj.get_type() == TransactionType::HashOnly {
                     break;
-                } else if !transactionValidator.checkSolidity(transactionViewModel.getHash(), false) {
-                    break;
-                } else if belowMaxDepth(transactionViewModel.getHash(), maxDepth, maxDepthOk) {
+                } /*else if !transactionValidator.checkSolidity(transactionViewModel.getHash(), false) {
                     break;
                 } else if !ledgerValidator.updateDiff(myApprovedHashes, myDiff, transactionViewModel.getHash()) {
                     break;
-                }  else*/
-                if MonteCarlo::below_max_depth(&transaction_obj.get_hash(),
-                                               max_depth,
-                                               max_depth_ok) {
+                }*/ else if MonteCarlo::below_max_depth(&transaction_obj.get_hash(),
+                                                        max_depth,
+                                                        max_depth_ok) {
                     break;
-                }
-                if transaction_obj.calculate_hash() == *extra_tip {
+                } else if transaction_obj.calculate_hash() == *extra_tip {
                     break;
                 }
             }
