@@ -9,6 +9,7 @@ use model::milestone::Milestone;
 use utils::defines::AM;
 
 use rand::Rng;
+
 extern crate rand;
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -30,19 +31,18 @@ impl TipsManager {
             hive,
             max_depth,
             milestone,
-            milestone_start_index
+            milestone_start_index,
         }
     }
 
     pub fn transaction_to_approve(&self,
-                                visited_hashes: &HashSet<Hash> ,
-                                diff: &HashMap<Hash, i64> ,
-                                reference: &Hash,
-                                extra_tip: &Hash,
-                                depth: &mut u32,
-                                iterations: &u32) -> Option<Hash> {
+                                  visited_hashes: &HashSet<Hash>,
+                                  diff: &HashMap<Hash, i64>,
+                                  reference: &Hash,
+                                  extra_tip: &Hash,
+                                  depth: &mut u32,
+                                  iterations: &u32) -> Option<Hash> {
         if *depth > self.max_depth {
-
             *depth = self.max_depth;
         }
         //TODO milestone
@@ -53,39 +53,38 @@ impl TipsManager {
             let mut max_depth_ok: HashSet<Hash> = HashSet::new();
             //TODO entry_point
             let tip = self.entry_point(reference,
-                                  extra_tip,
-                                  depth);
+                                       extra_tip,
+                                       depth);
             self.serial_update_ratings(visited_hashes,
-                                  &tip,
-                                  & mut ratings,
-                                  & mut analyzed_tips,
-                                  extra_tip);
+                                       &tip,
+                                       &mut ratings,
+                                       &mut analyzed_tips,
+                                       extra_tip);
             analyzed_tips.clear();
             //TODO update_diff
             if /*ledgerValidator.update_diff(visitedHashes, diff, tip)*/ true {
                 return Some(self.markov_chain_monte_carlo(visited_hashes,
-                                                     diff,
-                                                     &tip,
-                                                     extra_tip,
-                                                     & mut ratings,
-                                                     iterations,
+                                                          diff,
+                                                          &tip,
+                                                          extra_tip,
+                                                          &mut ratings,
+                                                          iterations,
                                                           &(self.milestone.latestSolidSubtangleMilestoneIndex - (*depth) * 2),
-                                                     & mut max_depth_ok));
+                                                          &mut max_depth_ok));
             } else {
                 println!("Update Diff error");
             }
         }
         return None;
     }
-    fn entry_point(&self, reference: &Hash , extra_tip: &Hash, depth: &u32) -> Hash {
+    fn entry_point(&self, reference: &Hash, extra_tip: &Hash, depth: &u32) -> Hash {
         if *extra_tip == HASH_NULL {
             //trunk
-            if *reference != HASH_NULL{
+            if *reference != HASH_NULL {
                 return *reference;
-            }else{
+            } else {
                 return self.milestone.latestSolidSubtangleMilestone;
             }
-
         }
         //TODO milestone
         //branch (extraTip)
@@ -101,7 +100,6 @@ impl TipsManager {
     */
         return HASH_NULL;
     }
-
 
 
     pub fn random_walk(&self,
@@ -131,21 +129,17 @@ impl TipsManager {
             tip_set = transaction_obj.get_approvers(&self.hive).clone();
 
             if transaction_obj.get_current_index() == 0 {
-                /*if transactionObj.getType() == transactionObj.PREFILLED_SLOT {
+                if transaction_obj.get_type() == TransactionType::HashOnly {
                     break;
-                } else if !transactionValidator.checkSolidity(transactionViewModel.getHash(), false) {
-                    break;
-                } else if belowMaxDepth(transactionViewModel.getHash(), maxDepth, maxDepthOk) {
+                } /*else if !transactionValidator.checkSolidity(transactionViewModel.getHash(), false) {
                     break;
                 } else if !ledgerValidator.updateDiff(myApprovedHashes, myDiff, transactionViewModel.getHash()) {
                     break;
-                }  else*/
-                if TipsManager::below_max_depth(&transaction_obj.get_hash(),
-                                                max_depth,
-                                                max_depth_ok) {
+                }*/ else if TipsManager::below_max_depth(&transaction_obj.get_hash(),
+                                                         max_depth,
+                                                         max_depth_ok) {
                     break;
-                }
-                if transaction_obj.calculate_hash() == *extra_tip {
+                } else if transaction_obj.calculate_hash() == *extra_tip {
                     break;
                 }
             }
@@ -160,11 +154,11 @@ impl TipsManager {
 
                 match hash_iterator.next() {
                     Some(hash) => {
-                        tip = match tip_set.get(&hash){
+                        tip = match tip_set.get(&hash) {
                             Some(hash) => *hash,
                             None => HASH_NULL,
                         };
-                    },
+                    }
                     None => tip = HASH_NULL
                 }
             } else {
@@ -184,7 +178,7 @@ impl TipsManager {
                 let mut max_rating: f32 = 0f32;
                 let mut tip_rating: i64 = match ratings.get(&tip) {
                     Some(x) => *x,
-                    None => break
+                    None => break;; ; ; ; ; ; ;
                 };
                 for i in 0..tips.capacity() {
                     walk_ratings[i] = ((tip_rating - TipsManager::get_or_default(ratings,
@@ -228,7 +222,7 @@ impl TipsManager {
         for i in *iterations..0 {
             tail = self.random_walk(visited_hashes, diff, tip, extra_tip, ratings, max_depth, max_depth_ok);
             if monte_carlo_integrations.contains_key(&tail) {
-                let taken_from_map = match map_clone.get(&tail){
+                let taken_from_map = match map_clone.get(&tail) {
                     Some(value) => *value,
                     None => 0i64,
                 };
@@ -263,7 +257,7 @@ impl TipsManager {
             loop {
                 match hash_iterator.next() {
                     Some(hash) => result.push(*set.get(hash).unwrap()),
-                    None => break
+                    None => break;; ; ; ; ; ; ;
                 }
             }
         }
@@ -341,7 +335,7 @@ impl TipsManager {
         let result: i64;
         match map.contains_key(&key) {
             true => {
-                result = match map.get(&key){
+                result = match map.get(&key) {
                     Some(long) => *long,
                     None => 0i64,
                 };
@@ -364,7 +358,7 @@ impl TipsManager {
         return result;
     }
 
-    fn below_max_depth(tip: &Hash, depth: &u32, max_depth_ok: & mut HashSet<Hash> )-> bool {
+    fn below_max_depth(tip: &Hash, depth: &u32, max_depth_ok: &mut HashSet<Hash>) -> bool {
 //if tip is confirmed stop
         if TransactionObject::from_hash(*tip).get_snapshot_index() >= *depth {
             return false;
@@ -372,12 +366,12 @@ impl TipsManager {
 //if tip unconfirmed, check if any referenced tx is confirmed below maxDepth
         let mut non_analyzed_transactions = LinkedList::new();
         non_analyzed_transactions.push_front(*tip);
-        let mut analyzed_transcations:HashSet <Hash>  = HashSet::new();
-        let mut hash:Hash;
+        let mut analyzed_transcations: HashSet<Hash> = HashSet::new();
+        let mut hash: Hash;
         while non_analyzed_transactions.front() != None {
             hash = match non_analyzed_transactions.front() {
                 Some(h) => *h,
-                None => break,
+                None => break;; ; ; ; ; ; ;,
             };
             if analyzed_transcations.insert(hash) {
                 let mut transaction: Transaction = Transaction::from_hash(hash);
@@ -402,7 +396,7 @@ impl TipsManager {
     pub fn recursive_update_ratings(&self,
                                     txHash: &Hash,
                                     ratings: &mut HashMap<Hash, i64>,
-                                    analyzed_tips: &mut HashSet<Hash> ) -> i64 {
+                                    analyzed_tips: &mut HashSet<Hash>) -> i64 {
         let mut rating = 1;
         if analyzed_tips.insert(*txHash) {
             let mut transaction = Transaction::from_hash(*txHash);
@@ -416,7 +410,7 @@ impl TipsManager {
             TipsManager::put(ratings, txHash, &rating);
         } else {
             if ratings.contains_key(txHash) {
-                rating = match ratings.get(txHash){
+                rating = match ratings.get(txHash) {
                     Some(x) => *x,
                     None => 0,
                 };
@@ -426,7 +420,6 @@ impl TipsManager {
         }
         return rating;
     }
-
 }
 
 fn cap_sum(a: &i64, b: &i64, max: &i64) -> i64 {

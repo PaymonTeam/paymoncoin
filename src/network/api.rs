@@ -24,6 +24,7 @@ macro_rules! format_success_response {
 }
 
 struct DefaultContentType;
+
 impl AfterMiddleware for DefaultContentType {
     fn after(&self, _req: &mut Request, mut resp: Response) -> IronResult<Response> {
         resp.headers.set(iron::headers::ContentType::json());
@@ -32,13 +33,14 @@ impl AfterMiddleware for DefaultContentType {
 }
 
 static mut PMNC: Option<AM<PaymonCoin>> = None;
+
 pub struct API {
     listener: Listening,
     running: Arc<(Mutex<bool>, Condvar)>,
 }
 
 #[derive(RustcDecodable, RustcEncodable)]
-pub struct APIRequest<T : Serializable> {
+pub struct APIRequest<T: Serializable> {
     pub method: String,
     pub object: T,
 }
@@ -95,11 +97,11 @@ impl API {
         let mut body = Vec::new();
         req.body.read_to_end(&mut body).map_err(|e| IronError::new(e,
                                                                    (status::InternalServerError,
-                                                                   "Error reading request")))?;
+                                                                    "Error reading request")))?;
         let json_str = std::str::from_utf8(&body).map_err(|e| IronError::new(e,
                                                                              (status::InternalServerError, "Invalid UTF-8 string")))?;
         let mut json = Json::from_str(json_str).map_err(|e| IronError::new(e,
-                                                                            (status::InternalServerError, "Invalid JSON")))?;
+                                                                           (status::InternalServerError, "Invalid JSON")))?;
 
         match json.as_object() {
             Some(o) => {
@@ -173,6 +175,5 @@ impl API {
         }
     }
 
-    pub fn shutdown(&mut self) {
-    }
+    pub fn shutdown(&mut self) {}
 }
