@@ -178,7 +178,7 @@ impl TipsManager {
                 let mut max_rating: f32 = 0f32;
                 let mut tip_rating: i64 = match ratings.get(&tip) {
                     Some(x) => *x,
-                    None => break;; ; ; ; ; ; ;
+                    None => break
                 };
                 for i in 0..tips.capacity() {
                     walk_ratings[i] = ((tip_rating - TipsManager::get_or_default(ratings,
@@ -257,7 +257,7 @@ impl TipsManager {
             loop {
                 match hash_iterator.next() {
                     Some(hash) => result.push(*set.get(hash).unwrap()),
-                    None => break;; ; ; ; ; ; ;
+                    None => break
                 }
             }
         }
@@ -371,7 +371,7 @@ impl TipsManager {
         while non_analyzed_transactions.front() != None {
             hash = match non_analyzed_transactions.front() {
                 Some(h) => *h,
-                None => break;; ; ; ; ; ; ;,
+                None => break
             };
             if analyzed_transcations.insert(hash) {
                 let mut transaction: Transaction = Transaction::from_hash(hash);
