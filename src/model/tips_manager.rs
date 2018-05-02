@@ -46,33 +46,35 @@ impl TipsManager {
             *depth = self.max_depth;
         }
         //TODO milestone
-        if self.milestone.latestSolidSubtangleMilestoneIndex > self.milestone_start_index ||
-            self.milestone.latestMilestoneIndex == self.milestone_start_index {
-            let mut ratings: HashMap<Hash, i64> = HashMap::new();
-            let mut analyzed_tips: HashSet<Hash> = HashSet::new();
-            let mut max_depth_ok: HashSet<Hash> = HashSet::new();
-            //TODO entry_point
-            let tip = self.entry_point(reference,
-                                       extra_tip,
-                                       depth);
-            self.serial_update_ratings(visited_hashes,
-                                       &tip,
-                                       &mut ratings,
-                                       &mut analyzed_tips,
-                                       extra_tip);
-            analyzed_tips.clear();
-            //TODO update_diff
-            if /*ledgerValidator.update_diff(visitedHashes, diff, tip)*/ true {
-                return Some(self.markov_chain_monte_carlo(visited_hashes,
-                                                          diff,
-                                                          &tip,
-                                                          extra_tip,
-                                                          &mut ratings,
-                                                          iterations,
-                                                          &(self.milestone.latestSolidSubtangleMilestoneIndex - (*depth) * 2),
-                                                          &mut max_depth_ok));
-            } else {
-                println!("Update Diff error");
+        if let Ok(milestone_) = self.milestone.lock() {
+            if milestone_.latestSolidSubtangleMilestoneIndex > self.milestone_start_index ||
+                milestone_.latestMilestoneIndex == self.milestone_start_index {
+                let mut ratings: HashMap<Hash, i64> = HashMap::new();
+                let mut analyzed_tips: HashSet<Hash> = HashSet::new();
+                let mut max_depth_ok: HashSet<Hash> = HashSet::new();
+                //TODO entry_point
+                let tip = self.entry_point(reference,
+                                           extra_tip,
+                                           depth);
+                self.serial_update_ratings(visited_hashes,
+                                           &tip,
+                                           &mut ratings,
+                                           &mut analyzed_tips,
+                                           extra_tip);
+                analyzed_tips.clear();
+                //TODO update_diff
+                if /*ledgerValidator.update_diff(visitedHashes, diff, tip)*/ true {
+                    return Some(self.markov_chain_monte_carlo(visited_hashes,
+                                                              diff,
+                                                              &tip,
+                                                              extra_tip,
+                                                              &mut ratings,
+                                                              iterations,
+                                                              &(milestone_.latestSolidSubtangleMilestoneIndex - (*depth) * 2),
+                                                              &mut max_depth_ok));
+                } else {
+                    println!("Update Diff error");
+                }
             }
         }
         return None;
@@ -83,7 +85,9 @@ impl TipsManager {
             if *reference != HASH_NULL {
                 return *reference;
             } else {
-                return self.milestone.latestSolidSubtangleMilestone;
+                if let Ok(milestone_) = self.milestone.lock() {
+                    return milestone_.latestSolidSubtangleMilestone;
+                }
             }
         }
         //TODO milestone
@@ -410,7 +414,7 @@ impl TipsManager {
             TipsManager::put(ratings, txHash, &rating);
         } else {
             if ratings.contains_key(txHash) {
-                rating = match ratings.get(txHash) {
+                rating =  match ratings.get(txHash) {
                     Some(x) => *x,
                     None => 0,
                 };
@@ -427,4 +431,8 @@ fn cap_sum(a: &i64, b: &i64, max: &i64) -> i64 {
         return *max;
     }
     return *a + *b;
+}
+
+pub fn test_validator(){
+
 }
