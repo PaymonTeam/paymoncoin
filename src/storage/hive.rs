@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::io;
 use std::num;
 use std::sync::Arc;
+use ntrumls::*;
 
 use model::transaction::{HASH_SIZE, ADDRESS_SIZE, TransactionObject, Transaction, Address, Hash,
                          ADDRESS_NULL, HASH_NULL};
@@ -225,22 +226,20 @@ impl Hive {
         }
     }
 
-    pub fn generate_address(fg: &[u8; 256], index: u32) -> Address {
+    pub fn generate_address() -> (Address, PrivateKey, PublicKey) {
         use byteorder::{ByteOrder, LittleEndian};
         use self::rustc_serialize::hex::ToHex;
         use self::ntrumls::{NTRUMLS, PQParamSetID};
 
         let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-        use super::super::std::mem;
-        let fg_16 : [u16; 128] = unsafe { mem::transmute(*fg) };
-        let (sk, pk) = ntrumls.generate_keypair_from_fg(&fg_16).expect("failed to generate address");
+        let (sk, pk) = ntrumls.generate_keypair().expect("failed to generate address");
 
-        let mut index_bytes = [0u8; 4];
-        LittleEndian::write_u32(&mut index_bytes, index);
+//        let mut index_bytes = [0u8; 4];
+//        LittleEndian::write_u32(&mut index_bytes, index);
 
         let mut sha = Sha3::sha3_256();
-        sha.input(fg);
-        sha.input(&index_bytes);
+//        sha.input(fg);
+//        sha.input(&index_bytes);
         sha.input(&pk.0);
 
         let mut buf = [0u8; 32];
@@ -253,7 +252,40 @@ impl Hive {
         let mut addr = ADDRESS_NULL;
         addr[..20].copy_from_slice(&buf[offset..32]);
         addr[20] = checksum_byte;
-        addr
+        (addr, sk, pk)
+    }
+
+    pub fn generate_address_from_private_key(sk: &PrivateKey) -> (Address, PublicKey) {
+        use byteorder::{ByteOrder, LittleEndian};
+        use self::rustc_serialize::hex::ToHex;
+        use self::ntrumls::{NTRUMLS, PQParamSetID};
+
+        let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+//        use super::super::std::mem;
+//        let fg_16 : [u16; 128] = unsafe { mem::transmute(*fg) };
+        let fg = ntrumls.unpack_fg_from_private_key(sk).expect("failed to unpack fg from private \
+        key");
+        let (_, pk) = ntrumls.generate_keypair_from_fg(&fg).expect("failed to generate address");
+
+//        let mut index_bytes = [0u8; 4];
+//        LittleEndian::write_u32(&mut index_bytes, index);
+
+        let mut sha = Sha3::sha3_256();
+//        sha.input(&fg);
+//        sha.input(&index_bytes);
+        sha.input(&pk.0);
+
+        let mut buf = [0u8; 32];
+        sha.result(&mut buf);
+
+        let addr_left = buf[..].to_hex()[24..].to_string();//.to_uppercase();
+        let offset = 32 - ADDRESS_SIZE + 1;
+        let checksum_byte = Address::calculate_checksum(&buf[offset..]);
+
+        let mut addr = ADDRESS_NULL;
+        addr[..20].copy_from_slice(&buf[offset..32]);
+        addr[20] = checksum_byte;
+        (addr, pk)
     }
 
     fn add_transaction(&mut self, transaction: &TransactionObject) -> Result<(), Error> {

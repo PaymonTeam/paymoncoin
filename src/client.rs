@@ -32,12 +32,14 @@ use std::collections::BTreeMap;
 use std::io::BufReader;
 use std::io::Write;
 use std::net::SocketAddr;
+use std::io::BufRead;
+use std::time;
 
 use AppId::*;
-use ntrumls::{PrivateKey, PublicKey, NTRUMLS, PQParamSetID};
+use ntrumls::{Signature, PrivateKey, PublicKey, NTRUMLS, PQParamSetID};
 use storage::Hive;
 use model::{Transaction, TransactionObject};
-use model::transaction::{Address, Hash};
+use model::transaction::*;
 
 use rand::Rng;
 use self::rustc_serialize::hex::{ToHex, FromHex};
@@ -86,42 +88,120 @@ pub enum AppId {
 
 static mut SK:Option<PrivateKey> = None;
 static mut PK:Option<PublicKey> = None;
+static mut ADDRESS:Option<Address> = None;
 static mut NEIGHBORS:Option<Vec<SocketAddr>> = None;
 static mut NTRUMLS_INSTANCE:Option<NTRUMLS> = None;
 
 fn send_coins(addr: Address, amount: u32) {
     println!("sending {} to {:?}", amount, addr);
-    let mut st = json::encode(&rpc::GetNodeInfo {}).unwrap();
-//    let mut st = json::encode(&rpc::NodeInfo { name: "123".to_string() }).unwrap();
+//    let mut st = json::encode(&rpc::GetNodeInfo {}).unwrap();
+    let mut transaction = TransactionObject {
+        address: addr,
+        attachment_timestamp: 0u64,
+        attachment_timestamp_lower_bound: 0u64,
+        attachment_timestamp_upper_bound: 0u64,
+        branch_transaction: HASH_NULL,
+        trunk_transaction: HASH_NULL,
+        bundle: HASH_NULL,
+        current_index: 0,
+        hash: HASH_NULL,
+        last_index: 0,
+        nonce: 0,
+        tag: HASH_NULL,
+        timestamp: time::SystemTime::now().elapsed().unwrap().as_secs(),
+        value: amount,
+        data_type: TransactionType::HashOnly,
+        signature: Signature(vec![]),
+        signature_pubkey: PublicKey(vec![]),
+        snapshot: 0,
+    };
+
+    let mut transaction = Transaction::from_object(transaction);
+    transaction.object.nonce = transaction.find_nonce();
+    transaction.object.hash = transaction.calculate_hash();
+
+    unsafe {
+        if let Some(ref sk) = SK {
+            if let Some(ref pk) = PK {
+//            if let Some(my_addr) = ADDRESS {
+                transaction.object.signature = transaction.calculate_signature(sk, pk).expect("failed to calculate signature");
+                println!("signed");
+                transaction.object.signature_pubkey = pk.clone();
+
+                println!("{:?}", pk);
+                println!("{:?}", transaction.object.hash);
+                println!("{:?}", transaction.object.signature);
+//            } else {
+//                println!("Address is None")
+//            }
+            } else {
+                println!("pk is none");
+            }
+        } else {
+            println!("sk is none");
+        }
+    }
+
+    let mut st = json::encode(&rpc::BroadcastTransaction { transaction: transaction.object })
+        .unwrap();
     let mut s = Json::from_str(&st).unwrap();
-    s.as_object_mut().unwrap().insert("method".to_string(), "getNodeInfo".to_string().to_json());
+    s.as_object_mut().unwrap().insert("method".to_string(), "broadcastTransaction".to_string()
+        .to_json());
 
     unsafe {
         if let Some(ref n) = NEIGHBORS {
-            send_request(s, n[0].clone());
+            match send_request(s, n[0].clone()) {
+                Some(json) => return, //println!("Server name: {}", json["name"]),
+                None => println!("no reponse")
+            }
         }
     }
+
 }
 
-fn send_request(request: Json, addr: SocketAddr) {
+fn send_request(request: Json, addr: SocketAddr) -> Option<Json> {
     let content = request.to_string();
     let content_length = content.len();
 
-    println!("{}", content);
+    println!("sending json {}", content);
 
     let incoming_request = format!("POST / HTTP/1\
     .0\r\ncontent-type:application/json\r\nX-PMNC-API-Version: 0\
     .1\r\nHost:localhost\r\ncontent-length:{}\r\n\r\n{}", content_length, content);
 
     if let Ok(mut s) = std::net::TcpStream::connect(addr) {
-        println!("connected");
         s.write(incoming_request.as_bytes()).unwrap();
         let mut reader = BufReader::new(&mut s);
         let mut resp = String::new();
-        reader.read_to_string(&mut resp);
+
+        while let Ok(l) = reader.read_line(&mut resp) {
+            if l > 0 {
+                if resp.starts_with("HTTP") {
+                    let v: Vec<&str> = resp.splitn(3, ' ').collect();
+                    let ret_code = v[1];
+                    if ret_code != "200" {
+                        error!("error code: {}", ret_code);
+                        return None;
+                    }
+                } else if resp.starts_with('{') {
+                    break;
+                }
+            } else {
+                resp = "".to_string();
+                break;
+            }
+            resp = "".to_string();
+        }
         println!("resp={}", resp);
+
+        if let Ok(json) = Json::from_str(&resp) {
+            return Some(json);
+        } else {
+            return None;
+        }
     } else {
         println!("failed");
+        return None;
     }
 }
 
@@ -131,7 +211,7 @@ fn send_transaction() {
 fn add_neighbor(addr: String) -> bool {
     unsafe {
         if NEIGHBORS.is_none() {
-            NEIGHBORS = Some(vec![]);
+            NEIGHBORS = Some(vec!["127.0.0.1:80".parse::<SocketAddr>().unwrap()]);
         }
     }
     if let Ok(ip) = addr.parse::<SocketAddr>() {
@@ -149,24 +229,31 @@ fn add_neighbor(addr: String) -> bool {
 }
 
 fn generate_private_key() -> (String, String) {
-    let mut sk_data = [0u8; 32 * 8];
-    rand::thread_rng().fill_bytes(&mut sk_data);
-    let addr = Hive::generate_address(&sk_data, 0);
+    let (addr, sk, pk) = Hive::generate_address();
 
-    (sk_data.to_hex().to_uppercase(), format!("{:?}", addr))
+    let sk_str = sk.0.to_hex().to_uppercase();
+
+    unsafe {
+        SK = Some(sk);
+        PK = Some(pk);
+    }
+
+    (sk_str, format!("{:?}", addr))
 }
 
 fn generate_address_from_private_key(sk_string: String) -> Result<String, String> {
-    let mut sk_data = [0u8; 32 * 8];
-
-    match sk_string.from_hex() {
-        Ok(data) => {
-            sk_data.copy_from_slice(&data[..(32 * 8)]);
-            let addr = Hive::generate_address(&sk_data, 0);
-            Ok(format!("{:?}", addr))
-        }
-        Err(e) => Err(format!("{:?}", e))
-    }
+//    let mut sk_data = [0u8; 32 * 8];
+//
+//    match sk_string.from_hex() {
+//        Ok(data) => {
+//            sk_data.copy_from_slice(&data[..(32 * 8)]);
+//            let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
+//            unsafe { ADDRESS = Some(addr.clone()) };
+//            Ok(format!("{:?}", addr))
+//        }
+//        Err(e) => Err(format!("{:?}", e))
+//    }
+    unimplemented!()
 }
 
 nwg_template!(

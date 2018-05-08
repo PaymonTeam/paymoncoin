@@ -615,7 +615,7 @@ thread_local! {
     pub static sizeCalculatorBuffer: RefCell<SerializedBuffer> = RefCell::new(SerializedBuffer::new(true));
 }
 
-pub fn get_object_size<T>(packet: &T) -> usize where T: Serializable {
+pub fn calculate_object_size<T>(packet: &T) -> usize where T: Serializable {
     let mut capacity = 0usize;
 
     sizeCalculatorBuffer.with(|f| {
@@ -629,7 +629,7 @@ pub fn get_object_size<T>(packet: &T) -> usize where T: Serializable {
 }
 
 pub fn get_serialized_object<T>(packet: &T, with_svuid: bool) -> SerializedBuffer where T: Serializable {
-    let size = get_object_size(packet);
+    let size = calculate_object_size(packet);
     let mut sb = SerializedBuffer::new_with_size(size);
     packet.serialize_to_stream(&mut sb);
 

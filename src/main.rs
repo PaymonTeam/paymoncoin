@@ -8,6 +8,7 @@ extern crate patricia_trie;
 extern crate env_logger;
 extern crate rustc_serialize;
 extern crate iron;
+extern crate ntrumls;
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
 
@@ -40,6 +41,9 @@ use storage::Hive;
 use network::api::API;
 
 fn main() {
+    use ntrumls::*;
+    use rand::Rng;
+
     let format = |record: &LogRecord| {
         format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
     };
@@ -52,6 +56,27 @@ fn main() {
     }
 
     builder.init().unwrap();
+//    let mut sk_data = [0u8; 32 * 8];
+//    rand::thread_rng().fill_bytes(&mut sk_data);
+////    let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
+//    use std::mem;
+//    let fg_16 : [u16; 128] = unsafe { mem::transmute(sk_data) };
+////    for n in fg_16.iter() {
+////        print!("{}, ", n);
+////    }
+////    println!();
+//    let mut mls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+//
+//    let (sk, pk) = mls.generate_keypair().unwrap();
+//
+//    let msg = "TEST MESSAGE";
+////    let msg = [1u8; 16];
+//    let sign = mls.sign(msg.as_bytes(), &sk, &pk).expect("fail");
+//
+//    println!("{:?}", sk);
+//    println!("{:?}", pk);
+//    println!("{:?}", sign);
+//    println!("{}", mls.verify(msg.as_bytes(), &sign, &pk));
 }
 
 #[test]
@@ -192,19 +217,19 @@ fn hive_test() {
         0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A774\
         84468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B021\
         4EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().expect("invalid sk");
-    let mut sk_data = [0u8; 32 * 8];
-    if random_sk {
-        rand::thread_rng().fill_bytes(&mut sk_data);
-    } else {
-        sk_data.copy_from_slice(&data[..(32 * 8)]);
-    }
+//    let mut sk_data = [0u8; 32 * 8];
+//    if random_sk {
+//        rand::thread_rng().fill_bytes(&mut sk_data);
+//    } else {
+//        sk_data.copy_from_slice(&data[..(32 * 8)]);
+//    }
 
-    let addr = Hive::generate_address(&sk_data, 0);
+//    let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
 //    hive.storage_put(CFType::Address, &addr, &10000u32);
 //    let balance = hive.storage_get_address(&addr).expect("storage get address error");
 
-    println!("sk={}", sk_data.to_hex().to_uppercase());
-    println!("address={:?}", addr);
+//    println!("sk={}", sk_data.to_hex().to_uppercase());
+//    println!("address={:?}", addr);
 //    println!("address={:?} balance={}", addr, balance);
 }
 
@@ -236,18 +261,18 @@ fn hive_transaction_test() {
         0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A774\
         84468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B021\
         4EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().expect("invalid sk");
-    let mut sk_data = [0u8; 32 * 8];
-    if random_sk {
-        rand::thread_rng().fill_bytes(&mut sk_data);
-    } else {
-        sk_data.copy_from_slice(&data[..(32 * 8)]);
-    }
+//    let mut sk_data = [0u8; 32 * 8];
+////    if random_sk {
+////        rand::thread_rng().fill_bytes(&mut sk_data);
+////    } else {
+////        sk_data.copy_from_slice(&data[..(32 * 8)]);
+////    }
 
-    let addr = Hive::generate_address(&sk_data, 0);
+//    let addr = Hive::generate_address(&sk_data, 0);
 //    hive.storage_put(CFType::Address, &addr, &10000u32);
 //    let balance = hive.storage_get_address(&addr).expect("storage get address error");
 
-    println!("sk={}", sk_data.to_hex().to_uppercase());
-    println!("address={:?}", addr);
+//    println!("sk={}", sk_data.to_hex().to_uppercase());
+//    println!("address={:?}", addr);
 //    println!("address={:?} balance={}", addr, balance);
 }

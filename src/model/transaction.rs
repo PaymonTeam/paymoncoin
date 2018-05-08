@@ -258,7 +258,6 @@ pub enum TransactionType {
 
 #[derive(Debug, PartialEq, Clone, RustcEncodable, RustcDecodable)]
 pub struct TransactionObject {
-    pub approvers: Option<Approvee>,
     pub address: Address,
     pub attachment_timestamp: u64,
     pub attachment_timestamp_lower_bound: u64,
@@ -275,6 +274,7 @@ pub struct TransactionObject {
     pub value: u32,
     pub data_type: TransactionType,
     pub signature: Signature,
+    pub signature_pubkey: PublicKey,
     pub snapshot: u32,
 }
 
@@ -282,6 +282,7 @@ pub struct Transaction {
     pub object: TransactionObject,
     pub bytes: SerializedBuffer,
     pub weight_magnitude: u16,
+    pub approvers: Option<Approvee>,
 }
 
 impl Transaction {
@@ -298,7 +299,7 @@ impl Transaction {
     }
 
     pub fn get_approvers(&self, hive: &AM<Hive>) -> HashSet<Hash> {
-        let mut res = self.object.approvers.clone();
+        let mut res = self.approvers.clone();
         match res {
             Some(aprv) => aprv.get_hashes(),
             None => match Approvee::load(hive, &self.object.hash){
@@ -316,6 +317,7 @@ impl Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
             object: transaction,
             bytes,
+            approvers: None,
         }
     }
 
@@ -335,17 +337,21 @@ impl Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
             object: transaction,
             bytes,
+            approvers: None,
         }
     }
 
     pub fn from_object(mut transaction: TransactionObject) -> Self {
-        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
+        use network::packet::calculate_object_size;
+        let transaction_size = calculate_object_size(&transaction);
+        let mut bytes = SerializedBuffer::new_with_size(transaction_size);
         transaction.serialize_to_stream(&mut bytes);
 
         Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
             object: transaction,
             bytes,
+            approvers: None,
         }
     }
 
@@ -358,13 +364,14 @@ impl Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
             object: transaction,
             bytes,
+            approvers: None,
         }
     }
 
-    pub fn calculate_signature(&mut self, sk: PrivateKey) {
+    pub fn calculate_signature(&mut self, sk: &PrivateKey, pk: &PublicKey) -> Option<Signature> {
         let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-        let pk = PublicKey(self.object.address.0.to_vec());
-        ntrumls.sign(&self.object.hash, &sk, &pk);
+        println!("signing {:?} {:?} {:?}", self.object.hash, sk, pk);
+        ntrumls.sign(&self.object.hash, sk, pk)
     }
 
     pub fn new_random() -> Self {
@@ -376,6 +383,7 @@ impl Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
             object: transaction,
             bytes,
+            approvers: None,
         }
     }
 
@@ -397,7 +405,7 @@ impl Transaction {
         Hash(buf)
     }
 
-    pub fn find_nonce(&self) -> Option<u64> {
+    pub fn find_nonce(&self) -> u64 {
         let mut nonce = 0;
         let mut sha = Sha3::sha3_256();
         let mut buf = [0u8; 32];
@@ -425,7 +433,7 @@ impl Transaction {
             }
             break;
         }
-        Some(nonce)
+        nonce
     }
 }
 
@@ -438,7 +446,6 @@ impl TransactionObject {
 
     pub fn from_hash(hash: Hash) -> Self {
         TransactionObject {
-            approvers: None,
             address: ADDRESS_NULL,
             attachment_timestamp: 0u64,
             attachment_timestamp_lower_bound: 0u64,
@@ -454,7 +461,8 @@ impl TransactionObject {
             timestamp: 0u64,
             value: 0u32,
             data_type: TransactionType::HashOnly,
-            signature: Signature(Vec::new()),
+            signature: Signature(vec![]),
+            signature_pubkey: PublicKey(vec![]),
             snapshot: 0u32,
         }
     }
@@ -464,6 +472,7 @@ impl TransactionObject {
         use rand::thread_rng;
 
         let mut signature = Signature(Vec::new());
+        let mut signature_pubkey = PublicKey(Vec::new());
         let mut address = ADDRESS_NULL;
         let mut branch_transaction = HASH_NULL;
         let mut trunk_transaction = HASH_NULL;
@@ -486,8 +495,8 @@ impl TransactionObject {
         thread_rng().fill_bytes(&mut bundle);
 
         TransactionObject {
-            approvers: None,
             signature,
+            signature_pubkey,
             address,
             attachment_timestamp,
             attachment_timestamp_lower_bound,
@@ -570,10 +579,11 @@ impl Serializable for Transaction {
 }
 
 // TODO: return Result
-pub fn validate_transaction(transaction: &mut Transaction) -> bool {
+pub fn validate_transaction(transaction: &mut Transaction, address_from: Address) -> bool {
     // check hash
     let calculated_hash = transaction.calculate_hash();
     if transaction.object.hash != calculated_hash {
+        println!(1);
         return false;
     }
 
@@ -595,15 +605,18 @@ pub fn validate_transaction(transaction: &mut Transaction) -> bool {
         let y = (0b10000000 >> (i % 8)) as u8;
 
         if x & y != 0 {
+            println!(2);
             return false;
         }
     }
 
     // check signature
-//        let sign = transaction.transaction.signature;
-//        let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-//        let data = [0u8; 1];
-//        let pk = PublicKey(&transaction.transaction.address.0);
-//        ntrumls.verify(data, &sign, &pk);
-    true
+    let sign = &transaction.object.signature;
+    let pk = &transaction.object.signature_pubkey;
+    let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+//    let pk = PublicKey(address_from.0.to_vec());
+    println!("{:?}", pk);
+    println!("{:?}", transaction.object.hash);
+    println!("{:?}", transaction.object.signature);
+    ntrumls.verify(&transaction.object.hash, sign, &pk)
 }
