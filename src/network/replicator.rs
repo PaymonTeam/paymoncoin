@@ -8,7 +8,7 @@ use byteorder::{ByteOrder, BigEndian};
 
 use mio::{Poll, PollOpt, Ready, Token};
 use mio::net::TcpStream;
-use network::packet::{SerializedBuffer, Serializable, get_object_size};
+use network::packet::{SerializedBuffer, Serializable, calculate_object_size};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 
@@ -131,7 +131,7 @@ impl Replicator {
     }
 
     pub fn send_packet<T>(&mut self, packet: T, message_id : i64) where T: Serializable {
-        let message_length = get_object_size(&packet);
+        let message_length = calculate_object_size(&packet);
         let size = 8 + 4 + message_length as usize;
         let mut buffer = SerializedBuffer::new_with_size(size);
         buffer.set_position(0);

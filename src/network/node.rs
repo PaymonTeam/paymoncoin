@@ -95,11 +95,15 @@ impl Node {
                 if let Some(arc) = receive_queue.upgrade() {
                     if let Ok(mut queue) = arc.lock() {
                         if let Some(mut t) = queue.pop_front() {
-                            let validated = transaction::validate_transaction(&mut t);
+                            let address = t.object.address.clone();
+                            let validated = transaction::validate_transaction(&mut t, address);
+                            println!("validated={}", validated);
+
                             if validated {
                                 if let Some(arc) = hive.upgrade() {
                                     if let Ok(mut hive) = arc.lock() {
                                         let stored = hive.put_transaction(&t);
+                                        println!("stored={}", stored);
 
                                         if stored {
                                             if let Some(arc) = broadcast_queue.upgrade() {
