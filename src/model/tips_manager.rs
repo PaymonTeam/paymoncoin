@@ -47,8 +47,8 @@ impl TipsManager {
         }
         //TODO milestone
         if let Ok(milestone_) = self.milestone.lock() {
-            if milestone_.latestSolidSubtangleMilestoneIndex > self.milestone_start_index ||
-                milestone_.latestMilestoneIndex == self.milestone_start_index {
+            if milestone_.latest_solid_subtangle_milestone_index > self.milestone_start_index ||
+                milestone_.latest_milestone_index == self.milestone_start_index {
                 let mut ratings: HashMap<Hash, i64> = HashMap::new();
                 let mut analyzed_tips: HashSet<Hash> = HashSet::new();
                 let mut max_depth_ok: HashSet<Hash> = HashSet::new();
@@ -70,7 +70,7 @@ impl TipsManager {
                                                               extra_tip,
                                                               &mut ratings,
                                                               iterations,
-                                                              &(milestone_.latestSolidSubtangleMilestoneIndex - (*depth) * 2),
+                                                              &(milestone_.latest_solid_subtangle_milestone_index - (*depth) * 2),
                                                               &mut max_depth_ok));
                 } else {
                     println!("Update Diff error");
@@ -86,21 +86,21 @@ impl TipsManager {
                 return *reference;
             } else {
                 if let Ok(milestone_) = self.milestone.lock() {
-                    return milestone_.latestSolidSubtangleMilestone;
+                    return milestone_.latest_solid_subtangle_milestone;
                 }
             }
         }
         //TODO milestone
         //branch (extraTip)
         /*
-        let milestone_index = Math.max(milestone.latestSolidSubtangleMilestoneIndex - depth - 1, 0);
+        let milestone_index = Math.max(milestone.latest_solid_subtangle_milestone_index - depth - 1, 0);
         let milestone_obj: Milestone =
             MilestoneViewModel.findClosestNextMilestone(tangle, milestoneIndex, testnet, milestoneStartIndex);
         if (milestoneViewModel != null && milestoneViewModel.getHash() != null) {
             return milestoneViewModel.getHash();
         }
 
-        return milestone.latestSolidSubtangleMilestone;
+        return milestone.latest_solid_subtangle_milestone;
     */
         return HASH_NULL;
     }
@@ -414,7 +414,7 @@ impl TipsManager {
             TipsManager::put(ratings, txHash, &rating);
         } else {
             if ratings.contains_key(txHash) {
-                rating =  match ratings.get(txHash) {
+                rating = match ratings.get(txHash) {
                     Some(x) => *x,
                     None => 0,
                 };
@@ -433,6 +433,4 @@ fn cap_sum(a: &i64, b: &i64, max: &i64) -> i64 {
     return *a + *b;
 }
 
-pub fn test_validator(){
-
-}
+pub fn test_validator() {}
