@@ -9,6 +9,8 @@ extern crate env_logger;
 extern crate rustc_serialize;
 extern crate iron;
 extern crate ntrumls;
+extern crate linked_hash_set;
+
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
 
@@ -56,6 +58,10 @@ fn main() {
     }
 
     builder.init().unwrap();
+
+    use model::transaction::{HASH_SIZE, Hash};
+    let mut tvm = model::tips_view_model::TipsViewModel::new();
+
 //    let mut sk_data = [0u8; 32 * 8];
 //    rand::thread_rng().fill_bytes(&mut sk_data);
 ////    let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
@@ -203,7 +209,7 @@ fn hive_test() {
 
     let mut t0 = TransactionObject::new_random();
     hive.storage_put(CFType::Transaction, &t0.hash, &t0);
-    let t1 = hive.storage_get_transaction(&t0.hash).expect("failed to load transaction from db");
+    let t1 = hive.storage_load_transaction(&t0.hash).expect("failed to load transaction from db");
     assert_eq!(t0, t1.object);
 
     let addr0 = ADDRESS_NULL;
@@ -247,7 +253,7 @@ fn hive_transaction_test() {
 
     let mut t0 = TransactionObject::new_random();
     hive.storage_put(CFType::Transaction, &t0.hash, &t0);
-    let t1 = hive.storage_get_transaction(&t0.hash).expect("failed to load transaction from db");
+    let t1 = hive.storage_load_transaction(&t0.hash).expect("failed to load transaction from db");
     assert_eq!(t0, t1.object);
 
     let addr0 = ADDRESS_NULL;

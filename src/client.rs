@@ -117,7 +117,8 @@ fn send_coins(addr: Address, amount: u32) {
     };
 
     let mut transaction = Transaction::from_object(transaction);
-    transaction.object.nonce = transaction.find_nonce();
+    let mwm = 8u32;
+    transaction.object.nonce = transaction.find_nonce(mwm);
     transaction.object.hash = transaction.calculate_hash();
 
     unsafe {

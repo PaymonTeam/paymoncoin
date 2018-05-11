@@ -18,7 +18,6 @@ use self::rustc_serialize::{
     Encodable, Decodable, Encoder, Decoder
 };
 
-pub const MIN_WEIGHT_MAGNITUDE: u8 = 8;
 pub const HASH_SIZE: usize = 20;
 pub const ADDRESS_SIZE: usize = 21;
 pub const TRANSACTION_SIZE: usize = 173 + 4; // HASH_SIZE + 1 (checksum byte)
@@ -32,7 +31,7 @@ pub struct Hash(pub [u8; HASH_SIZE]);
 impl Hash {
     pub fn trailing_zeros(&self) -> u16 {
         let mut zeros = 0u16;
-        for i in 0..MIN_WEIGHT_MAGNITUDE as usize {
+        for i in 0..HASH_SIZE as usize {
             let x = self.0[i / 8];
             let y = (0b10000000 >> (i % 8)) as u8;
 
@@ -190,6 +189,10 @@ impl super::super::std::fmt::Debug for Address {
 }
 
 impl Address {
+    pub fn is_null(&self) -> bool {
+        self.0 == [0u8; ADDRESS_SIZE]
+    }
+
     pub fn verify(&self) -> bool {
         Address::calculate_checksum(&self) == self.0[ADDRESS_SIZE - 1]
     }
@@ -276,6 +279,7 @@ pub struct TransactionObject {
     pub signature: Signature,
     pub signature_pubkey: PublicKey,
     pub snapshot: u32,
+    pub solid: bool,
 }
 
 pub struct Transaction {
@@ -294,8 +298,12 @@ impl Transaction {
         self.object.data_type.clone()
     }
 
-    pub fn get_hash(&self) -> Hash{
+    pub fn get_hash(&self) -> Hash {
         self.object.hash.clone()
+    }
+
+    pub fn is_solid(&self) -> bool {
+        self.object.solid
     }
 
     pub fn get_approvers(&self, hive: &AM<Hive>) -> HashSet<Hash> {
@@ -405,7 +413,7 @@ impl Transaction {
         Hash(buf)
     }
 
-    pub fn find_nonce(&self) -> u64 {
+    pub fn find_nonce(&self, mwm: u32) -> u64 {
         let mut nonce = 0;
         let mut sha = Sha3::sha3_256();
         let mut buf = [0u8; 32];
@@ -419,7 +427,7 @@ impl Transaction {
             sha.input(&in_buf.buffer);
             sha.result(&mut buf);
 
-            for i in 0..MIN_WEIGHT_MAGNITUDE as usize {
+            for i in 0..mwm as usize {
                 let x = buf[i / 8];
                 let y = (0b10000000 >> (i % 8)) as u8;
 
@@ -464,6 +472,7 @@ impl TransactionObject {
             signature: Signature(vec![]),
             signature_pubkey: PublicKey(vec![]),
             snapshot: 0u32,
+            solid: false
         }
     }
 
@@ -513,6 +522,7 @@ impl TransactionObject {
             value,
             data_type: TransactionType::Full,
             snapshot,
+            solid: false,
         }
     }
     pub fn get_snapshot_index(&self) -> u32{
@@ -579,7 +589,7 @@ impl Serializable for Transaction {
 }
 
 // TODO: return Result
-pub fn validate_transaction(transaction: &mut Transaction, address_from: Address) -> bool {
+pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
     // check hash
     let calculated_hash = transaction.calculate_hash();
     if transaction.object.hash != calculated_hash {
@@ -600,7 +610,8 @@ pub fn validate_transaction(transaction: &mut Transaction, address_from: Address
     sha.input(&in_buf.buffer);
     sha.result(&mut buf);
 
-    for i in 0..MIN_WEIGHT_MAGNITUDE as usize {
+//    for i in 0..MIN_WEIGHT_MAGNITUDE as usize {
+    for i in 0..mwm as usize {
         let x = buf[i / 8];
         let y = (0b10000000 >> (i % 8)) as u8;
 

@@ -12,6 +12,7 @@ use network::node::*;
 use network::replicator_pool::ReplicatorPool;
 use model::config::{PORT, Configuration, ConfigurationSettings};
 use model::config;
+use model::TipsViewModel;
 use utils::{AM, AWM};
 
 pub struct PaymonCoin {
@@ -30,6 +31,7 @@ impl PaymonCoin {
         let (pmnc_tx, pmnc_rx) = channel::<()>();
 //        let (tx, rx) = channel();
 
+        let mut tips_vm = TipsViewModel::new();
         let mut node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), &config,
                                                      replicator_tx, pmnc_rx)));
 

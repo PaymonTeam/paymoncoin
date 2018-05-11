@@ -100,7 +100,7 @@ impl Hive {
         false
     }
 
-    pub fn storage_get_transaction(&mut self, key: &[u8]) -> Option<Transaction> {
+    pub fn storage_load_transaction(&mut self, key: &[u8]) -> Option<Transaction> {
         let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Transaction as usize]).unwrap(), key);
         match vec {
             Ok(res) => Some(Transaction::from_bytes(SerializedBuffer::from_slice(&res?))),

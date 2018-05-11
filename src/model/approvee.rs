@@ -49,4 +49,3 @@ pub fn vec_to_set(vec: &Vec<Hash>) -> HashSet<Hash> {
     }
     return set;
 }
-/**/
