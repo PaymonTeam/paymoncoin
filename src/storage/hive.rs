@@ -17,14 +17,14 @@ use self::patricia_trie::{TrieFactory, TrieSpec, TrieMut, TrieDBMut};
 use self::hashdb::HashDB;
 use self::bigint::hash::H256;
 use self::memorydb::MemoryDB;
-use std::collections::HashMap;
 use std::io;
 use std::num;
 use std::sync::Arc;
+use std::collections::{HashSet, HashMap, LinkedList};
 use ntrumls::*;
 
-use model::transaction::{HASH_SIZE, ADDRESS_SIZE, TransactionObject, Transaction, Address, Hash,
-                         ADDRESS_NULL, HASH_NULL};
+use model::transaction_validator::TransactionError;
+use model::transaction::*;
 use model::approvee::Approvee;
 use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
 
@@ -59,7 +59,8 @@ impl Hive {
             balances: HashMap::new(),
         }
     }
-    pub fn load_approvee(hash: &Hash) -> Approvee{
+
+    pub fn load_approvee(hash: &Hash) -> Approvee {
         //TODO load
         unimplemented!()
     }
@@ -328,6 +329,81 @@ impl Hive {
 
         if total != SUPPLY {
             panic!("corrupted snapshot")
+        }
+
+        Ok(())
+    }
+
+    pub fn update_solid_transactions(&mut self, analyzed_hashes: &HashSet<Hash>) -> Result<(), TransactionError> {
+        for hash in analyzed_hashes {
+            let mut transaction = match self.storage_load_transaction(&hash) {
+                Some(t) => t,
+                None => return Err(TransactionError::InvalidHash)
+            };
+
+            self.update_heights(transaction.clone())?;
+
+            if !transaction.is_solid() {
+                transaction.update_solidity(true);
+                self.update_transaction(&mut transaction)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn update_transaction(&mut self, transaction: &mut Transaction) -> Result<bool, TransactionError> {
+        if transaction.get_hash() == HASH_NULL {
+            return Ok(false);
+        }
+
+        Ok(self.put_transaction(transaction))
+    }
+
+    pub fn update_heights(&mut self, mut transaction: Transaction) -> Result<(),
+        TransactionError> {
+//        let mut transaction = &mut transaction.clone();
+
+        let mut trunk = match self.storage_load_transaction(&transaction.get_trunk_transaction_hash()) {
+            Some(t) => t,
+            None => return Err(TransactionError::InvalidHash)
+        };
+
+        let mut transactions = vec![transaction.get_hash().clone()];
+
+        while trunk.get_height() == 0 && trunk.get_type() != TransactionType::HashOnly && trunk
+            .get_hash() != HASH_NULL {
+            transaction = trunk.clone();
+            trunk = match self.storage_load_transaction(&transaction.get_trunk_transaction_hash
+            ()) {
+                Some(t) => t,
+                None => return Err(TransactionError::InvalidHash)
+            };
+            transactions.push(transaction.get_hash().clone());
+        }
+
+        while let Some(hash) = transactions.pop() {
+            transaction = match self.storage_load_transaction(&hash) {
+                Some(t) => t,
+                None => return Err(TransactionError::InvalidHash)
+            };
+            let mut current_height = transaction.get_height();
+            if trunk.get_hash() == HASH_NULL && trunk.get_height() == 0 && transaction.get_hash()
+                != HASH_NULL {
+                if current_height != 1 {
+                    transaction.update_height(1);
+                    self.update_transaction(&mut transaction)?;
+                }
+            } else if trunk.get_type() != TransactionType::HashOnly && transaction.get_height() == 0 {
+                let new_height = 1 + trunk.get_height();
+                if current_height != new_height {
+                    transaction.update_height(1);
+                    self.update_transaction(&mut transaction)?;
+                }
+            } else {
+                break;
+            }
+            trunk = transaction.clone();
         }
 
         Ok(())

@@ -280,8 +280,10 @@ pub struct TransactionObject {
     pub signature_pubkey: PublicKey,
     pub snapshot: u32,
     pub solid: bool,
+    pub height: u64,
 }
 
+#[derive(Clone)]
 pub struct Transaction {
     pub object: TransactionObject,
     pub bytes: SerializedBuffer,
@@ -315,6 +317,14 @@ impl Transaction {
                 None => HashSet::new()
             }
         }
+    }
+
+    pub fn update_height(&mut self, height: u64) {
+        self.object.height = height;
+    }
+
+    pub fn get_height(&self) -> u64 {
+        self.object.height
     }
 
     pub fn from_hash(hash: Hash) -> Self {
@@ -443,6 +453,15 @@ impl Transaction {
         }
         nonce
     }
+
+    pub fn update_solidity(&mut self, solid: bool) -> bool {
+        if solid != self.object.solid {
+            self.object.solid = solid;
+            return true;
+        }
+
+        false
+    }
 }
 
 impl TransactionObject {
@@ -472,7 +491,8 @@ impl TransactionObject {
             signature: Signature(vec![]),
             signature_pubkey: PublicKey(vec![]),
             snapshot: 0u32,
-            solid: false
+            solid: false,
+            height: 0
         }
     }
 
@@ -523,6 +543,7 @@ impl TransactionObject {
             data_type: TransactionType::Full,
             snapshot,
             solid: false,
+            height: 0
         }
     }
     pub fn get_snapshot_index(&self) -> u32{
