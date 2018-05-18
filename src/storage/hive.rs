@@ -29,7 +29,7 @@ use model::approvee::Approvee;
 use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
 
 static CF_NAMES: [&str; 4] = ["transaction", "transaction-metadata", "address", "approvee"];
-const SUPPLY : u32 = 10_000;
+pub const SUPPLY : u32 = 10_000;
 
 pub enum Error {
     IO(io::Error),
@@ -66,7 +66,7 @@ impl Hive {
     }
 
     pub fn init(&mut self) {
-        self.load_balances();
+
     }
 
     fn clear_db(db: &mut DB) {
@@ -99,6 +99,11 @@ impl Hive {
             Err(e) => println!("{:?}", e)
         };
         false
+    }
+
+    pub fn exists_transaction(&self, hash: Hash) -> bool {
+        let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Transaction as usize]).unwrap(), &hash);
+        vec.is_ok()
     }
 
     pub fn storage_load_transaction(&mut self, key: &[u8]) -> Option<Transaction> {
@@ -296,42 +301,6 @@ impl Hive {
 
     fn find_transaction(&mut self) {
         unimplemented!();
-    }
-
-    pub fn load_balances(&mut self) -> Result<(), Error> {
-        use std::fs::File;
-        use std::io::{BufRead, BufReader};
-        use self::rustc_serialize::hex::{ToHex, FromHex};
-
-        let mut f = File::open("db/snapshot.dat")?;
-        let file = BufReader::new(&f);
-
-        let mut total = 0;
-
-        for line in file.lines() {
-            let l = line?;
-            let arr : Vec<&str> = l.splitn(2, ' ').collect();
-            let (addr_str, balance) = (String::from(arr[0]), String::from(arr[1]).parse::<u32>()?);
-            let mut arr = [0u8; ADDRESS_SIZE];
-            arr.copy_from_slice(&addr_str[1..].from_hex().expect("failed to load snapshot")[..ADDRESS_SIZE]);
-            let addr = Address(arr);
-//            if !addr.verify() {
-//                panic!("invalid address in snapshot");
-//            }
-            if self.balances.insert(addr, balance).is_some() {
-                panic!("invalid snapshot");
-            }
-
-            self.storage_put(CFType::Address, &addr, &balance);
-
-            total += balance;
-        }
-
-        if total != SUPPLY {
-            panic!("corrupted snapshot")
-        }
-
-        Ok(())
     }
 
     pub fn update_solid_transactions(&mut self, analyzed_hashes: &HashSet<Hash>) -> Result<(), TransactionError> {

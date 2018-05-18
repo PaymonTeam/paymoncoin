@@ -132,20 +132,18 @@ impl TipsManager {
             transaction_obj = Transaction::from_hash(tip.clone());
             tip_set = transaction_obj.get_approvers(&self.hive).clone();
 
-            if transaction_obj.get_current_index() == 0 {
-                if transaction_obj.get_type() == TransactionType::HashOnly {
-                    break;
-                } /*else if !transactionValidator.checkSolidity(transactionViewModel.getHash(), false) {
-                    break;
-                } else if !ledgerValidator.updateDiff(myApprovedHashes, myDiff, transactionViewModel.getHash()) {
-                    break;
-                }*/ else if TipsManager::below_max_depth(&transaction_obj.get_hash(),
-                                                         max_depth,
-                                                         max_depth_ok) {
-                    break;
-                } else if transaction_obj.calculate_hash() == *extra_tip {
-                    break;
-                }
+            if transaction_obj.get_type() == TransactionType::HashOnly {
+                break;
+            } /*else if !transactionValidator.checkSolidity(transactionViewModel.getHash(), false) {
+                break;
+            } else if !ledgerValidator.updateDiff(myApprovedHashes, myDiff, transactionViewModel.getHash()) {
+                break;
+            }*/ else if TipsManager::below_max_depth(&transaction_obj.get_hash(),
+                                                     max_depth,
+                                                     max_depth_ok) {
+                break;
+            } else if transaction_obj.calculate_hash() == *extra_tip {
+                break;
             }
 
             tail = tip.clone();

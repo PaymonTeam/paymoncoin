@@ -267,10 +267,7 @@ pub struct TransactionObject {
     pub attachment_timestamp_upper_bound: u64,
     pub branch_transaction: Hash,
     pub trunk_transaction: Hash,
-    pub bundle: Hash,
-    pub current_index: u32,
     pub hash: Hash,
-    pub last_index: u32,
     pub nonce: u64,
     pub tag: Hash,
     pub timestamp: u64,
@@ -292,10 +289,6 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn get_current_index(&self) -> u32 {
-        self.object.current_index.clone()
-    }
-
     pub fn get_type(&self) -> TransactionType{
         self.object.data_type.clone()
     }
@@ -479,10 +472,7 @@ impl TransactionObject {
             attachment_timestamp_upper_bound: 0u64,
             branch_transaction: HASH_NULL,
             trunk_transaction: HASH_NULL,
-            bundle: HASH_NULL,
-            current_index: 0u32,
             hash,
-            last_index: 0u32,
             nonce: 0u64,
             tag: HASH_NULL,
             timestamp: 0u64,
@@ -532,10 +522,7 @@ impl TransactionObject {
             attachment_timestamp_upper_bound,
             branch_transaction,
             trunk_transaction,
-            bundle,
-            current_index,
             hash,
-            last_index,
             nonce,
             tag: HASH_NULL,
             timestamp,
@@ -546,6 +533,7 @@ impl TransactionObject {
             height: 0
         }
     }
+
     pub fn get_snapshot_index(&self) -> u32{
         return self.snapshot;
     }
@@ -561,9 +549,6 @@ impl Serializable for TransactionObject {
         stream.write_u64(self.attachment_timestamp_upper_bound);
         stream.write_bytes(&self.branch_transaction);
         stream.write_bytes(&self.trunk_transaction);
-        stream.write_bytes(&self.bundle);
-        stream.write_u32(self.current_index);
-        stream.write_u32(self.last_index);
         stream.write_u64(self.nonce);
         stream.write_bytes(&self.tag);
         stream.write_u64(self.timestamp);
@@ -584,9 +569,6 @@ impl Serializable for TransactionObject {
         self.attachment_timestamp_upper_bound = stream.read_u64();
         stream.read_bytes(&mut self.branch_transaction, HASH_SIZE);
         stream.read_bytes(&mut self.trunk_transaction, HASH_SIZE);
-        stream.read_bytes(&mut self.bundle, HASH_SIZE);
-        self.current_index = stream.read_u32();
-        self.last_index = stream.read_u32();
         self.nonce = stream.read_u64();
         stream.read_bytes(&mut self.tag, HASH_SIZE);
         self.timestamp = stream.read_u64();
