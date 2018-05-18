@@ -12,26 +12,28 @@ use std::sync::{Arc, Mutex};
 use std::collections::{HashSet, LinkedList};
 use std::sync::atomic::{AtomicBool, Ordering};
 use self::linked_hash_set::LinkedHashSet;
+use model::TransactionRequester;
 
 // TODO: make Mutex
-pub static mut SNAPSHOT_TIMESTAMP: Duration = Duration::from_secs(0);
-pub static MAX_TIMESTAMP_FUTURE: Duration = Duration::from_secs(2 * 60 * 60);
+pub static mut SNAPSHOT_TIMESTAMP: u64 = 0; //Duration = Duration::from_secs(0);
+pub static mut SNAPSHOT_TIMESTAMP_MS: u64 = 0; //Duration = Duration::from_secs(0);
+pub const MAX_TIMESTAMP_FUTURE: u64 = 2 * 60 * 60; //Duration = Duration::from_secs(2 * 60 * 60);
+pub const MAX_TIMESTAMP_FUTURE_MS: u64 = MAX_TIMESTAMP_FUTURE * 1000;
 
 pub struct TransactionValidator {
     hive: AM<Hive>,
     tips_view_model: AM<TipsViewModel>,
     min_weight_magnitude: u32,
-//    snapshot_timestamp: Duration,
-//    max_timestamp_future: Duration,
     propagation_thread: Option<JoinHandle<()>>,
     use_first: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
     new_solid_transaction_list_one: AM<LinkedHashSet<Hash>>,
     new_solid_transaction_list_two: AM<LinkedHashSet<Hash>>,
-//    transaction_requester: AM<TransactionRequester>,
+    transaction_requester: AM<TransactionRequester>,
 }
 
 pub fn has_invalid_timestamp(transaction: &Transaction) -> bool {
+    // TODO: make with millis
 //    let max_future_ts: Duration = time::SystemTime::now().duration_since(time::UNIX_EPOCH).unwrap() +
 //        MAX_TIMESTAMP_FUTURE;
 //
@@ -46,7 +48,11 @@ pub fn has_invalid_timestamp(transaction: &Transaction) -> bool {
 //            SNAPSHOT_TIMESTAMP.subsec_millis() as u64) || transaction.object.attachment_timestamp >
 //            max_future_ts.as_secs()*1000u64 + max_future_ts.subsec_millis() as u64;
 //    }
-    true
+
+    unsafe {
+        return transaction.object.timestamp < SNAPSHOT_TIMESTAMP && transaction.get_hash() ==
+            HASH_NULL || transaction.object.timestamp > MAX_TIMESTAMP_FUTURE;
+    }
 }
 
 pub enum TransactionError {
@@ -78,16 +84,17 @@ pub fn validate(transaction: &mut Transaction, mwm: u32) -> Result<(), Transacti
 
 impl TransactionValidator {
     pub fn new(hive: AM<Hive>, tips_view_model: AM<TipsViewModel>, snapshot_timestamp:
-    Duration) -> AM<Self> {
+    u64, transaction_requester: AM<TransactionRequester>) -> AM<Self> {
         unsafe {
             SNAPSHOT_TIMESTAMP = snapshot_timestamp;
+            SNAPSHOT_TIMESTAMP_MS = snapshot_timestamp * 1000;
         }
 
         let tv = TransactionValidator {
             hive,
             tips_view_model,
 //            snapshot_timestamp,
-
+            transaction_requester,
             min_weight_magnitude: 9,
             propagation_thread: None,
             use_first: Arc::new(AtomicBool::new(true)),
@@ -148,9 +155,13 @@ impl TransactionValidator {
                             if !t.is_solid() {
                                 if t.object.data_type == TransactionType::HashOnly &&
                                     *hash_pointer != HASH_NULL {
-                                    // TODO
-//                                    self.transaction_requester.request_transaction
-//                                          (hash_pointer, milestone);
+
+                                    if let Ok(mut tr) = self.transaction_requester.lock() {
+                                        tr.request_transaction(hash_pointer.clone(), milestone);
+                                    } else {
+                                        return Err(TransactionError::InvalidData);
+                                    }
+
                                     solid = false;
                                     break;
                                 } else {
@@ -331,8 +342,13 @@ impl TransactionValidator {
 
     pub fn update_status(&mut self, transaction: &mut Transaction) -> Result<(),
         TransactionError> {
-        // TODO
-//        transactionRequester.clearTransactionRequest(transactionViewModel.getHash());
+        if let Ok(mut tr) = self.transaction_requester.lock() {
+            tr.clear_transaction_request(transaction.get_hash());
+        } else {
+            error!("broken transaction_requester mutex");
+            return Err(TransactionError::InvalidData);
+        }
+
         if let Ok(mut hive) = self.hive.lock() {
             if let Ok(mut tvm) = self.tips_view_model.lock() {
                 match hive.storage_load_approvee(&transaction.get_hash()) {
@@ -358,8 +374,9 @@ impl TransactionValidator {
 
     fn check_approvee(&mut self, approvee: &Transaction) -> bool {
         if approvee.get_type() == TransactionType::HashOnly {
-            // TODO
-//            self.transaction_requeser.
+            if let Ok(mut tr) = self.transaction_requester.lock() {
+                tr.request_transaction(approvee.get_hash(), false);
+            }
             return false;
         }
 
