@@ -209,6 +209,23 @@ impl Address {
         }
         checksum_byte as u8
     }
+
+    pub fn from_public_key(pk: &PublicKey) -> Self {
+        let mut sha = Sha3::sha3_256();
+        sha.input(&pk.0);
+
+        let mut buf = [0u8; 32];
+        sha.result(&mut buf);
+
+        let addr_left = buf[..].to_hex()[24..].to_string(); //.to_uppercase();
+        let offset = 32 - ADDRESS_SIZE + 1;
+        let checksum_byte = Address::calculate_checksum(&buf[offset..]);
+
+        let mut addr = ADDRESS_NULL;
+        addr[..20].copy_from_slice(&buf[offset..32]);
+        addr[20] = checksum_byte;
+        addr
+    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]

@@ -23,12 +23,14 @@ use std::sync::Arc;
 use std::collections::{HashSet, HashMap, LinkedList};
 use ntrumls::*;
 
+use model::{Milestone, MilestoneObject};
 use model::transaction_validator::TransactionError;
 use model::transaction::*;
 use model::approvee::Approvee;
 use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
 
-static CF_NAMES: [&str; 4] = ["transaction", "transaction-metadata", "address", "approvee"];
+static CF_NAMES: [&str; 6] = ["transaction", "transaction-metadata", "address",
+    "address_transactions", "approvee", "milestone"];
 pub const SUPPLY : u32 = 10_000;
 
 pub enum Error {
@@ -42,7 +44,9 @@ pub enum CFType {
     Transaction = 0,
     TransactionMetadata,
     Address,
+    AddressTransactions,
     Approvee,
+    Milestone,
 }
 
 pub struct Hive {
@@ -83,6 +87,24 @@ impl Hive {
         self.storage_merge(CFType::Approvee, &approved, &approvee)
     }
 
+    pub fn put_address_transaction(&mut self, address: Address, transaction_hash: Hash) -> bool {
+        self.storage_merge(CFType::AddressTransactions, &address, &transaction_hash)
+    }
+
+    pub fn storage_latest_milestone(&self) -> Option<MilestoneObject> {
+        let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
+                                          .unwrap(), IteratorMode::End).unwrap();
+        match it.next() {
+            Some((_, bytes)) => {
+                Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
+            }
+            None => {
+                warn!("get latest milestone from storage error");
+                None
+            }
+        }
+    }
+
     pub fn put_transaction(&mut self, t: &Transaction) -> bool {
         self.storage_put(CFType::Transaction, &t.object.hash, &t.object)
     }
@@ -106,12 +128,38 @@ impl Hive {
         vec.is_ok()
     }
 
-    pub fn storage_load_transaction(&mut self, key: &[u8]) -> Option<Transaction> {
+    pub fn storage_load_transaction(&self, key: &[u8]) -> Option<Transaction> {
         let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Transaction as usize]).unwrap(), key);
         match vec {
             Ok(res) => Some(Transaction::from_bytes(SerializedBuffer::from_slice(&res?))),
             Err(e) => {
                 warn!("get transaction from storage error ({})", e);
+                None
+            }
+        }
+    }
+
+    pub fn load_address_transactions(&self, address: &Address) -> Option<Vec<Hash>> {
+        let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::AddressTransactions as
+            usize]).unwrap(), address);
+        match vec {
+            Ok(res) => {
+                let buf = SerializedBuffer::from_slice(&res?);
+                if buf.len() < HASH_SIZE || buf.len() % HASH_SIZE != 0 {
+                    return None;
+                }
+                let mut arr = vec![];
+                let mut pos = 0;
+                while pos < buf.len() {
+                    let mut hash = HASH_NULL;
+                    hash.clone_from_slice(&buf[pos..(pos+HASH_SIZE)]);
+                    arr.push(hash);
+                    pos += HASH_SIZE;
+                }
+                Some(arr)
+            },
+            Err(e) => {
+                warn!("get address transactions from storage error ({})", e);
                 None
             }
         }
@@ -276,21 +324,8 @@ impl Hive {
 //        let mut index_bytes = [0u8; 4];
 //        LittleEndian::write_u32(&mut index_bytes, index);
 
-        let mut sha = Sha3::sha3_256();
-//        sha.input(&fg);
-//        sha.input(&index_bytes);
-        sha.input(&pk.0);
+        let addr = Address::from_public_key(&pk);
 
-        let mut buf = [0u8; 32];
-        sha.result(&mut buf);
-
-        let addr_left = buf[..].to_hex()[24..].to_string();//.to_uppercase();
-        let offset = 32 - ADDRESS_SIZE + 1;
-        let checksum_byte = Address::calculate_checksum(&buf[offset..]);
-
-        let mut addr = ADDRESS_NULL;
-        addr[..20].copy_from_slice(&buf[offset..32]);
-        addr[20] = checksum_byte;
         (addr, pk)
     }
 

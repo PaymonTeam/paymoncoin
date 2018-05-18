@@ -14,5 +14,5 @@ pub use self::tips_view_model::TipsViewModel;
 pub use self::transaction_validator::TransactionValidator;
 pub use self::transaction_requester::TransactionRequester;
 pub use self::ledger_validator::LedgerValidator;
-pub use self::milestone::Milestone;
+pub use self::milestone::{Milestone, MilestoneObject};
 pub use self::snapshot::Snapshot;

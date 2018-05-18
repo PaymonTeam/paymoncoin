@@ -70,7 +70,7 @@ impl Snapshot {
 //            self.storage_put(CFType::Address, &addr, &balance);
             let (v, b) = total.overflowing_add(balance);
             if b {
-                return panic!("incorrect total balance");
+                panic!("incorrect total balance");
             }
             total = v;
         }
