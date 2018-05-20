@@ -27,10 +27,11 @@ use model::{Milestone, MilestoneObject};
 use model::transaction_validator::TransactionError;
 use model::transaction::*;
 use model::approvee::Approvee;
+use model::{StateDiffObject, StateDiff};
 use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
 
-static CF_NAMES: [&str; 6] = ["transaction", "transaction-metadata", "address",
-    "address_transactions", "approvee", "milestone"];
+static CF_NAMES: [&str; 7] = ["transaction", "transaction-metadata", "address",
+    "address_transactions", "approvee", "milestone", "state_diff"];
 pub const SUPPLY : u32 = 10_000;
 
 pub enum Error {
@@ -47,6 +48,7 @@ pub enum CFType {
     AddressTransactions,
     Approvee,
     Milestone,
+    StateDiff,
 }
 
 pub struct Hive {
@@ -87,6 +89,13 @@ impl Hive {
         self.storage_merge(CFType::Approvee, &approved, &approvee)
     }
 
+    pub fn put_state_diff(&mut self, state_diff: &StateDiff) -> bool {
+        let hash = &state_diff.hash;
+        let state_diff = &state_diff.state_diff_object;
+
+        self.storage_put(CFType::StateDiff, hash, state_diff)
+    }
+
     pub fn put_address_transaction(&mut self, address: Address, transaction_hash: Hash) -> bool {
         self.storage_merge(CFType::AddressTransactions, &address, &transaction_hash)
     }
@@ -94,6 +103,34 @@ impl Hive {
     pub fn storage_latest_milestone(&self) -> Option<MilestoneObject> {
         let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
                                           .unwrap(), IteratorMode::End).unwrap();
+        match it.next() {
+            Some((_, bytes)) => {
+                Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
+            }
+            None => {
+                warn!("get latest milestone from storage error");
+                None
+            }
+        }
+    }
+
+    pub fn storage_first_milestone(&self) -> Option<MilestoneObject> {
+        let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
+                                          .unwrap(), IteratorMode::Start).unwrap();
+        match it.next() {
+            Some((_, bytes)) => {
+                Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
+            }
+            None => {
+                warn!("get latest milestone from storage error");
+                None
+            }
+        }
+    }
+
+    pub fn storage_next_milestone(&self, ) -> Option<MilestoneObject> {
+        let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
+                                          .unwrap(), IteratorMode::Start).unwrap();
         match it.next() {
             Some((_, bytes)) => {
                 Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
@@ -132,6 +169,17 @@ impl Hive {
         let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Transaction as usize]).unwrap(), key);
         match vec {
             Ok(res) => Some(Transaction::from_bytes(SerializedBuffer::from_slice(&res?))),
+            Err(e) => {
+                warn!("get transaction from storage error ({})", e);
+                None
+            }
+        }
+    }
+
+    pub fn storage_load_state_diff(&self, hash: &Hash) -> Option<StateDiff> {
+        let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::StateDiff as usize]).unwrap(), hash);
+        match vec {
+            Ok(res) => Some(StateDiff::from_bytes(SerializedBuffer::from_slice(&res?), hash.clone())),
             Err(e) => {
                 warn!("get transaction from storage error ({})", e);
                 None

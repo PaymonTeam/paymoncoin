@@ -95,4 +95,26 @@ impl Snapshot {
         });
         diff
     }
+
+    pub fn is_consistent(state: &mut HashMap<Address, i32>) -> bool {
+        let mut consistent = true;
+        let mut to_remove = Vec::<Address>::new();
+
+        for (k, v) in state.iter() {
+            if *v <= 0 {
+                if *v < 0 {
+                    info!("Skipping negative value for address: {:?}: {}", k, v);
+                    consistent = false;
+                    break;
+                }
+                to_remove.push(k.clone());
+            }
+        }
+
+        for addr in &to_remove {
+            state.remove(addr);
+        }
+
+        consistent
+    }
 }
