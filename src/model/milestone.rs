@@ -31,6 +31,8 @@ pub struct MilestoneObject {
 }
 
 impl MilestoneObject {
+    pub const SVUID: i32 = 927164361;
+
     pub fn new(index: u32, hash: Hash) -> Self {
         MilestoneObject {
             index,
@@ -55,6 +57,8 @@ impl MilestoneObject {
 
 impl Serializable for MilestoneObject {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(MilestoneObject::SVUID);
+
         stream.write_u32(self.index);
         stream.write_bytes(&self.hash);
     }
@@ -65,37 +69,6 @@ impl Serializable for MilestoneObject {
     }
 }
 
-pub struct MilestoneManager {
-    milestone_obj: MilestoneObject,
-    milestones: HashMap<u32, MilestoneManager>,
-}
-
-impl MilestoneManager {
-    pub fn new(index_: u32, hash_: Hash) -> Self {
-        MilestoneManager {
-            milestone_obj: MilestoneObject::new(index_, hash_),
-            milestones: HashMap::new(),
-        }
-    }
-//    pub fn latest(hive: AM<Hive>) -> Option<Self> {
-//        unimplemented!();
-//    }
-    pub fn index(&self) -> u32 {
-        return self.milestone_obj.index.clone();
-    }
-    pub fn get_hash(&self) -> Hash {
-        return self.milestone_obj.hash.clone();
-    }
-//    pub fn get(hive: AM<Hive>, index: u32) -> Option<Self> {
-//        let mut milestone_manager: MilestoneManager = milestones.get(index);
-//        if milestone_manager == None && load(tangle, index) {
-//            milestone_manager = milestones.get(index);
-//        }
-//        return milestone_manager;
-//    }
-}
-
-//#[derive(Clone)]
 pub struct Milestone {
     pub hive: AM<Hive>,
     pub ledger_validator: Option<AM<LedgerValidator>>,
