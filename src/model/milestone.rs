@@ -274,30 +274,78 @@ impl Milestone {
         }
     }
 
-    //TODO
     fn update_latest_solid_subhive_milestone(&self) {
-        unimplemented!();
+        if let Ok(hive) = self.hive.lock() {
+            if let Some(latest) = hive.storage_latest_milestone() {
+                let mut closest_milestone = hive.find_closest_next_milestone(self
+                                                     .latest_solid_subhive_milestone_index,
+                                                 self.testnet, self.milestone_start_index);
+                while let Some(mut milestone_obj) = closest_milestone {
+                    if milestone_obj.index() <= latest.index() && !self.shutting_down {
+                        if let Pk(tx_v) = self.transaction_validator.lock {
+                            if let Some(arc) = self.ledger_validator {
+                                if let Ok(mut l_v) = arc.lock() {
+                                    let update_snapshot_is_ok = l_v.update_snapshot(&milestone_obj)?;
+                                    if tx_v.check_solidity(milestone_obj.get_hash(), true) &&
+                                        milestone_obj.index() >= self.latest_solid_subhive_milestone_index && update_snapshot_is_ok {
+
+                                        self.latest_solid_subhive_milestone = milestone_obj.get_hash();
+                                        self.latest_solid_subhive_milestone_index = milestone_obj.index();
+
+                                        closest_milestone = hive.storage_next_milestone(milestone_obj.index);
+                                    } else {
+                                        closest_milestone = hive.storage_next_milestone(milestone_obj.index);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    // TODO
     pub fn validate_milestone(&self, tx: &Transaction, index: u32) -> Validity {
         if index < 0 || index >= 0x200000 {
             return Validity::Invalid;
         }
+        //TODO get()
+        /*
+        if MilestoneManager::get(self.hive, index) != None{
+            return Validity::Valid;
+        }
+           */
+        let bundle_transaction = BundleValidator::validate(self.hive, &tx.get_hash());
+        if bundle_transactions == None {
+            return Validity::Incomplete;
+        } else {
 
-        // TODO:
+            if bundle_transaction.get_hash() == tx.get_hash() {
+                if let Ok(h) = self.hive.lock() {
+                    let tx2 = h.storage_load_transaction(&*tx.get_trunk_transaction_hash());
+                    if tx2.get_type() == TransactionType::Full {
+                        //TODO public_key == self.coordinator
+                        if self.testnet && self.accept_any_testnet_coo || HASH_NULL == self.coordinator {
+                            if let Ok(mut h) = self.hive.lock() {
+                                h.put_milestone(MilestoneManager::new(index, tx.get_hash()));
+                            }
+                            return Validity::Valid;
+                        } else {
+                            return Validity::Invalid;
+                        }
+                    }
+                }
+            }
+        }
         return Validity::Invalid;
-
-//        if MilestoneManager::get(self.hive, index) != None {
-//            return Validity::Valid;
-//        }
-//        let bundle_transactions: LinkedList<LinkedList<Transaction>> = LinkedList::new();//= BundleValidator.validate(tangle, transactionViewModel.getHash());
-//        if bundle_transactions.size() == 0 {
-//            return Validity::Incomplete;
-//        }
     }
 
     fn get_index(&self, tx: &Transaction) -> u32 {
         unimplemented!();
+    }
+
+    pub fn shutdown(&self){
+        self.shutting_down = true;
     }
 }

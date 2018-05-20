@@ -12,7 +12,7 @@ extern crate ntrumls;
 
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
-use self::rocksdb::{DB, Options, IteratorMode, ColumnFamilyDescriptor, ColumnFamily};
+use self::rocksdb::{DBIterator, DB, Options, IteratorMode, ColumnFamilyDescriptor, ColumnFamily};
 use self::patricia_trie::{TrieFactory, TrieSpec, TrieMut, TrieDBMut};
 use self::hashdb::HashDB;
 use self::bigint::hash::H256;
@@ -114,9 +114,17 @@ impl Hive {
         }
     }
 
+    pub fn find_closest_next_milestone(&self, index: u32, testnet: bool, milestone_start_index: u32) -> Option<MilestoneObject> {
+        if !testnet && index <= milestone_start_index {
+            return self.storage_first_milestone();
+        }
+
+        return self.storage_next_milestone(index);
+    }
+
     pub fn storage_first_milestone(&self) -> Option<MilestoneObject> {
-        let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
-                                          .unwrap(), IteratorMode::Start).unwrap();
+        let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize]).unwrap(), IteratorMode::Start).unwrap();
+
         match it.next() {
             Some((_, bytes)) => {
                 Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
@@ -128,9 +136,11 @@ impl Hive {
         }
     }
 
-    pub fn storage_next_milestone(&self, ) -> Option<MilestoneObject> {
+    pub fn storage_next_milestone(&self, index: u32) -> Option<MilestoneObject> {
         let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
                                           .unwrap(), IteratorMode::Start).unwrap();
+
+        it.seek(&get_serialized_object(index, false));
         match it.next() {
             Some((_, bytes)) => {
                 Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
