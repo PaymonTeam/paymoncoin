@@ -3,6 +3,7 @@ use model::LedgerValidator;
 use model::snapshot::Snapshot;
 use model::TransactionValidator;
 use network::packet::*;
+use model::transaction_validator::TransactionError;
 
 use std::collections::{HashSet, HashMap, LinkedList};
 use utils::AM;
@@ -40,11 +41,21 @@ impl MilestoneObject {
         }
     }
 
-    pub fn from_bytes(mut bytes: SerializedBuffer) -> Self {
-        let mut milestone = MilestoneObject { index: 0, hash: HASH_NULL };
-        milestone.read_params(&mut bytes);
-        milestone
-    }
+//    pub fn from_bytes(mut bytes: SerializedBuffer) -> Self {
+//        let mut index = 0u32;
+//        let mut hash = HASH_NULL;
+//        index.read_params(SerializedBuffer::from_slice(&key));
+//        hash.read_params(SerializedBuffer::from_slice(&bytes));
+//
+//        MilestoneObject {
+//            index,
+//            hash
+//        };
+//
+//        let mut milestone = MilestoneObject { index: 0, hash: HASH_NULL };
+//        milestone.read_params(&mut bytes);
+//        milestone
+//    }
 
     pub fn index(&self) -> u32 {
         self.index
@@ -249,7 +260,7 @@ impl Milestone {
                 }
 
                 let scan_time = SystemTime::now();
-                if let Ok(milestone) = milestone_clone_2.lock() {
+                if let Ok(mut milestone) = milestone_clone_2.lock() {
                     let previous_solid_subhive_latest_milestone_index = milestone.latest_solid_subhive_milestone_index;
 
                     if milestone.latest_solid_subhive_milestone_index < milestone.latest_milestone_index {
@@ -274,19 +285,19 @@ impl Milestone {
         }
     }
 
-    fn update_latest_solid_subhive_milestone(&self) {
+    fn update_latest_solid_subhive_milestone(&mut self) -> Result<(), TransactionError> {
         if let Ok(hive) = self.hive.lock() {
             if let Some(latest) = hive.storage_latest_milestone() {
                 let mut closest_milestone = hive.find_closest_next_milestone(self
                                                      .latest_solid_subhive_milestone_index,
                                                  self.testnet, self.milestone_start_index);
-                while let Some(mut milestone_obj) = closest_milestone {
+                while let Some(mut milestone_obj) = closest_milestone.clone() {
                     if milestone_obj.index() <= latest.index() && !self.shutting_down {
-                        if let Pk(tx_v) = self.transaction_validator.lock {
-                            if let Some(arc) = self.ledger_validator {
+                        if let Ok(tx_v) = self.transaction_validator.lock() {
+                            if let Some(ref mut arc) = self.ledger_validator {
                                 if let Ok(mut l_v) = arc.lock() {
                                     let update_snapshot_is_ok = l_v.update_snapshot(&milestone_obj)?;
-                                    if tx_v.check_solidity(milestone_obj.get_hash(), true) &&
+                                    if tx_v.check_solidity(milestone_obj.get_hash(), true)? &&
                                         milestone_obj.index() >= self.latest_solid_subhive_milestone_index && update_snapshot_is_ok {
 
                                         self.latest_solid_subhive_milestone = milestone_obj.get_hash();
@@ -304,36 +315,30 @@ impl Milestone {
                 }
             }
         }
+
+        Ok(())
     }
 
-    pub fn validate_milestone(&self, tx: &Transaction, index: u32) -> Validity {
+    pub fn validate_milestone(&self, transaction: &Transaction, index: u32) -> Validity {
         if index < 0 || index >= 0x200000 {
             return Validity::Invalid;
         }
-        //TODO get()
-        /*
-        if MilestoneManager::get(self.hive, index) != None{
-            return Validity::Valid;
-        }
-           */
-        let bundle_transaction = BundleValidator::validate(self.hive, &tx.get_hash());
-        if bundle_transactions == None {
-            return Validity::Incomplete;
-        } else {
+        if let Ok(mut hive) = self.hive.lock() {
+            if hive.storage_load_milestone(index).is_some() {
+                return Validity::Valid;
+            }
 
-            if bundle_transaction.get_hash() == tx.get_hash() {
-                if let Ok(h) = self.hive.lock() {
-                    let tx2 = h.storage_load_transaction(&*tx.get_trunk_transaction_hash());
-                    if tx2.get_type() == TransactionType::Full {
-                        //TODO public_key == self.coordinator
-                        if self.testnet && self.accept_any_testnet_coo || HASH_NULL == self.coordinator {
-                            if let Ok(mut h) = self.hive.lock() {
-                                h.put_milestone(MilestoneManager::new(index, tx.get_hash()));
-                            }
-                            return Validity::Valid;
-                        } else {
-                            return Validity::Invalid;
-                        }
+            if let Some(tx2) = hive.storage_load_transaction(&transaction.get_trunk_transaction_hash()) {
+                if tx2.get_type() == TransactionType::Full {
+                    if self.testnet && self.accept_any_testnet_coo ||
+                        Address::from_public_key(&tx2.object.signature_pubkey) == self.coordinator {
+                            hive.put_milestone(&MilestoneObject {
+                                index,
+                                hash: transaction.get_hash()
+                            });
+                        return Validity::Valid;
+                    } else {
+                        return Validity::Invalid;
                     }
                 }
             }
@@ -345,7 +350,7 @@ impl Milestone {
         unimplemented!();
     }
 
-    pub fn shutdown(&self){
+    pub fn shutdown(&mut self){
         self.shutting_down = true;
     }
 }
