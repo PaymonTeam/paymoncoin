@@ -104,8 +104,16 @@ impl Hive {
         let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
                                           .unwrap(), IteratorMode::End).unwrap();
         match it.next() {
-            Some((_, bytes)) => {
-                Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
+            Some((key, bytes)) => {
+                let mut index = 0u32;
+                let mut hash = HASH_NULL;
+                index.read_params(&mut SerializedBuffer::from_slice(&key));
+                hash.read_params(&mut SerializedBuffer::from_slice(&bytes));
+
+                Some(MilestoneObject {
+                    index,
+                    hash
+                })
             }
             None => {
                 warn!("get latest milestone from storage error");
@@ -126,30 +134,76 @@ impl Hive {
         let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize]).unwrap(), IteratorMode::Start).unwrap();
 
         match it.next() {
-            Some((_, bytes)) => {
-                Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
+            Some((key, bytes)) => {
+                let mut index = 0u32;
+                let mut hash = HASH_NULL;
+                index.read_params(&mut SerializedBuffer::from_slice(&key));
+                hash.read_params(&mut SerializedBuffer::from_slice(&bytes));
+
+                Some(MilestoneObject {
+                    index,
+                    hash
+                })
+//                Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
             }
             None => {
-                warn!("get latest milestone from storage error");
+                warn!("get first milestone from storage error");
                 None
             }
         }
     }
 
     pub fn storage_next_milestone(&self, index: u32) -> Option<MilestoneObject> {
-        let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
-                                          .unwrap(), IteratorMode::Start).unwrap();
+//        let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
+//                                          .unwrap(), IteratorMode::Start).unwrap();
+        let mut it = self.db.raw_iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize]).unwrap()).unwrap();
+        it.seek(&get_serialized_object(&index, false));
+        it.next();
 
-        it.seek(&get_serialized_object(index, false));
-        match it.next() {
-            Some((_, bytes)) => {
-                Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
+        match it.value() {
+            Some(bytes) => {
+                let key = it.key().unwrap();
+                let mut index = 0u32;
+                let mut hash = HASH_NULL;
+                index.read_params(&mut SerializedBuffer::from_slice(&key));
+                hash.read_params(&mut SerializedBuffer::from_slice(&bytes));
+
+                Some(MilestoneObject {
+                    index,
+                    hash
+                })
+
+//                Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
             }
             None => {
-                warn!("get latest milestone from storage error");
+                warn!("get next milestone from storage error");
                 None
             }
         }
+    }
+
+    pub fn storage_load_milestone(&self, index: u32) -> Option<MilestoneObject> {
+        let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Transaction as usize]).unwrap
+        (), &get_serialized_object(&index, false));
+        match vec {
+            Ok(res) => {
+                let mut hash = HASH_NULL;
+                hash.read_params(&mut SerializedBuffer::from_slice(&res?));
+
+                Some(MilestoneObject {
+                    index, hash
+                })
+            },
+            Err(e) => {
+                warn!("get milestone from storage error ({})", e);
+                None
+            }
+        }
+    }
+
+    pub fn put_milestone(&mut self, milestone: &MilestoneObject) -> bool {
+        let key = get_serialized_object(&milestone.index, false);
+        self.storage_put(CFType::Milestone, &key, &milestone.hash)
     }
 
     pub fn put_transaction(&mut self, t: &Transaction) -> bool {

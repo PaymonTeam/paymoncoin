@@ -134,7 +134,7 @@ impl TransactionValidator {
 
     pub fn check_solidity(&self, hash: Hash, milestone: bool) -> Result<bool,
         TransactionError> {
-        if let Ok(mut hive) = self.hive.lock() {
+        if let Ok(hive) = self.hive.lock() {
             match hive.storage_load_transaction(&hash) {
                 Some(t) => return Ok(t.is_solid()),
                 None => return Err(TransactionError::InvalidHash)
