@@ -11,6 +11,7 @@ use model::tips_view_model::TipsViewModel;
 use model::ledger_validator::LedgerValidator;
 use model::transaction_validator::TransactionValidator;
 use model::transaction_validator::TransactionError;
+use std::thread;
 
 use rand::Rng;
 use std::time::Duration;
@@ -21,6 +22,7 @@ extern crate rand;
 #[derive(Hash, Eq, PartialEq, Debug)]
 struct Pair(Hash, i64);
 
+pub const RESCAN_TX_TO_REQUEST_INTERVAL: u32 = 750;
 pub struct TipsManager {
     hive: AM<Hive>,
     max_depth: u32,
@@ -60,6 +62,59 @@ impl TipsManager {
             solidity_rescan_handle: None
         };
         return make_am!(tips_manager)
+    }
+
+    pub fn init(tm: AM<TipsManager>) {
+        let tm_clone = tm.clone();
+
+        let solidity_rescan_handle = thread::spawn(move|| {
+            let mut shutting_down = false;
+            if let Ok(s_am) = tm_clone.lock(){
+                shutting_down = s_am.shutting_down;
+            }
+            while !shutting_down {
+                if let Ok(s_am) = tm_clone.lock(){
+                    s_am.scan_tips_for_solidity();
+                }
+                thread::sleep_ms(RESCAN_TX_TO_REQUEST_INTERVAL);
+
+                if let Ok(s_am) = tm_clone.lock() {
+                    shutting_down = s_am.shutting_down;
+                }
+            }
+        });
+
+        if let Ok(mut s_am) = tm.lock() {
+            s_am.solidity_rescan_handle = Some(solidity_rescan_handle);
+        }
+    }
+
+    fn scan_tips_for_solidity(&self) -> Result<(), TransactionError> {
+        if let Ok(mut t_v_m) = self.tips_view_model.lock() {
+            let mut size = t_v_m.get_non_solid_tips_count();
+            if size != 0 {
+                if let Some(hash) = t_v_m.get_random_tip() {
+                    let mut is_tip = true;
+                    if let Ok(hive) = self.hive.lock() {
+                        let tx = hive.storage_load_transaction(&hash);
+                        if let Some(tx_unw) = tx {
+                            if tx_unw.get_approvers(&self.hive).len() != 0 {
+                                t_v_m.remove_tip(&hash);
+                                is_tip = false;
+                            }
+                        }
+                    }
+                    if let Ok(t_v) = self.transaction_validator.lock() {
+                        let check_solidity_is_ok = t_v.check_solidity(hash, false)?;
+                        if is_tip && check_solidity_is_ok {
+                            t_v_m.set_solid(&hash);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub fn transaction_to_approve(&self,

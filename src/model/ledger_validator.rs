@@ -188,14 +188,37 @@ impl LedgerValidator {
         Ok(has_snapshot)
     }
 
-    // TODO
-    fn build_snapshot(&self) -> Option<MilestoneObject> {
-        let consistent_milestone = None;
-        if let Ok(hive) = self.hive.lock() {
-            let mut candidate_milestone = hive.storage_latest_milestone();
+    fn build_snapshot(&self) -> Result<Option<MilestoneObject>, TransactionError> {
+        let mut consistent_milestone = None;
 
+        if let Ok(hive) = self.hive.lock() {
+            let mut candidate_milestone = hive.storage_first_milestone();
+            while let Some(cm) = candidate_milestone {
+                if cm.index % 10000 == 0 {
+                    info!("Building snapshot... {}", cm.index);
+                }
+
+                if hive.exists_state_diff(&cm.get_hash()) {
+                    if let Some(state_diff) = hive.storage_load_state_diff(&cm.get_hash()) {
+                        if !state_diff.state_diff_object.state.is_empty() {
+                            if let Ok(mut milestone) = self.milestone.lock() {
+                                if Snapshot::is_consistent(&mut milestone.latest_snapshot
+                                    .patched_diff(state_diff.state_diff_object.state.clone())) {
+                                    // TODO
+//                                    milestone.latest_snapshot.apply(&state_diff
+// .state_diff_object.state, cm.index);
+                                    consistent_milestone = Some(cm.clone());
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                candidate_milestone = hive.storage_next_milestone(cm.index);
+            }
         }
-        consistent_milestone
+        Ok(consistent_milestone)
     }
 
     pub fn update_diff(&mut self, approved_hashes: &mut HashSet<Hash>, diff: &mut HashMap<Address, i64>, tip: Hash) -> Result<bool, TransactionError> {

@@ -12,7 +12,7 @@ pub static INITIAL_SNAPSHOT: Option<Mutex<Snapshot>> = None;
 // TODO: make singleton
 #[derive(Clone)]
 pub struct Snapshot {
-    pub state: HashMap<Address, u32>,
+    pub state: HashMap<Address, i32>,
     pub index: u32,
 }
 
@@ -39,22 +39,23 @@ impl Snapshot {
         None
     }
 
-    fn init_initial_state(snapshot_file_path: String) -> Result<HashMap<Address, u32>, hive::Error> {
+    fn init_initial_state(snapshot_file_path: String) -> Result<HashMap<Address, i32>,
+        hive::Error> {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
         use self::rustc_serialize::hex::{ToHex, FromHex};
 
-        let mut balances = HashMap::<Address, u32>::new();
+        let mut balances = HashMap::<Address, i32>::new();
 
         let mut f = File::open("db/snapshot.dat")?;
         let file = BufReader::new(&f);
 
-        let mut total = 0u32;
+        let mut total = 0i32;
 
         for line in file.lines() {
             let l = line?;
             let arr : Vec<&str> = l.splitn(2, ' ').collect();
-            let (addr_str, balance) = (String::from(arr[0]), String::from(arr[1]).parse::<u32>()?);
+            let (addr_str, balance) = (String::from(arr[0]), String::from(arr[1]).parse::<i32>()?);
             let mut arr = [0u8; ADDRESS_SIZE];
             arr.copy_from_slice(&addr_str[1..].from_hex().expect("failed to load snapshot")[..ADDRESS_SIZE]);
             let addr = Address(arr);
@@ -75,14 +76,14 @@ impl Snapshot {
             total = v;
         }
 
-        if total != hive::SUPPLY {
+        if total != hive::SUPPLY as i32 {
             panic!("corrupted snapshot")
         }
 
         Ok(balances)
     }
 
-    pub fn get_balance(&self, addr: &Address) -> Option<u32> {
+    pub fn get_balance(&self, addr: &Address) -> Option<i32> {
         match self.state.get(addr) {
             Some(i) => Some(*i),
             None => None
@@ -98,6 +99,30 @@ impl Snapshot {
             (address, new_balance)
         });
         diff
+    }
+
+    pub fn apply(&mut self, mut patch: HashMap<Address, i32>, new_index: u32) {
+        if patch.values().sum::<i32>() != 0 {
+            panic!("Diff isn't consistent");
+        }
+
+        patch.iter_mut().for_each(|(address, balance)| {
+//            let new_balance = match self.state.get(address) {
+//                Some(n) => *n as i32,
+//                None => 0
+//            } + *balance;
+
+            let new_balance = match self.state.get(address) {
+                Some(n) => {
+                    *n + balance.clone()
+                },
+                None => {
+                    balance.clone()
+                }
+            };
+
+            self.state.insert(address.clone(), new_balance);
+        });
     }
 
     pub fn is_consistent(state: &mut HashMap<Address, i32>) -> bool {
