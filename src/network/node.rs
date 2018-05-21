@@ -21,6 +21,7 @@ use model::transaction;
 //use utils;
 use utils::{AM, AWM};
 use network::rpc;
+use model::*;
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
@@ -37,11 +38,17 @@ pub struct Node {
     receive_queue: AM<VecDeque<Transaction>>,
     running: Arc<AtomicBool>,
     thread_join_handles: VecDeque<JoinHandle<()>>,
+    transaction_validator: AM<TransactionValidator>,
+    transaction_requester: AM<TransactionRequester>,
+    tips_vm: AM<TipsViewModel>,
+    milestone: AM<Milestone>
 }
 
 impl Node {
     pub fn new(hive: Weak<Mutex<Hive>>, config: &Configuration, node_tx: Sender<()>, pmnc_rx:
-    Receiver<()>) -> Node {
+    Receiver<()>, transaction_validator: AM<TransactionValidator>, transaction_requester:
+    AM<TransactionRequester>, tips_vm: AM<TipsViewModel>, milestone: AM<Milestone>)
+        -> Node {
         Node {
             hive,
             running: Arc::new(AtomicBool::new(true)),
@@ -52,6 +59,10 @@ impl Node {
             broadcast_queue: make_am!(VecDeque::new()),
             receive_queue: make_am!(VecDeque::new()),
             thread_join_handles: VecDeque::new(),
+            transaction_requester,
+            transaction_validator,
+            tips_vm,
+            milestone
         }
     }
 

@@ -101,12 +101,12 @@ impl Snapshot {
         diff
     }
 
-    pub fn apply(&mut self, mut patch: HashMap<Address, i32>, new_index: u32) {
+    pub fn apply(&mut self, patch: &HashMap<Address, i32>, new_index: u32) {
         if patch.values().sum::<i32>() != 0 {
             panic!("Diff isn't consistent");
         }
 
-        patch.iter_mut().for_each(|(address, balance)| {
+        patch.iter().for_each(|(address, balance)| {
 //            let new_balance = match self.state.get(address) {
 //                Some(n) => *n as i32,
 //                None => 0

@@ -124,8 +124,30 @@ impl LedgerValidator {
         Ok(())
     }
 
-    pub fn init(&mut self) {
-    // TODO
+    pub fn init(&mut self) -> Result<(), TransactionError> {
+        if let Some(latest_consistent_milestone) = self.build_snapshot()? {
+            info!("Loaded consistent milestone: {}", latest_consistent_milestone.index);
+
+            if let Ok(mut m) = self.milestone.lock() {
+                m.latest_solid_subhive_milestone = latest_consistent_milestone.get_hash();
+                m.latest_solid_subhive_milestone_index = latest_consistent_milestone.index;
+            }
+
+        }
+        Ok(())
+    }
+
+    pub fn check_consistency(&mut self, hashes: &Vec<Hash>) -> Result<bool, TransactionError> {
+        let mut visited_hashes = HashSet::new();
+        let mut diff = HashMap::new();
+
+        for hash in hashes {
+            if !self.update_diff(&mut visited_hashes, &mut diff, hash.clone())? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     pub fn update_snapshot(&mut self, milestone_obj: &MilestoneObject) -> Result<bool,
@@ -181,8 +203,10 @@ impl LedgerValidator {
                         hive.put_state_diff(&state_diff);
                     }
                 }
-                // TODO
-//                            milestone.latest_snapshot.apply
+
+                if let Ok(mut milestone) = self.milestone.lock() {
+                    milestone.latest_snapshot.apply(&current_state, milestone_obj.index);
+                }
             }
         }
         Ok(has_snapshot)
@@ -204,9 +228,7 @@ impl LedgerValidator {
                             if let Ok(mut milestone) = self.milestone.lock() {
                                 if Snapshot::is_consistent(&mut milestone.latest_snapshot
                                     .patched_diff(state_diff.state_diff_object.state.clone())) {
-                                    // TODO
-//                                    milestone.latest_snapshot.apply(&state_diff
-// .state_diff_object.state, cm.index);
+                                    milestone.latest_snapshot.apply(&state_diff.state_diff_object.state, cm.index);
                                     consistent_milestone = Some(cm.clone());
                                 } else {
                                     break;

@@ -102,10 +102,7 @@ fn send_coins(addr: Address, amount: u32) {
         attachment_timestamp_upper_bound: 0u64,
         branch_transaction: HASH_NULL,
         trunk_transaction: HASH_NULL,
-        bundle: HASH_NULL,
-        current_index: 0,
         hash: HASH_NULL,
-        last_index: 0,
         nonce: 0,
         tag: HASH_NULL,
         timestamp: time::SystemTime::now().elapsed().unwrap().as_secs(),
@@ -114,6 +111,8 @@ fn send_coins(addr: Address, amount: u32) {
         signature: Signature(vec![]),
         signature_pubkey: PublicKey(vec![]),
         snapshot: 0,
+        solid: false,
+        height: 0,
     };
 
     let mut transaction = Transaction::from_object(transaction);
@@ -201,7 +200,7 @@ fn send_request(request: Json, addr: SocketAddr) -> Option<Json> {
             return None;
         }
     } else {
-        println!("failed");
+        println!("connection failed");
         return None;
     }
 }
