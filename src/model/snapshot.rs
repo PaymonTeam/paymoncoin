@@ -91,7 +91,11 @@ impl Snapshot {
 
     pub fn patched_diff(&mut self, mut diff: HashMap<Address, i32>) -> HashMap<Address, i32> {
         diff.iter_mut().map(|(address, balance)| {
-            (address, balance)
+            let new_balance = match self.state.get(address) {
+                Some(n) => *n as i32,
+                None => 0 } + *balance;
+
+            (address, new_balance)
         });
         diff
     }

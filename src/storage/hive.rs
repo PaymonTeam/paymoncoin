@@ -144,7 +144,6 @@ impl Hive {
                     index,
                     hash
                 })
-//                Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
             }
             None => {
                 warn!("get first milestone from storage error");
@@ -172,8 +171,6 @@ impl Hive {
                     index,
                     hash
                 })
-
-//                Some(MilestoneObject::from_bytes(SerializedBuffer::from_slice(&bytes)))
             }
             None => {
                 warn!("get next milestone from storage error");

@@ -198,23 +198,61 @@ impl LedgerValidator {
         consistent_milestone
     }
 
-    pub fn update_diff(&mut self, approved_hashes: HashSet<Hash>, diff: HashMap<Address, i64>, tip:
-    Hash) -> Result<bool, TransactionError> {
-        // TODO
-//        if let Ok(mut hive) = self.hive.lock() {
-//            match hive.storage_load_transaction(&na_hash) {
-//                Some(t) => {
-//                    if t.is_solid() {
-//                        return false;
-//                    }
-//                },
-//                None => return Err(TransactionError::InvalidHash)
-//            };
-//        }
-
-        let is_consistent = false; // TODO
-        if is_consistent {
+    pub fn update_diff(&mut self, approved_hashes: &mut HashSet<Hash>, diff: &mut HashMap<Address, i64>, tip: Hash) -> Result<bool, TransactionError> {
+        if let Ok(mut hive) = self.hive.lock() {
+            match hive.storage_load_transaction(&tip) {
+                Some(t) => {
+                    if t.is_solid() {
+                        return Ok(false);
+                    }
+                },
+                None => return Err(TransactionError::InvalidHash)
+            };
         }
-        Ok(is_consistent)
+
+        if approved_hashes.contains(&tip) {
+            return Ok(true);
+        }
+
+        let mut visited_hashes = approved_hashes.clone();
+
+
+        let milestone_latest_snapshot_index = match self.milestone.lock() {
+            Ok(milestone) => milestone.latest_snapshot.index,
+            Err(_) => panic!("broken milestone mutex")
+        };
+
+        let mut current_state;
+        match self.get_latest_diff(&mut visited_hashes, Some(tip.clone()),
+                                   milestone_latest_snapshot_index, false)? {
+            Some(mut cs) => {
+                current_state = cs;
+            }
+            None => return Ok(false)
+        }
+
+        if let Ok(mut milestone) = self.milestone.lock() {
+            diff.iter().for_each(|(k, v)| {
+                let new_value = match current_state.get(k) {
+                    Some(old_value) => *v as i32 + *old_value,
+                    None => v.clone() as i32
+                };
+                current_state.insert(k.clone(), new_value);
+            });
+
+            let is_consistent = Snapshot::is_consistent(&mut milestone.latest_snapshot.patched_diff(current_state.clone()));
+
+            if is_consistent {
+                for (k, v) in &current_state {
+                    diff.insert(k.clone(), v.clone() as i64);
+                }
+                for h in &visited_hashes {
+                    approved_hashes.insert(h.clone());
+                }
+            }
+            Ok(is_consistent)
+        } else {
+            panic!("broken milestone mutex");
+        }
     }
 }

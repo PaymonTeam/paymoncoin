@@ -1,14 +1,20 @@
 use std::collections::{HashMap, HashSet, LinkedList};
 use std::iter::Iterator;
+use std::cmp::max;
 use std::sync::{Arc, Mutex};
 
 use model::transaction::*;
-
 use storage::hive::Hive;
-use model::milestone::Milestone;
+use model::milestone::{Milestone, MilestoneObject};
 use utils::defines::AM;
+use model::tips_view_model::TipsViewModel;
+use model::ledger_validator::LedgerValidator;
+use model::transaction_validator::TransactionValidator;
+use model::transaction_validator::TransactionError;
 
 use rand::Rng;
+use std::time::Duration;
+use std::thread::JoinHandle;
 
 extern crate rand;
 
@@ -20,39 +26,58 @@ pub struct TipsManager {
     max_depth: u32,
     milestone: AM<Milestone>,
     milestone_start_index: u32,
+    tips_view_model: AM<TipsViewModel>,
+    ledger_validator: AM<LedgerValidator>,
+    transaction_validator: AM<TransactionValidator>,
+    testnet: bool,
+    //private int RATING_THRESHOLD = 75; // Must be in [0..100] range
+    shutting_down: bool,
+    //private int RESCAN_TX_TO_REQUEST_INTERVAL = 750;
+    solidity_rescan_handle: Option<JoinHandle<()>>
 }
 
-impl TipsManager {
-    pub fn new(hive: AM<Hive>, milestone: AM<Milestone>) -> Self {
-        let max_depth = 0u32;
-        let milestone_start_index = 0u32;
 
-        TipsManager {
+impl TipsManager {
+    pub fn new(hive: AM<Hive>,
+               milestone: AM<Milestone>,
+               ledger_validator: AM<LedgerValidator>,
+               transaction_validator: AM<TransactionValidator>,
+               tips_view_model: AM<TipsViewModel>,
+               max_depth: u32,
+               testnet: bool,
+               milestone_start_index: u32) -> AM<Self> {
+
+        let tips_manager = TipsManager {
             hive,
             max_depth,
             milestone,
             milestone_start_index,
-        }
+            tips_view_model,
+            ledger_validator,
+            transaction_validator,
+            testnet,
+            shutting_down: false,
+            solidity_rescan_handle: None
+        };
+        return make_am!(tips_manager)
     }
 
     pub fn transaction_to_approve(&self,
-                                  visited_hashes: &HashSet<Hash>,
-                                  diff: &HashMap<Hash, i64>,
+                                  visited_hashes: &mut HashSet<Hash>,
+                                  diff: &mut HashMap<Address, i64>,
                                   reference: Hash,
                                   extra_tip: Hash,
                                   mut depth: u32,
-                                  iterations: u32) -> Option<Hash> {
+                                  iterations: u32) -> Result<Option<Hash>, TransactionError> {
         if depth > self.max_depth {
             depth = self.max_depth;
         }
-        //TODO milestone
         if let Ok(milestone_) = self.milestone.lock() {
             if milestone_.latest_solid_subhive_milestone_index > self.milestone_start_index ||
                 milestone_.latest_milestone_index == self.milestone_start_index {
                 let mut ratings: HashMap<Hash, i64> = HashMap::new();
                 let mut analyzed_tips: HashSet<Hash> = HashSet::new();
                 let mut max_depth_ok: HashSet<Hash> = HashSet::new();
-                //TODO entry_point
                 let tip = self.entry_point(reference,
                                            extra_tip,
                                            depth);
@@ -62,58 +87,65 @@ impl TipsManager {
                                            &mut analyzed_tips,
                                            extra_tip);
                 analyzed_tips.clear();
-                //TODO update_diff
-                if /*ledgerValidator.update_diff(visitedHashes, diff, tip)*/ true {
-                    return Some(self.markov_chain_monte_carlo(visited_hashes,
-                                                              diff,
-                                                              tip,
-                                                              extra_tip,
-                                                              &mut ratings,
-                                                              iterations,
-                                                              (milestone_.latest_solid_subhive_milestone_index - (depth) * 2),
-                                                              &mut max_depth_ok));
-                } else {
-                    println!("Update Diff error");
+                if let Ok(mut lv) = self.ledger_validator.lock() {
+                    let update_diff_is_ok = lv.update_diff(visited_hashes, diff, tip.clone())?;
+                    if update_diff_is_ok {
+                        return Ok(Some(self.markov_chain_monte_carlo(visited_hashes,
+                                                                  diff,
+                                                                  tip,
+                                                                  extra_tip,
+                                                                  &mut ratings,
+                                                                  iterations,
+                                                                  (milestone_.latest_solid_subhive_milestone_index - (depth) * 2),
+                                                                  &mut max_depth_ok)?));
+                    } else {
+                        error!("Update Diff error");
+                    }
                 }
             }
         }
-        return None;
+        return Ok(None);
     }
+
     fn entry_point(&self, reference: Hash, extra_tip: Hash, depth: u32) -> Hash {
         if extra_tip == HASH_NULL {
             //trunk
             if reference != HASH_NULL {
                 return reference;
             } else {
-                if let Ok(milestone_) = self.milestone.lock() {
-                    return milestone_.latest_solid_subhive_milestone;
+                if let Ok(mlstn) = self.milestone.lock() {
+                    return mlstn.latest_solid_subhive_milestone;
                 }
             }
         }
-        //TODO milestone
-        //branch (extraTip)
-        /*
-        let milestone_index = Math.max(milestone.latestSolidSubtangleMilestoneIndex - depth - 1, 0);
-        let milestone_obj: Milestone =
-            MilestoneViewModel.findClosestNextMilestone(tangle, milestoneIndex, testnet, milestoneStartIndex);
-        if (milestoneViewModel != null && milestoneViewModel.getHash() != null) {
-            return milestoneViewModel.getHash();
+
+        if let Ok(milestone) = self.milestone.lock() {
+            let milestone_index = max(milestone.latest_solid_subhive_milestone_index - depth - 1, 0);
+            if let Ok(hive) = self.hive.lock() {
+
+                if let Some(milestone_manager) = hive.find_closest_next_milestone(milestone_index, self.testnet, self.milestone_start_index) {
+                    let hash = milestone_manager.get_hash();
+                    if hash != HASH_NULL {
+                        return hash;
+                    }
+                }
+                return milestone.latest_solid_subhive_milestone;
+            } else {
+                panic!("broken hive mutex");
+            }
         }
-        return milestone.latestSolidSubtangleMilestone;
-    */
         return HASH_NULL;
     }
 
-
     pub fn random_walk(&self,
                        visited_hashes: &HashSet<Hash>,
-                       diff: &HashMap<Hash, i64>,
+                       diff: &HashMap<Address, i64>,
                        start: Hash,
                        extra_tip: Hash,
                        ratings: &mut HashMap<Hash, i64>,
                        max_depth: u32,
-                       max_depth_ok: &mut HashSet<Hash>) -> Hash {
-        let mut rnd = rand::thread_rng(); // f32 randomer
+                       max_depth_ok: &mut HashSet<Hash>) -> Result<Hash, TransactionError> {
+        let mut rnd = rand::thread_rng();
         let mut tip = start.clone();
         let mut tail = tip.clone();
         let mut tips: Vec<Hash>;
@@ -130,16 +162,25 @@ impl TipsManager {
         while !tip.is_null() {
             transaction_obj = Transaction::from_hash(tip.clone());
             tip_set = transaction_obj.get_approvers(&self.hive).clone();
+            let check_solidity_is_ok = match self.transaction_validator.lock() {
+                Ok(tv) => tv.check_solidity(transaction_obj.get_hash(), false)?,
+                Err(_) => panic!("broken transaction validator mutex")
+            };
+            let update_diff_is_ok = match self.ledger_validator.lock() {
+                Ok(mut lv) => lv.update_diff(&mut my_approved_hashes, &mut my_diff,
+                                             transaction_obj.get_hash())?,
+                Err(_) => panic!("broken ledger validator mutex")
+            };
 
             if transaction_obj.get_type() == TransactionType::HashOnly {
                 break;
-            } /*else if !transactionValidator.checkSolidity(transactionViewModel.getHash(), false) {
+            } else if !check_solidity_is_ok {
                 break;
-            } else if !ledgerValidator.updateDiff(myApprovedHashes, myDiff, transactionViewModel.getHash()) {
+            } else if !update_diff_is_ok {
                 break;
-            }*/ else if TipsManager::below_max_depth(transaction_obj.get_hash(),
-                                                     max_depth,
-                                                     max_depth_ok) {
+            } else if TipsManager::below_max_depth(transaction_obj.get_hash(),
+                                                   max_depth,
+                                                   max_depth_ok) {
                 break;
             } else if transaction_obj.calculate_hash() == extra_tip {
                 break;
@@ -163,7 +204,6 @@ impl TipsManager {
                     None => tip = HASH_NULL
                 }
             } else {
-                // walk to the next approver
                 tips = TipsManager::set_to_vec(&tip_set);
                 if !ratings.contains_key(&tip) {
                     self.serial_update_ratings(
@@ -203,25 +243,25 @@ impl TipsManager {
                 }
             }
         }
-        return tail;
+        return Ok(tail);
     }
 
     pub fn markov_chain_monte_carlo(&self,
                                     visited_hashes: &HashSet<Hash>,
-                                    diff: &HashMap<Hash, i64>,
+                                    diff: &HashMap<Address, i64>,
                                     tip: Hash,
                                     extra_tip: Hash,
                                     ratings: &mut HashMap<Hash, i64>,
                                     iterations: u32,
                                     max_depth: u32,
                                     max_depth_ok: &mut HashSet<Hash>,
-                                    /*Random seed*/) -> Hash {
+                                    /*Random seed*/) -> Result<Hash, TransactionError> {
         let mut rnd = rand::thread_rng();
         let mut monte_carlo_integrations: &mut HashMap<Hash, i64> = &mut HashMap::new();
         let mut map_clone = monte_carlo_integrations.clone();
         let mut tail: Hash;
         for i in iterations..0 {
-            tail = self.random_walk(visited_hashes, diff, tip, extra_tip, ratings, max_depth, max_depth_ok);
+            tail = self.random_walk(visited_hashes, diff, tip, extra_tip, ratings, max_depth, max_depth_ok)?;
             if monte_carlo_integrations.contains_key(&tail) {
                 let taken_from_map = match map_clone.get(&tail) {
                     Some(value) => *value,
@@ -237,7 +277,7 @@ impl TipsManager {
             .map(|(x, y)| Pair(*x, *y))
             .collect::<HashSet<_>>();
 
-        return res_set.iter()
+        return Ok(res_set.iter()
             .fold(HASH_NULL, |a, b| {
                 if *monte_carlo_integrations.get(&a).unwrap() > b.1 {
                     return a;
@@ -248,7 +288,7 @@ impl TipsManager {
                 } else {
                     return b.0;
                 }
-            });
+            }));
     }
 
     fn set_to_vec(set: &HashSet<Hash>) -> Vec<Hash> {
@@ -425,21 +465,4 @@ fn cap_sum(a: i64, b: i64, max: i64) -> i64 {
         return max;
     }
     return a + b;
-}
-
-pub fn test_validator(hive: AM<Hive>, milestone: AM<Milestone>, tx_hash: Hash) -> Option<Hash>{
-
-    let tips_manager_test: TipsManager;
-    tips_manager_test = TipsManager::new(hive, milestone);
-    let mut visited_hashes: HashSet<Hash> = HashSet::new();
-    let mut diff:HashMap<Hash, i64>  = HashMap::new();
-    //depth, iterations is random
-    let tx_to_approve = tips_manager_test.transaction_to_approve(&visited_hashes,
-                                                                 &diff,
-                                                                 tx_hash,
-                                                                 HASH_NULL,
-                                                                 2,
-                                                                 2);
-    return tx_to_approve;
-
 }

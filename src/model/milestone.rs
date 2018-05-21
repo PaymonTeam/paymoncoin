@@ -305,7 +305,6 @@ impl Milestone {
 
                                         closest_milestone = hive.storage_next_milestone(milestone_obj.index);
                                     } else {
-                                        closest_milestone = hive.storage_next_milestone(milestone_obj.index);
                                         break;
                                     }
                                 }
