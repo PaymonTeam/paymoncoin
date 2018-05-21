@@ -18,3 +18,4 @@ pub use self::ledger_validator::LedgerValidator;
 pub use self::milestone::{Milestone, MilestoneObject};
 pub use self::snapshot::Snapshot;
 pub use self::state_diff::{StateDiff, StateDiffObject};
+pub use self::tips_manager::TipsManager;

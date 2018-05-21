@@ -59,9 +59,6 @@ fn main() {
 
     builder.init().unwrap();
 
-    use model::transaction::{HASH_SIZE, Hash};
-    let mut tvm = model::tips_view_model::TipsViewModel::new();
-
 //    let mut sk_data = [0u8; 32 * 8];
 //    rand::thread_rng().fill_bytes(&mut sk_data);
 ////    let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
@@ -102,12 +99,12 @@ fn test_threads() {
 
     let mut jhs = VecDeque::new();
 
-    let ports = [0, 70, 10002].iter();
+    let ports = [70/*, 0, 10002*/].iter();
     for port in ports {
         let port = *port;
         let mut neighbors = String::new();
         if port != 0 {
-            let ports2 = [44832, 70, 10002].iter();
+            let ports2 = [70/*, 44832, 10002*/].iter();
             let v: Vec<String> = ports2.filter(|p| **p != port).map(|p| format!("127.0.0.1:{}",
                                                                                 p)).collect();
             neighbors = v.join(" ");
@@ -137,6 +134,10 @@ fn test_threads() {
                 drop(api);
             });
 
+            thread::sleep(Duration::from_secs(10));
+//            if let Ok(n) = node_arc.lock() {
+//                n.neighbors.lock().pu
+//            }
             thread::sleep(Duration::from_secs(10000));
 
             {

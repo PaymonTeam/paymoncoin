@@ -66,10 +66,10 @@ impl Hive {
         }
     }
 
-    pub fn load_approvee(hash: &Hash) -> Approvee {
-        //TODO load
-        unimplemented!()
-    }
+//    pub fn load_approvee(hash: &Hash) -> Approvee {
+//        //TODO load
+//        unimplemented!()
+//    }
 
     pub fn init(&mut self) {
 
