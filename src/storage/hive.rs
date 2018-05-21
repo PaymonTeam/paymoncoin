@@ -198,6 +198,14 @@ impl Hive {
         }
     }
 
+    pub fn exists_state_diff(&self, hash: &Hash) -> bool {
+        let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::StateDiff as usize]).unwrap(), hash);
+        match vec {
+            Ok(res) => res.is_some(),
+            Err(e) => return false
+        }
+    }
+
     pub fn put_milestone(&mut self, milestone: &MilestoneObject) -> bool {
         let key = get_serialized_object(&milestone.index, false);
         self.storage_put(CFType::Milestone, &key, &milestone.hash)

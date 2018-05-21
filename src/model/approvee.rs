@@ -27,8 +27,8 @@ impl Approvee {
     }
 
     pub fn load(hive: &AM<Hive>, hash: &Hash) -> Option<Self> {
-        if let Ok(mut hive_) = hive.lock() {
-            return Some(Approvee::new(hash, &vec_to_set(&match hive_.storage_load_approvee(hash) {
+        if let Ok(mut hive) = hive.lock() {
+            return Some(Approvee::new(hash, &vec_to_set(&match hive.storage_load_approvee(hash) {
                 Some(vec_h) => vec_h,
                 None => return None
             })));
