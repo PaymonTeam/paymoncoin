@@ -15,6 +15,10 @@ use network::packet::Serializable;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
+use model::transaction::*;
+use model::*;
+use std::collections::{HashMap, HashSet};
+use model::transaction_validator::TransactionError;
 
 #[macro_export]
 macro_rules! format_success_response {
@@ -33,6 +37,7 @@ impl AfterMiddleware for DefaultContentType {
 }
 
 static mut PMNC: Option<AM<PaymonCoin>> = None;
+const MILESTONE_START_INDEX: u32 = 0;
 
 pub struct API {
     listener: Listening,
@@ -75,6 +80,75 @@ impl API {
 
     fn format_error_response(err: &str) -> Response {
         Response::with((iron::status::Ok, format!("{{\"error\":\"{}\"}}\n", err.to_string())))
+    }
+
+    fn get_transactions_to_approve(pmnc: &mut PaymonCoin, mut depth: u32, mut num_walks: u32) ->
+                                                                                              Result<Option<(Hash, Hash)>, TransactionError> {
+        let max_depth = match pmnc.tips_manager.lock() {
+            Ok(tm) => tm.get_max_depth(),
+            Err(_) => panic!("broken tips manager mutex")
+        };
+        if depth > max_depth {
+            depth = max_depth;
+        }
+
+        let mut visited_hashes = HashSet::new();
+        let mut diff = HashMap::new();
+        let mut h0: Option<Hash>;
+        let mut h1: Option<Hash>;
+//        println!(1);
+        if let Ok(tips_manager) = pmnc.tips_manager.lock() {
+            h0 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, HASH_NULL,
+                                                     HASH_NULL, depth, num_walks)?;
+        } else {
+            panic!("broken tips manager mutex");
+        }
+        println!("update diff");
+        if let Ok(ref mut ledger_validator) = pmnc.ledger_validator.lock() {
+            if h0.is_none() || !ledger_validator.update_diff(&mut visited_hashes, &mut diff, h0.unwrap())? {
+                return Ok(None);
+            }
+        } else {
+            panic!("broken tips manager mutex");
+        }
+//        println!(3);
+
+        if let Ok(tips_manager) = pmnc.tips_manager.lock() {
+            h1 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, HASH_NULL,
+                                                     h0.unwrap(), depth, num_walks)?;
+        } else {
+            panic!("broken tips manager mutex");
+        }
+
+//        println!(4);
+
+        if let Ok(ref mut ledger_validator) = pmnc.ledger_validator.lock() {
+            if h1.is_none() || !ledger_validator.update_diff(&mut visited_hashes, &mut diff, h1.unwrap())? {
+                return Ok(None);
+            }
+
+            if h0.unwrap() == HASH_NULL || h1.unwrap() == HASH_NULL {
+                error!("tips are HASH_NULL");
+                return Ok(None);
+            }
+
+            if ledger_validator.check_consistency(&vec![h0.unwrap(), h1.unwrap()])? {
+                return Ok(Some((h0.unwrap(), h1.unwrap())));
+            } else {
+                error!("inconsistent tips pair selected");
+                return Err(TransactionError::InvalidData);
+            }
+        } else {
+            panic!("broken tips manager mutex");
+        }
+    }
+
+    fn invalid_subtangle_status(pmnc: &mut PaymonCoin) -> bool {
+        if let Ok(milestone) = pmnc.milestone.lock() {
+            return milestone.latest_solid_subhive_milestone_index == MILESTONE_START_INDEX;
+        } else {
+            return false;
+        }
     }
 
     fn api(req: &mut Request) -> IronResult<Response> {
@@ -136,12 +210,21 @@ impl API {
                                     Ok(bt) => {
                                         unsafe {
                                             if let Some(ref arc) = PMNC {
-                                                if let Ok(pmnc) = arc.lock() {
-                                                    if let Ok(mut node) = pmnc.node.lock() {
-//                                                        let result = rpc::TransactionsToApprove {
-//                                                            branch, trunk
-//                                                        };
-//                                                        return format_success_response!(result);
+                                                if let Ok(ref mut pmnc) = arc.lock() {
+                                                    if API::invalid_subtangle_status(pmnc) {
+                                                        return Ok(API::format_error_response("The subhive has not been updated yet"));
+                                                    }
+                                                    let depth = 3;
+                                                    let num_walks = 1;
+                                                    match API::get_transactions_to_approve(pmnc, depth, num_walks) {
+                                                        Ok(Some((trunk, branch))) => {
+                                                            let result = rpc::TransactionsToApprove {
+                                                                branch, trunk
+                                                            };
+                                                            return format_success_response!(result);
+                                                        },
+                                                        Ok(None) => return Ok(API::format_error_response("None")),
+                                                        _ => return Ok(API::format_error_response("Internal error"))
                                                     }
                                                 }
                                             }

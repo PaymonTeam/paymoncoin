@@ -93,6 +93,48 @@ static mut NEIGHBORS:Option<Vec<SocketAddr>> = None;
 static mut NTRUMLS_INSTANCE:Option<NTRUMLS> = None;
 
 fn send_coins(addr: Address, amount: u32) {
+    let mut h0;
+    let mut h1;
+
+    unsafe {
+        if let Some(ref n) = NEIGHBORS {
+            let mut st = json::encode(&rpc::GetTransactionsToApprove { }).unwrap();
+            let mut s = Json::from_str(&st).unwrap();
+            s.as_object_mut().unwrap().insert("method".to_string(), "getTransactionsToApprove".to_string().to_json());
+
+            match send_request(s, n[0].clone()) {
+                Some(json) => {
+                    match json.as_object() {
+                        Some(json) => {
+                            println!("{:?}", json);
+                            if !json.contains_key("trunk") || !json.contains_key("branch") {
+                                error!("no tips");
+                                return;
+                            } else {
+                                h0 = HASH_NULL;
+                                h0.copy_from_slice(&json.get("trunk").unwrap().as_string().unwrap
+                                ().from_hex().unwrap());
+                                h1 = HASH_NULL;
+                                h0.copy_from_slice(&json.get("branch").unwrap().as_string().unwrap
+                                ().from_hex().unwrap());
+                            }
+                        }
+                        _ => {
+                            println!("no json");
+                            return;
+                        }
+                    }
+                }, //println!("Server name: {}", json["name"]),
+                None => {
+                    println!("no reponse");
+                    return;
+                }
+            }
+        } else {
+            return;
+        }
+    }
+
     println!("sending {} to {:?}", amount, addr);
 //    let mut st = json::encode(&rpc::GetNodeInfo {}).unwrap();
     let mut transaction = TransactionObject {
@@ -100,8 +142,8 @@ fn send_coins(addr: Address, amount: u32) {
         attachment_timestamp: 0u64,
         attachment_timestamp_lower_bound: 0u64,
         attachment_timestamp_upper_bound: 0u64,
-        branch_transaction: HASH_NULL,
-        trunk_transaction: HASH_NULL,
+        branch_transaction: h0,
+        trunk_transaction: h1,
         hash: HASH_NULL,
         nonce: 0,
         tag: HASH_NULL,
@@ -242,18 +284,26 @@ fn generate_private_key() -> (String, String) {
 }
 
 fn generate_address_from_private_key(sk_string: String) -> Result<String, String> {
-//    let mut sk_data = [0u8; 32 * 8];
-//
-//    match sk_string.from_hex() {
-//        Ok(data) => {
-//            sk_data.copy_from_slice(&data[..(32 * 8)]);
-//            let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
-//            unsafe { ADDRESS = Some(addr.clone()) };
-//            Ok(format!("{:?}", addr))
-//        }
-//        Err(e) => Err(format!("{:?}", e))
-//    }
-    unimplemented!()
+    match sk_string.from_hex() {
+        Ok(hex) => {
+            unsafe {
+                if let Some(ref mls) = NTRUMLS_INSTANCE {
+                    if let Some(ref fg) = mls.unpack_fg_from_private_key(&PrivateKey(hex)) {
+                        let (sk, pk) = mls.generate_keypair_from_fg(fg).unwrap();
+                        let addr_str = format!("{:?}", Address::from_public_key(&pk));
+                        SK = Some(sk);
+                        PK = Some(pk);
+                        return Ok(addr_str);
+                    } else {
+                        return Err("failed to unpack fg".to_string());
+                    }
+                } else {
+                    return Err("Internal error #1".to_string());
+                }
+            }
+        }
+        Err(e) => Err(format!("{:?}", e))
+    }
 }
 
 nwg_template!(

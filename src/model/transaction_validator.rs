@@ -55,6 +55,7 @@ pub fn has_invalid_timestamp(transaction: &Transaction) -> bool {
     }
 }
 
+#[derive(Debug)]
 pub enum TransactionError {
     InvalidTimestamp,
     InvalidHash,
@@ -124,9 +125,7 @@ impl TransactionValidator {
 
     pub fn shutdown(&mut self) {
         self.running.store(false, Ordering::SeqCst);
-//        if let Some(ref jh) = self.propagation_thread {
-//            jh.join();
-//        }
+
         if let Some(jh) = self.propagation_thread.take() {
             jh.join();
         }
@@ -345,12 +344,12 @@ impl TransactionValidator {
         if let Ok(mut tr) = self.transaction_requester.lock() {
             tr.clear_transaction_request(transaction.get_hash());
         } else {
-            error!("broken transaction_requester mutex");
-            return Err(TransactionError::InvalidData);
+            panic!("broken transaction_requester mutex");
         }
 
         if let Ok(mut hive) = self.hive.lock() {
             if let Ok(mut tvm) = self.tips_view_model.lock() {
+                println!(2);
                 match hive.storage_load_approvee(&transaction.get_hash()) {
                     Some(vec) => {
                         if vec.len() == 0 {
