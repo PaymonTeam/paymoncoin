@@ -43,6 +43,10 @@ use storage::Hive;
 use network::api::API;
 
 fn main() {
+    for i in 0..1 {
+        println!("{}", 1-i);
+    }
+
     use ntrumls::*;
     use rand::Rng;
 
@@ -149,33 +153,15 @@ fn test_threads() {
             }
 
             api_jh.join();
-            node_arc.lock().unwrap().shutdown();
-
-//            thread::sleep(Duration::from_secs(9));
-
-//            let mut hive = Arc::new(Mutex::new(Hive::new()));
-//
-//            // used for shutdown replicator pool
-//            let (tx, rx) = channel::<()>();
-//            let mut node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), &config, tx)));
-//
-//
-//            let node_copy = node.clone();
-//            let replicator_jh = thread::spawn(move || {
-//                let mut replicator_pool = ReplicatorPool::new(&config, Arc::downgrade(&node_copy), rx);
-//                replicator_pool.run();
-//            });
-//
-//            {
-//                let mut guard = node.lock().unwrap();
-//                guard.init(replicator_jh);
-//                guard.run().expect("Failed to run server");
-//            }
-//
-//            use std::thread;
-//            use std::time::Duration;
-//            thread::sleep(Duration::from_secs(9));
-//            node.lock().unwrap().shutdown();
+            {
+//                if let Ok(mut p) = pmnc.lock() {
+                pmnc.lock().and_then(|mut p| {
+                    p.shutdown();
+                    Ok(p)
+                });
+//                    p.shutdown();
+//                }
+            }
         }).unwrap();
 
         jhs.push_back(jh);

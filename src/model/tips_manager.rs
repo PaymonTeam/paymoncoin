@@ -89,19 +89,26 @@ impl TipsManager {
         }
     }
 
+    pub fn get_max_depth(&self) -> u32 {
+        self.max_depth
+    }
+
     fn scan_tips_for_solidity(&self) -> Result<(), TransactionError> {
         if let Ok(mut t_v_m) = self.tips_view_model.lock() {
             let mut size = t_v_m.get_non_solid_tips_count();
             if size != 0 {
                 if let Some(hash) = t_v_m.get_random_tip() {
                     let mut is_tip = true;
+                    let mut tx;
                     if let Ok(hive) = self.hive.lock() {
-                        let tx = hive.storage_load_transaction(&hash);
-                        if let Some(tx_unw) = tx {
-                            if tx_unw.get_approvers(&self.hive).len() != 0 {
-                                t_v_m.remove_tip(&hash);
-                                is_tip = false;
-                            }
+                        tx = hive.storage_load_transaction(&hash);
+                    } else {
+                        panic!("broken hive mutex");
+                    }
+                    if let Some(tx_unw) = tx {
+                        if tx_unw.get_approvers(&self.hive).len() != 0 {
+                            t_v_m.remove_tip(&hash);
+                            is_tip = false;
                         }
                     }
                     if let Ok(t_v) = self.transaction_validator.lock() {
@@ -127,35 +134,41 @@ impl TipsManager {
         if depth > self.max_depth {
             depth = self.max_depth;
         }
-        if let Ok(milestone_) = self.milestone.lock() {
-            if milestone_.latest_solid_subhive_milestone_index > self.milestone_start_index ||
-                milestone_.latest_milestone_index == self.milestone_start_index {
-                let mut ratings: HashMap<Hash, i64> = HashMap::new();
-                let mut analyzed_tips: HashSet<Hash> = HashSet::new();
-                let mut max_depth_ok: HashSet<Hash> = HashSet::new();
-                let tip = self.entry_point(reference,
-                                           extra_tip,
-                                           depth);
-                self.serial_update_ratings(visited_hashes,
-                                           tip,
-                                           &mut ratings,
-                                           &mut analyzed_tips,
-                                           extra_tip);
-                analyzed_tips.clear();
-                if let Ok(mut lv) = self.ledger_validator.lock() {
-                    let update_diff_is_ok = lv.update_diff(visited_hashes, diff, tip.clone())?;
-                    if update_diff_is_ok {
-                        return Ok(Some(self.markov_chain_monte_carlo(visited_hashes,
-                                                                  diff,
-                                                                  tip,
-                                                                  extra_tip,
-                                                                  &mut ratings,
-                                                                  iterations,
-                                                                  (milestone_.latest_solid_subhive_milestone_index - (depth) * 2),
-                                                                  &mut max_depth_ok)?));
-                    } else {
-                        error!("Update Diff error");
-                    }
+        depth = 1;
+        let latest_solid_subhive_milestone_index;
+        let latest_solid_subhive_milestone;
+        if let Ok(milestone) = self.milestone.lock() {
+            latest_solid_subhive_milestone_index = milestone.latest_solid_subhive_milestone_index;
+            latest_solid_subhive_milestone = milestone.latest_milestone_index;
+        } else {
+            panic!("broken milestone mutex");
+        }
+        if latest_solid_subhive_milestone_index > self.milestone_start_index || latest_solid_subhive_milestone == self.milestone_start_index {
+            let mut ratings: HashMap<Hash, i64> = HashMap::new();
+            let mut analyzed_tips: HashSet<Hash> = HashSet::new();
+            let mut max_depth_ok: HashSet<Hash> = HashSet::new();
+            let tip = self.entry_point(reference,
+                                       extra_tip,
+                                       depth);
+            self.serial_update_ratings(visited_hashes,
+                                       tip,
+                                       &mut ratings,
+                                       &mut analyzed_tips,
+                                       extra_tip);
+            analyzed_tips.clear();
+            if let Ok(mut lv) = self.ledger_validator.lock() {
+                let update_diff_is_ok = lv.update_diff(visited_hashes, diff, tip.clone())?;
+                if update_diff_is_ok {
+                    return Ok(Some(self.markov_chain_monte_carlo(visited_hashes,
+                                                              diff,
+                                                              tip,
+                                                              extra_tip,
+                                                              &mut ratings,
+                                                              iterations,
+                                                              (latest_solid_subhive_milestone_index - depth * 1), // TODO: 1 -> 2
+                                                              &mut max_depth_ok)?));
+                } else {
+                    error!("Update Diff error");
                 }
             }
         }
@@ -188,8 +201,9 @@ impl TipsManager {
             } else {
                 panic!("broken hive mutex");
             }
+        } else {
+            panic!("broken milestone mutex");
         }
-        return HASH_NULL;
     }
 
     pub fn random_walk(&self,
@@ -315,7 +329,7 @@ impl TipsManager {
         let mut monte_carlo_integrations: &mut HashMap<Hash, i64> = &mut HashMap::new();
         let mut map_clone = monte_carlo_integrations.clone();
         let mut tail: Hash;
-        for i in iterations..0 {
+        for _ in 0..iterations {
             tail = self.random_walk(visited_hashes, diff, tip, extra_tip, ratings, max_depth, max_depth_ok)?;
             if monte_carlo_integrations.contains_key(&tail) {
                 let taken_from_map = match map_clone.get(&tail) {
@@ -512,6 +526,13 @@ impl TipsManager {
             }
         }
         return rating;
+    }
+
+    pub fn shutdown(&mut self) {
+        self.shutting_down = true;
+        if let Some(mut jh) = self.solidity_rescan_handle.take() {
+            jh.join();
+        };
     }
 }
 

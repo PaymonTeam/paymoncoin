@@ -613,7 +613,6 @@ pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
     // check hash
     let calculated_hash = transaction.calculate_hash();
     if transaction.object.hash != calculated_hash {
-        println!(1);
         return false;
     }
 

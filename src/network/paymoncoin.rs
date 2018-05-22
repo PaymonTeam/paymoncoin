@@ -20,24 +20,24 @@ use std::time;
 use std::str::FromStr;
 
 pub struct PaymonCoin {
-    hive: AM<Hive>,
+    pub hive: AM<Hive>,
     pub node: AM<Node>,
     pub config: Configuration,
     pmnc_tx: Sender<()>,
     replicator_rx: Option<Receiver<()>>,
-    coordinator: Address,
-    tips_vm: AM<TipsViewModel>,
-    transaction_requester: AM<TransactionRequester>,
-    transaction_validator: AM<TransactionValidator>,
-    milestone: AM<Milestone>,
-    ledger_validator: AM<LedgerValidator>,
-    tips_manager: AM<TipsManager>
+    pub coordinator: Address,
+    pub tips_vm: AM<TipsViewModel>,
+    pub transaction_requester: AM<TransactionRequester>,
+    pub transaction_validator: AM<TransactionValidator>,
+    pub milestone: AM<Milestone>,
+    pub ledger_validator: AM<LedgerValidator>,
+    pub tips_manager: AM<TipsManager>
 }
 
 impl PaymonCoin {
     pub fn new(config: Configuration) -> Self {
         let snapshot_timestamp = 1526912331;
-        let coordinator = Address::from_str("P97bbb1e9e4a6ac3137f93c0607608219507ff4870a").unwrap();
+        let coordinator = Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap();
         let num_keys_milestone = 22;
         let milestone_start_index = 1;
 
@@ -118,5 +118,20 @@ impl PaymonCoin {
 
     pub fn shutdown(&mut self) {
 //        self.node.lock().unwrap().shutdown();
+        if let Ok(mut m) = self.milestone.lock() {
+            m.shutdown();
+        }
+        if let Ok(mut tm) = self.tips_manager.lock() {
+            tm.shutdown();
+        }
+        if let Ok(mut n) = self.node.lock() {
+            n.shutdown();
+        }
+        if let Ok(mut tv) = self.transaction_validator.lock() {
+            tv.shutdown();
+        }
+//        if let Ok(mut h) = self.hive.lock() {
+//            h.shutdown();
+//        }
     }
 }

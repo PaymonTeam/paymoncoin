@@ -91,13 +91,16 @@ impl Node {
         let receive_queue_weak = Arc::downgrade(&self.receive_queue.clone());
         let broadcast_queue_weak = Arc::downgrade(&self.broadcast_queue.clone());
         let hive_weak = self.hive.clone();
-        let jh = thread::spawn(|| Node::receive_thread(running_weak, receive_queue_weak, broadcast_queue_weak, hive_weak));
+        let tv_weak = Arc::downgrade(&self.transaction_validator.clone());
+        let jh = thread::spawn(|| Node::receive_thread(running_weak, receive_queue_weak,
+                                                       broadcast_queue_weak, hive_weak, tv_weak));
         self.thread_join_handles.push_back(jh);
 
         self.thread_join_handles.push_back(replicator_jh);
     }
 
-    fn receive_thread(running: Weak<AtomicBool>, receive_queue: AWM<VecDeque<Transaction>>, broadcast_queue: AWM<VecDeque<Transaction>>, hive: AWM<Hive>) {
+    fn receive_thread(running: Weak<AtomicBool>, receive_queue: AWM<VecDeque<Transaction>>,
+                      broadcast_queue: AWM<VecDeque<Transaction>>, hive: AWM<Hive>, tv: AWM<TransactionValidator>) {
         loop {
             if let Some(arc) = running.upgrade() {
                 let b = arc.load(Ordering::SeqCst);
@@ -111,17 +114,29 @@ impl Node {
                             println!("validated={}", validated);
 
                             if validated {
+                                let mut stored;
                                 if let Some(arc) = hive.upgrade() {
                                     if let Ok(mut hive) = arc.lock() {
-                                        let stored = hive.put_transaction(&t);
+                                        stored = hive.put_transaction(&t);
                                         println!("stored={}", stored);
+                                    } else {
+                                        panic!("broken hive mutex");
+                                    }
+                                } else {
+                                    continue;
+                                }
 
-                                        if stored {
-                                            if let Some(arc) = broadcast_queue.upgrade() {
-                                                if let Ok(mut broadcast_queue) = arc.lock() {
-                                                    broadcast_queue.push_back(t);
-                                                }
+                                if stored {
+                                    if let Some(arc) = tv.upgrade() {
+                                        if let Ok(mut tv) = arc.lock() {
+                                            if let Err(e) = tv.update_status(&mut t) {
+                                                error!("update status err {:?}", e);
                                             }
+                                        }
+                                    }
+                                    if let Some(arc) = broadcast_queue.upgrade() {
+                                        if let Ok(mut broadcast_queue) = arc.lock() {
+                                            broadcast_queue.push_back(t);
                                         }
                                     }
                                 }

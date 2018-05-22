@@ -7,7 +7,6 @@ extern crate log;
 extern crate hashdb;
 extern crate memorydb;
 extern crate ethcore_bigint as bigint;
-extern crate time;
 extern crate ntrumls;
 
 use self::crypto::digest::Digest;
@@ -29,6 +28,8 @@ use model::transaction::*;
 use model::approvee::Approvee;
 use model::{StateDiffObject, StateDiff};
 use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
+use std::time;
+use std::str::FromStr;
 
 static CF_NAMES: [&str; 7] = ["transaction", "transaction-metadata", "address",
     "address_transactions", "approvee", "milestone", "state_diff"];
@@ -72,7 +73,148 @@ impl Hive {
 //    }
 
     pub fn init(&mut self) {
+        use self::rustc_serialize::hex::FromHex;
+        let mwm = 3;
+        let coordinator = Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap();
+        let mut th1 = HASH_NULL;
+        let mut th2 = HASH_NULL;
+        let mut mh1 = HASH_NULL;
+        let mut mh2 = HASH_NULL;
 
+        {
+            let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+            let mut genesis = TransactionObject {
+                address: Address::from_str("PC19C342BA1A051A3BA7AF1DBBAA5E72469C94CC554").unwrap(),
+                attachment_timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 2,
+                attachment_timestamp_lower_bound: 0u64,
+                attachment_timestamp_upper_bound: 0u64,
+                branch_transaction: HASH_NULL,
+                trunk_transaction: HASH_NULL,
+                hash: HASH_NULL,
+                nonce: 0,
+                tag: HASH_NULL,
+                timestamp: time::SystemTime::now().elapsed().unwrap().as_secs(),
+                value: 8000,
+                data_type: TransactionType::Full,
+                signature: Signature(vec![]),
+                signature_pubkey: PublicKey(vec![]),
+                snapshot: 1,
+                solid: true,
+                height: 1,
+            };
+            let mut genesis = Transaction::from_object(genesis);
+            genesis.object.nonce = genesis.find_nonce(mwm);
+            genesis.object.hash = genesis.calculate_hash();
+            th1 = genesis.object.hash.clone();
+
+            let sk =
+                "8003FFFFF6A92AB90DD741AD2DBDB33D4AF90007BF75B80E61064FA6D59131875BC637A929E350ED11B004DECF4129732E1EB247571A6C5C54CC50692B6D31067E3814E7BEA3D974B23CEF8A974299CB07A5AA98B0679C83A60E445427F1054134033D4A2A51D6D8F706B3329A6BA28244ADBB8E2A5CA78A9580C7FC79AE4C962CB357579D1E854FECD60CA3765A326A1B93B528393C1830EABDDE7C72D9294B7EDC2378B1ADDA0F8F18894303910773BF2F48A1BF1F5B64D22F4E65838A7C00235592AB05CD68C48E19D8AC37EC46F14A750B614200B57398792616242321A381CAC49289B1A0AE6B6DB7207E4D83742381602A9C2E99AF52024F65082C30A8D51755B8BF3BE57354E878395E2652BC6B572794109F18D0D3CB4E869C043A7EB4DA6B50DCAFC6039D1CA8D87C611253D5E83EB1576D54D0043B3AD271D481DCBF9B7B29B84B07D594097163D4CF08C51E3E4EF026A9BAF08C6A51";
+            let (sk, pk) = mls.generate_keypair_from_fg(&mls.unpack_fg_from_private_key
+            (&PrivateKey(sk.from_hex().unwrap())).unwrap()).unwrap();
+            genesis.object.signature = genesis.calculate_signature(&sk, &pk).expect("failed to \
+            calculate signature");
+            genesis.object.signature_pubkey = pk.clone();
+
+            info!("genesis={}", self.put_transaction(&genesis));
+        }
+
+        {
+            let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+            let mut genesis = TransactionObject {
+                address: Address::from_str("PE138221B1A9CBEFCEAF03E17934A7373D6289F0536").unwrap(),
+                attachment_timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 3,
+                attachment_timestamp_lower_bound: 0u64,
+                attachment_timestamp_upper_bound: 0u64,
+                branch_transaction: th1.clone(),
+                trunk_transaction: th1.clone(),
+                hash: HASH_NULL,
+                nonce: 0,
+                tag: HASH_NULL,
+                timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 1,
+                value: 2000,
+                data_type: TransactionType::Full,
+                signature: Signature(vec![]),
+                signature_pubkey: PublicKey(vec![]),
+                snapshot: 1,
+                solid: true,
+                height: 1,
+            };
+            let mut genesis = Transaction::from_object(genesis);
+            genesis.object.nonce = genesis.find_nonce(mwm);
+            genesis.object.hash = genesis.calculate_hash();
+            th2 = genesis.object.hash.clone();
+
+            let sk =
+                "8003FFFFF6A92AB90DD741AD2DBDB33D4AF90007BF75B80E61064FA6D59131875BC637A929E350ED11B004DECF4129732E1EB247571A6C5C54CC50692B6D31067E3814E7BEA3D974B23CEF8A974299CB07A5AA98B0679C83A60E445427F1054134033D4A2A51D6D8F706B3329A6BA28244ADBB8E2A5CA78A9580C7FC79AE4C962CB357579D1E854FECD60CA3765A326A1B93B528393C1830EABDDE7C72D9294B7EDC2378B1ADDA0F8F18894303910773BF2F48A1BF1F5B64D22F4E65838A7C00235592AB05CD68C48E19D8AC37EC46F14A750B614200B57398792616242321A381CAC49289B1A0AE6B6DB7207E4D83742381602A9C2E99AF52024F65082C30A8D51755B8BF3BE57354E878395E2652BC6B572794109F18D0D3CB4E869C043A7EB4DA6B50DCAFC6039D1CA8D87C611253D5E83EB1576D54D0043B3AD271D481DCBF9B7B29B84B07D594097163D4CF08C51E3E4EF026A9BAF08C6A51";
+            let (sk, pk) = mls.generate_keypair_from_fg(&mls.unpack_fg_from_private_key
+            (&PrivateKey(sk.from_hex().unwrap())).unwrap()).unwrap();
+            genesis.object.signature = genesis.calculate_signature(&sk, &pk).expect("failed to \
+            calculate signature");
+            genesis.object.signature_pubkey = pk.clone();
+
+            info!("genesis2={}", self.put_transaction(&genesis));
+        }
+        // milestone
+        {
+            let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+            let mut ms = TransactionObject {
+                address: ADDRESS_NULL,
+                attachment_timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 4,
+                attachment_timestamp_lower_bound: 0u64,
+                attachment_timestamp_upper_bound: 0u64,
+                branch_transaction: th1.clone(),
+                trunk_transaction: th2.clone(),
+                hash: HASH_NULL,
+                nonce: 0,
+                tag: HASH_NULL,
+                timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 2,
+                value: 0,
+                data_type: TransactionType::Full,
+                signature: Signature(vec![]),
+                signature_pubkey: PublicKey(vec![]),
+                snapshot: 1,
+                solid: true,
+                height: 1,
+            };
+            let mut ms = Transaction::from_object(ms);
+            ms.object.nonce = ms.find_nonce(mwm);
+            ms.object.hash = ms.calculate_hash();
+            mh1 = ms.object.hash.clone();
+
+            let sk =
+                "8003FFFFF6A92AB90DD741AD2DBDB33D4AF90007BF75B80E61064FA6D59131875BC637A929E350ED11B004DECF4129732E1EB247571A6C5C54CC50692B6D31067E3814E7BEA3D974B23CEF8A974299CB07A5AA98B0679C83A60E445427F1054134033D4A2A51D6D8F706B3329A6BA28244ADBB8E2A5CA78A9580C7FC79AE4C962CB357579D1E854FECD60CA3765A326A1B93B528393C1830EABDDE7C72D9294B7EDC2378B1ADDA0F8F18894303910773BF2F48A1BF1F5B64D22F4E65838A7C00235592AB05CD68C48E19D8AC37EC46F14A750B614200B57398792616242321A381CAC49289B1A0AE6B6DB7207E4D83742381602A9C2E99AF52024F65082C30A8D51755B8BF3BE57354E878395E2652BC6B572794109F18D0D3CB4E869C043A7EB4DA6B50DCAFC6039D1CA8D87C611253D5E83EB1576D54D0043B3AD271D481DCBF9B7B29B84B07D594097163D4CF08C51E3E4EF026A9BAF08C6A51";
+            let (sk, pk) = mls.generate_keypair_from_fg(&mls.unpack_fg_from_private_key
+            (&PrivateKey(sk.from_hex().unwrap())).unwrap()).unwrap();
+            ms.object.signature = ms.calculate_signature(&sk, &pk).expect("failed to \
+            calculate signature");
+            ms.object.signature_pubkey = pk.clone();
+
+            info!("milestone_transaction1={}", self.put_transaction(&ms));
+            let milestone = MilestoneObject {
+                index: 1,
+                hash: mh1.clone()
+            };
+            info!("milestone1={}", self.put_milestone(&milestone));
+        }
+
+        let mut state = HashMap::new();
+//        state.insert(Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap(), -8000);
+        state.insert(Address::from_str("PC19C342BA1A051A3BA7AF1DBBAA5E72469C94CC554").unwrap(), 8000);
+        state.insert(coordinator.clone(), -10000);
+        state.insert(Address::from_str("PE138221B1A9CBEFCEAF03E17934A7373D6289F0536").unwrap(), 2000);
+
+        let sdo = StateDiffObject {
+            state
+        };
+        let sd = StateDiff {
+            hash: mh1.clone(),
+            state_diff_object: sdo
+        };
+        info!("state_diff1={}", self.put_state_diff(&sd));
+
+        println!("put addr1={}", self.put_address_transaction(coordinator.clone(), th1.clone()));
+        println!("put addr2={}", self.put_address_transaction(coordinator.clone(), th2.clone()));
+        println!("put addr3={}", self.put_address_transaction(coordinator.clone(), mh1.clone()));
     }
 
     fn clear_db(db: &mut DB) {

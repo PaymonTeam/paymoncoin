@@ -176,11 +176,11 @@ impl Milestone {
 
             while !shutting_down {
                 let scan_time = SystemTime::now();
-                let mut previous_latest_milestone_index = 0u32;
+                let mut previous_latest_milestone_index;
 
                 if let Ok(self_p) = milestone_clone_1.lock() {
                     shutting_down = self_p.shutting_down;
-//                    previous_latest_milestone_index = self_p.latest_milestone_index;
+                    previous_latest_milestone_index = self_p.latest_milestone_index;
                     if shutting_down {
                         break;
                     }
@@ -188,16 +188,38 @@ impl Milestone {
                     panic!("broken milestone mutex");
                 }
 
+                let mut hashes: Vec<Hash>;
+                let mut hashes_is_ok = false;
                 if let Ok(hive) = hive.lock() {
-                    // TODO: optimize
-                    if let Some(mut hashes) = hive.load_address_transactions(&coordinator) {
-                        for hash in hashes {
-                            if let Ok(mut milestone) = milestone_clone_1.lock() {
-                                if milestone.analyzed_milestone_candidates.insert(hash) {
-                                    if let Some(t) = hive.storage_load_transaction(&hash) {
-                                        let valid: Validity = milestone.validate_milestone(&t, milestone.get_index(&t));
-                                        match valid {
-                                            Validity::Valid => {
+                    hashes = match hive.load_address_transactions(&coordinator){
+                        Some(h) => {
+                            hashes_is_ok = true;
+                            h
+                        }
+                        None => {
+                            hashes_is_ok = false;
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    panic!("broken hive mutex");
+                }
+                // TODO: optimize
+                if hashes_is_ok {
+                    for hash in hashes {
+                        if let Ok(mut milestone) = milestone_clone_1.lock() {
+                            if milestone.analyzed_milestone_candidates.insert(hash) {
+                                let mut t;
+                                if let Ok(hive) = hive.lock() {
+                                    t = hive.storage_load_transaction(&hash);
+                                } else {
+                                    panic!("broken hive mutex");
+                                }
+                                if let Some(t) = t {
+                                    let valid = milestone.validate_milestone(&t, milestone.get_index(&t));
+                                    match valid {
+                                        Validity::Valid => {
+                                            if let Ok(hive) = hive.lock() {
                                                 match hive.storage_latest_milestone() {
                                                     Some(milestone_manager) => {
                                                         if milestone_manager.index() > milestone.latest_milestone_index {
@@ -208,16 +230,16 @@ impl Milestone {
                                                     None => continue
                                                 }
                                             }
+                                        }
 
-                                            Validity::Incomplete => {
-                                                milestone.analyzed_milestone_candidates.remove(&t.get_hash());
-                                            }
+                                        Validity::Incomplete => {
+                                            milestone.analyzed_milestone_candidates.remove(&t.get_hash());
+                                        }
 
-                                            Validity::Invalid => {
-                                                //nothing to do
-                                            }
-                                        };
-                                    }
+                                        Validity::Invalid => {
+                                            //nothing to do
+                                        }
+                                    };
                                 }
                             }
                         }
@@ -240,16 +262,23 @@ impl Milestone {
         let solid_milestone_tracker_thread = thread::spawn(move || {
             info!("initializing ledger validator...");
 
+            let lv;
             if let Ok(ref mut milestone) = milestone_clone_2.lock() {
                 if let Some(ref mut ledger_validator) = milestone.ledger_validator {
-                    if let Ok(ref mut ledger_validator) = ledger_validator.lock() {
-                        ledger_validator.init();
-                    }
+                    lv = ledger_validator.clone();
+                } else {
+                    panic!("ledger validator is null");
                 }
+            } else {
+                panic!("broken milestone mutex");
+            }
+
+            if let Ok(ref mut ledger_validator) = lv.lock() {
+                ledger_validator.init();
                 ledger_initialized_clone_thread_2.store(true, Ordering::SeqCst);
             }
 
-            info!("tracker started");
+            info!("tracker #2 started");
             let mut shutting_down = false;
             while !shutting_down {
                 if let Ok(self_p) = milestone_clone_2.lock() {
@@ -260,10 +289,13 @@ impl Milestone {
                 }
 
                 let scan_time = SystemTime::now();
+
                 if let Ok(mut milestone) = milestone_clone_2.lock() {
                     let previous_solid_subhive_latest_milestone_index = milestone.latest_solid_subhive_milestone_index;
-
+                    println!("prev = {}", milestone.latest_solid_subhive_milestone_index);
+                    println!("latest_milestone_index 1 = {}", milestone.latest_milestone_index);
                     if milestone.latest_solid_subhive_milestone_index < milestone.latest_milestone_index {
+                        println!("latest_milestone_index = {}", milestone.latest_milestone_index);
                         milestone.update_latest_solid_subhive_milestone();
                     }
 
@@ -286,6 +318,7 @@ impl Milestone {
     }
 
     fn update_latest_solid_subhive_milestone(&mut self) -> Result<(), TransactionError> {
+        println!("upd");
         if let Ok(hive) = self.hive.lock() {
             if let Some(latest) = hive.storage_latest_milestone() {
                 let mut closest_milestone = hive.find_closest_next_milestone(self
@@ -346,10 +379,17 @@ impl Milestone {
     }
 
     fn get_index(&self, tx: &Transaction) -> u32 {
-        unimplemented!();
+        tx.object.tag[0] as u32
     }
 
     pub fn shutdown(&mut self){
         self.shutting_down = true;
+
+        if let Some(mut jh) = self.latest_milestone_tracker_thread.take() {
+            jh.join();
+        };
+        if let Some(mut jh) = self.solid_milestone_tracker_thread.take() {
+            jh.join();
+        };
     }
 }
