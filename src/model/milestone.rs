@@ -292,8 +292,6 @@ impl Milestone {
 
                 if let Ok(mut milestone) = milestone_clone_2.lock() {
                     let previous_solid_subhive_latest_milestone_index = milestone.latest_solid_subhive_milestone_index;
-                    println!("prev = {}", milestone.latest_solid_subhive_milestone_index);
-                    println!("latest_milestone_index 1 = {}", milestone.latest_milestone_index);
                     if milestone.latest_solid_subhive_milestone_index < milestone.latest_milestone_index {
                         println!("latest_milestone_index = {}", milestone.latest_milestone_index);
                         milestone.update_latest_solid_subhive_milestone();

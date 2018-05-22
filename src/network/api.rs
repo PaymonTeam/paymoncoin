@@ -96,14 +96,14 @@ impl API {
         let mut diff = HashMap::new();
         let mut h0: Option<Hash>;
         let mut h1: Option<Hash>;
-//        println!(1);
+
         if let Ok(tips_manager) = pmnc.tips_manager.lock() {
             h0 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, HASH_NULL,
                                                      HASH_NULL, depth, num_walks)?;
         } else {
             panic!("broken tips manager mutex");
         }
-        println!("update diff");
+
         if let Ok(ref mut ledger_validator) = pmnc.ledger_validator.lock() {
             if h0.is_none() || !ledger_validator.update_diff(&mut visited_hashes, &mut diff, h0.unwrap())? {
                 return Ok(None);
@@ -111,7 +111,6 @@ impl API {
         } else {
             panic!("broken tips manager mutex");
         }
-//        println!(3);
 
         if let Ok(tips_manager) = pmnc.tips_manager.lock() {
             h1 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, HASH_NULL,
@@ -119,8 +118,6 @@ impl API {
         } else {
             panic!("broken tips manager mutex");
         }
-
-//        println!(4);
 
         if let Ok(ref mut ledger_validator) = pmnc.ledger_validator.lock() {
             if h1.is_none() || !ledger_validator.update_diff(&mut visited_hashes, &mut diff, h1.unwrap())? {
