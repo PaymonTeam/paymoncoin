@@ -76,10 +76,10 @@ impl Hive {
         use self::rustc_serialize::hex::FromHex;
         let mwm = 3;
         let coordinator = Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap();
-        let mut th1 = HASH_NULL;
-        let mut th2 = HASH_NULL;
-        let mut mh1 = HASH_NULL;
-        let mut mh2 = HASH_NULL;
+        let mut th1 = HASH_NULL; // coordinator: 8000 -> Acc1
+        let mut th2 = HASH_NULL; // coordinator: 2000 -> Acc2, trunk: th1, branch: th1
+        let mut mh1 = HASH_NULL; // coordiator: milestone: 1, trunk: th1, branch: th2
+        let mut mh2 = HASH_NULL; // null
 
         {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
@@ -115,7 +115,7 @@ impl Hive {
             calculate signature");
             genesis.object.signature_pubkey = pk.clone();
 
-            info!("genesis={}", self.put_transaction(&genesis));
+            info!("genesis({:?})={}", th1, self.put_transaction(&genesis));
         }
 
         {
@@ -152,7 +152,7 @@ impl Hive {
             calculate signature");
             genesis.object.signature_pubkey = pk.clone();
 
-            info!("genesis2={}", self.put_transaction(&genesis));
+            info!("genesis2({:?})={}", th2, self.put_transaction(&genesis));
         }
         // milestone
         {
@@ -194,7 +194,7 @@ impl Hive {
                 index: 1,
                 hash: mh1.clone()
             };
-            info!("milestone1={}", self.put_milestone(&milestone));
+            info!("milestone1 ({:?}) ={}", mh1, self.put_milestone(&milestone));
         }
 
         let mut state = HashMap::new();
