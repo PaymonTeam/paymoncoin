@@ -115,7 +115,7 @@ fn send_coins(addr: Address, amount: u32) {
                                 h0.copy_from_slice(&json.get("trunk").unwrap().as_string().unwrap
                                 ().from_hex().unwrap());
                                 h1 = HASH_NULL;
-                                h0.copy_from_slice(&json.get("branch").unwrap().as_string().unwrap
+                                h1.copy_from_slice(&json.get("branch").unwrap().as_string().unwrap
                                 ().from_hex().unwrap());
                             }
                         }

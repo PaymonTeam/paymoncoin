@@ -322,7 +322,7 @@ impl Transaction {
         let mut res = self.approvers.clone();
         match res {
             Some(aprv) => aprv.get_hashes(),
-            None => match Approvee::load(hive, &self.object.hash){
+            None => match Approvee::load(hive, &self.get_hash()) {
                 Some(aprv) => aprv.get_hashes(),
                 None => HashSet::new()
             }
@@ -337,6 +337,7 @@ impl Transaction {
         self.object.height
     }
 
+    // Generates empty transaction with hash
     pub fn from_hash(hash: Hash) -> Self {
         let mut transaction = TransactionObject::from_hash(hash);
         let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
@@ -613,6 +614,7 @@ pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
     // check hash
     let calculated_hash = transaction.calculate_hash();
     if transaction.object.hash != calculated_hash {
+        error!("wrong hash {:?}", calculated_hash);
         return false;
     }
 
@@ -635,7 +637,7 @@ pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
         let y = (0b10000000 >> (i % 8)) as u8;
 
         if x & y != 0 {
-            println!(2);
+            error!("wrong mwm {:?}", buf);
             return false;
         }
     }

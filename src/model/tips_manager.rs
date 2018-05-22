@@ -156,21 +156,25 @@ impl TipsManager {
                                        &mut analyzed_tips,
                                        extra_tip);
             analyzed_tips.clear();
+            let update_diff_is_ok;
             if let Ok(mut lv) = self.ledger_validator.lock() {
-                let update_diff_is_ok = lv.update_diff(visited_hashes, diff, tip.clone())?;
-                if update_diff_is_ok {
-                    return Ok(Some(self.markov_chain_monte_carlo(visited_hashes,
-                                                              diff,
-                                                              tip,
-                                                              extra_tip,
-                                                              &mut ratings,
-                                                              iterations,
-                                                              (latest_solid_subhive_milestone_index - depth * 1), // TODO: 1 -> 2
-                                                              &mut max_depth_ok)?));
-                } else {
-                    error!("Update Diff error");
-                }
+                update_diff_is_ok = lv.update_diff(visited_hashes, diff, tip.clone())?;
+            } else {
+                panic!("ledger validator is broken");
             }
+            if update_diff_is_ok {
+                return Ok(Some(self.markov_chain_monte_carlo(visited_hashes,
+                                                          diff,
+                                                          tip,
+                                                          extra_tip,
+                                                          &mut ratings,
+                                                          iterations,
+                                                          (latest_solid_subhive_milestone_index - depth * 1), // TODO: 1 -> 2
+                                                          &mut max_depth_ok)?));
+            } else {
+                error!("Update Diff error");
+            }
+            println!("done 1");
         }
         return Ok(None);
     }
@@ -188,7 +192,11 @@ impl TipsManager {
         }
 
         if let Ok(milestone) = self.milestone.lock() {
-            let milestone_index = max(milestone.latest_solid_subhive_milestone_index - depth - 1, 0);
+            let milestone_index = match milestone.latest_solid_subhive_milestone_index > depth {
+                true => max(milestone.latest_solid_subhive_milestone_index - depth - 1, 0),
+                false => 0
+            };
+
             if let Ok(hive) = self.hive.lock() {
 
                 if let Some(milestone_manager) = hive.find_closest_next_milestone(milestone_index, self.testnet, self.milestone_start_index) {
@@ -229,7 +237,12 @@ impl TipsManager {
         let mut my_approved_hashes = visited_hashes.clone();
 
         while !tip.is_null() {
-            transaction_obj = Transaction::from_hash(tip.clone());
+            transaction_obj = match self.hive.lock() {
+                Ok(hive) => hive.storage_load_transaction(&tip).expect("tip is null"),
+                Err(_) => {
+                    panic!("hive mutex is broken");
+                }
+            };
             tip_set = transaction_obj.get_approvers(&self.hive).clone();
             let check_solidity_is_ok = match self.transaction_validator.lock() {
                 Ok(tv) => tv.check_solidity(transaction_obj.get_hash(), false)?,
@@ -247,7 +260,7 @@ impl TipsManager {
                 break;
             } else if !update_diff_is_ok {
                 break;
-            } else if TipsManager::below_max_depth(transaction_obj.get_hash(),
+            } else if self.below_max_depth(transaction_obj.get_hash(),
                                                    max_depth,
                                                    max_depth_ok) {
                 break;
@@ -326,38 +339,32 @@ impl TipsManager {
                                     max_depth_ok: &mut HashSet<Hash>,
                                     /*Random seed*/) -> Result<Hash, TransactionError> {
         let mut rnd = rand::thread_rng();
-        let mut monte_carlo_integrations: &mut HashMap<Hash, i64> = &mut HashMap::new();
-        let mut map_clone = monte_carlo_integrations.clone();
+        let mut monte_carlo_integrations = HashMap::<Hash, i32>::new();
         let mut tail: Hash;
         for _ in 0..iterations {
             tail = self.random_walk(visited_hashes, diff, tip, extra_tip, ratings, max_depth, max_depth_ok)?;
             if monte_carlo_integrations.contains_key(&tail) {
-                let taken_from_map = match map_clone.get(&tail) {
-                    Some(value) => *value,
-                    None => 0i64,
-                };
-                TipsManager::put(monte_carlo_integrations, tail, (taken_from_map + 1));
+                let v = monte_carlo_integrations.get(&tail).cloned().unwrap();
+                monte_carlo_integrations.insert(tail.clone(), v + 1);
             } else {
-                TipsManager::put(monte_carlo_integrations, tail, 1);
+                monte_carlo_integrations.insert(tail.clone(), 1);
             }
         }
 
-        let res_set = monte_carlo_integrations.iter()
-            .map(|(x, y)| Pair(*x, *y))
-            .collect::<HashSet<_>>();
+        let (reduced, _) = monte_carlo_integrations.into_iter().fold((HASH_NULL, 0), |(a, a_v), (b,
+            b_v)| {
+            if a_v > b_v {
+                return (a, a_v);
+            } else if a_v < b_v {
+                return (b, b_v);
+            } else if rnd.gen() {
+                return (a, a_v);
+            } else {
+                return (b, b_v);
+            }
+        });
 
-        return Ok(res_set.iter()
-            .fold(HASH_NULL, |a, b| {
-                if *monte_carlo_integrations.get(&a).unwrap() > b.1 {
-                    return a;
-                } else if *monte_carlo_integrations.get(&a).unwrap() < b.1 {
-                    return b.0;
-                } else if rnd.gen() {
-                    return a;
-                } else {
-                    return b.0;
-                }
-            }));
+        Ok(reduced)
     }
 
     fn set_to_vec(set: &HashSet<Hash>) -> Vec<Hash> {
@@ -392,7 +399,12 @@ impl TipsManager {
                     return;
                 }
             }
-            let mut transaction: Transaction = Transaction::from_hash(current_hash);
+            let mut transaction = match self.hive.lock() {
+                Ok(hive) => hive.storage_load_transaction(&current_hash).expect("tip is null"),
+                Err(_) => {
+                    panic!("hive mutex is broken");
+                }
+            };
             added_back = false;
             let mut approvers: HashSet<Hash> = transaction.get_approvers(&self.hive).clone();
             for approver in &approvers {
@@ -410,7 +422,7 @@ impl TipsManager {
             }
             if !added_back && TipsManager::add(analyzed_tips, current_hash) {
                 let rating: i64 = TipsManager::rating_calc(extra_tip, &visited_hashes, current_hash, &approvers, ratings);
-                TipsManager::put(ratings, current_hash, rating);
+                ratings.insert(current_hash.clone(), rating.clone());
             }
         }
     }
@@ -441,36 +453,26 @@ impl TipsManager {
         return result;
     }
 
-    fn put(map: &mut HashMap<Hash, i64>, key: Hash, value: i64) -> Option<i64> {
-        let result: i64;
-        match map.contains_key(&key) {
-            true => {
-                result = match map.get(&key) {
-                    Some(long) => *long,
-                    None => 0i64,
-                };
-                map.insert(key, value);
-                return Some(result);
-            }
-            false => {
-                map.insert(key, value);
-                return None;
-            }
-        };
-    }
-
     fn get_or_default(map: &HashMap<Hash, i64>, key: Hash, default_value: i64) -> i64 {
         let result: i64;
         result = match map.get(&key) {
             Some(x) => *x,
             None => default_value
         };
-        return result;
+        result
     }
 
-    fn below_max_depth(tip: Hash, depth: u32, max_depth_ok: &mut HashSet<Hash>) -> bool {
+    fn below_max_depth(&self, tip: Hash, depth: u32, max_depth_ok: &mut HashSet<Hash>) -> bool {
         //if tip is confirmed stop
-        if TransactionObject::from_hash(tip).get_snapshot_index() >= depth {
+
+        let mut transaction = match self.hive.lock() {
+            Ok(hive) => hive.storage_load_transaction(&tip).expect("tip is null"),
+            Err(_) => {
+                panic!("hive mutex is broken");
+            }
+        };
+
+        if transaction.object.get_snapshot_index() >= depth {
             return false;
         }
         //if tip unconfirmed, check if any referenced tx is confirmed below maxDepth
@@ -484,8 +486,13 @@ impl TipsManager {
                 None => break
             };
             if analyzed_transactions.insert(hash) {
-                let mut transaction: Transaction = Transaction::from_hash(hash);
-                //transaction.from_hash(&hash);
+                let mut transaction = match self.hive.lock() {
+                    Ok(hive) => hive.storage_load_transaction(&hash).expect("tip is null"),
+                    Err(_) => {
+                        panic!("hive mutex is broken");
+                    }
+                };
+
                 if transaction.object.get_snapshot_index() != 0 && transaction.object.get_snapshot_index() < depth {
                     return true;
                 }
@@ -504,20 +511,26 @@ impl TipsManager {
     }
 
     pub fn recursive_update_ratings(&self,
-                                    txHash: Hash,
+                                    tx_hash: Hash,
                                     ratings: &mut HashMap<Hash, i64>,
                                     analyzed_tips: &mut HashSet<Hash>) -> i64 {
         let mut rating = 1;
-        if analyzed_tips.insert(txHash) {
-            let mut transaction = Transaction::from_hash(txHash);
+        if analyzed_tips.insert(tx_hash) {
+            let mut transaction = match self.hive.lock() {
+                Ok(hive) => hive.storage_load_transaction(&tx_hash).expect("tip is null"),
+                Err(_) => {
+                    panic!("hive mutex is broken");
+                }
+            };
+
             let mut approver_hashes = transaction.get_approvers(&self.hive);
             for approver in approver_hashes.iter() {
                 rating = cap_sum(rating, TipsManager::recursive_update_ratings(self, *approver, ratings, analyzed_tips), (<i64>::max_value() / 2));
             }
-            TipsManager::put(ratings, txHash, rating);
+            ratings.insert(tx_hash.clone(), rating);
         } else {
-            if ratings.contains_key(&txHash) {
-                rating =  match ratings.get(&txHash) {
+            if ratings.contains_key(&tx_hash) {
+                rating =  match ratings.get(&tx_hash) {
                     Some(x) => *x,
                     None => 0,
                 };

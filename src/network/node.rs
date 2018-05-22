@@ -110,7 +110,7 @@ impl Node {
                     if let Ok(mut queue) = arc.lock() {
                         if let Some(mut t) = queue.pop_front() {
                             let address = t.object.address.clone();
-                            let validated = transaction::validate_transaction(&mut t, 9);
+                            let validated = transaction::validate_transaction(&mut t, 7);
                             println!("validated={}", validated);
 
                             if validated {
