@@ -27,12 +27,15 @@ impl Approvee {
     }
 
     pub fn load(hive: &AM<Hive>, hash: &Hash) -> Option<Self> {
+        // println!("hive lock 8");
         if let Ok(mut hive) = hive.lock() {
+            // println!("hive unlock 8");
             return Some(Approvee::new(hash, &vec_to_set(&match hive.storage_load_approvee(hash) {
                 Some(vec_h) => vec_h,
                 None => return None
             })));
         } else {
+            // println!("hive unlock 8");
             return None;
         }
     }

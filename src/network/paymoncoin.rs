@@ -87,9 +87,11 @@ impl PaymonCoin {
     }
 
     pub fn run(&mut self) -> AM<Node> {
+        // println!("hive lock 6");
         if let Ok(mut hive) = self.hive.lock() {
             hive.init();
         }
+        // println!("hive unlock 6");
         Milestone::init(self.milestone.clone(), self.ledger_validator.clone());
         if let Ok(mut tv) = self.transaction_validator.lock() {
             tv.init(true, 9);
