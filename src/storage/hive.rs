@@ -1,21 +1,13 @@
 extern crate rand;
 extern crate crypto;
 extern crate rustc_serialize;
-extern crate patricia_trie;
 extern crate rocksdb;
 extern crate log;
-extern crate hashdb;
-extern crate memorydb;
-extern crate ethcore_bigint as bigint;
 extern crate ntrumls;
 
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
 use self::rocksdb::{DBIterator, DB, Options, IteratorMode, ColumnFamilyDescriptor, ColumnFamily};
-use self::patricia_trie::{TrieFactory, TrieSpec, TrieMut, TrieDBMut};
-use self::hashdb::HashDB;
-use self::bigint::hash::H256;
-use self::memorydb::MemoryDB;
 use std::io;
 use std::num;
 use std::sync::Arc;
