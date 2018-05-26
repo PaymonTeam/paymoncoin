@@ -210,6 +210,7 @@ impl Address {
         checksum_byte as u8
     }
 
+    // TODO: may cause panic?
     pub fn from_public_key(pk: &PublicKey) -> Self {
         let mut sha = Sha3::sha3_256();
         sha.input(&pk.0);
@@ -577,6 +578,10 @@ impl Serializable for TransactionObject {
         };
         stream.write_byte(b);
         stream.write_byte_array(&self.signature.0);
+        stream.write_byte_array(&self.signature_pubkey.0);
+        stream.write_u32(self.snapshot);
+        stream.write_bool(self.solid);
+        stream.write_u64(self.height);
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
@@ -596,6 +601,10 @@ impl Serializable for TransactionObject {
             _ => TransactionType::HashOnly
         };
         self.signature = Signature(stream.read_byte_array().unwrap());
+        self.signature_pubkey = PublicKey(stream.read_byte_array().unwrap());
+        self.snapshot = stream.read_u32();
+        self.solid = stream.read_bool();
+        self.height = stream.read_u64();
     }
 }
 

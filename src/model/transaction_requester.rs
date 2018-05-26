@@ -50,6 +50,7 @@ impl TransactionRequester {
     }
 
     pub fn request_transaction(&mut self, hash: Hash, milestone: bool) {
+        // println!("hive lock 22");
         if let Ok(hive) = self.hive.lock() {
             if hash != HASH_NULL && !hive.exists_transaction(hash.clone()) {
                 if milestone {
@@ -63,6 +64,7 @@ impl TransactionRequester {
                 }
             }
         }
+        // println!("hive unlock 22");
     }
 
     pub fn transactions_to_request_is_full(&self) -> bool {
@@ -92,6 +94,7 @@ impl TransactionRequester {
                 to_remove.push(h.clone());
                 hash = Some(h.clone());
 
+                // println!("hive lock 23");
                 if let Ok(hive) = self.hive.lock() {
                     if hive.exists_transaction(hash.unwrap().clone()) {
                         info!("Removing existing tx from request list: {:?}", hash.unwrap());
@@ -99,9 +102,11 @@ impl TransactionRequester {
 //                    if !self.transactions_to_request_is_full() {
 //                        request_set.insert(hash.unwrap().clone());
 //                    }
+                        // println!("hive unlock 23");
                         break;
                     }
                 }
+                // println!("hive unlock 23");
             }
 
             for h in &to_remove {

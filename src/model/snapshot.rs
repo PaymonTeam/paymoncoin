@@ -123,6 +123,8 @@ impl Snapshot {
 
             self.state.insert(address.clone(), new_balance);
         });
+
+        self.index = new_index;
     }
 
     pub fn is_consistent(state: &mut HashMap<Address, i32>) -> bool {
