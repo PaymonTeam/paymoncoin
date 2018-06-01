@@ -17,7 +17,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use model::transaction::*;
 use model::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, LinkedList};
 use model::transaction_validator::TransactionError;
 
 #[macro_export]
@@ -42,6 +42,8 @@ const MILESTONE_START_INDEX: u32 = 0;
 pub struct API {
     listener: Listening,
     running: Arc<(Mutex<bool>, Condvar)>,
+    paymoncoin: AM<PaymonCoin>,
+
 }
 
 #[derive(RustcDecodable, RustcEncodable)]
@@ -50,6 +52,9 @@ pub struct APIRequest<T: Serializable> {
     pub object: T,
 }
 
+pub enum APIError{
+    InvalidStringParametr,
+}
 impl API {
     pub fn new(pmnc: AM<PaymonCoin>, port: u16, running: Arc<(Mutex<bool>, Condvar)>) -> Self {
         info!("Running API on port {}", port);
@@ -58,7 +63,7 @@ impl API {
         let listener = Iron::new(chain)
             .http(format!("127.0.0.1:{}", port))
             .expect("failed to start API server");
-
+        let pmnc_clone = pmnc.clone();
         unsafe {
             PMNC = Some(pmnc);
         }
@@ -66,6 +71,7 @@ impl API {
         Self {
             listener,
             running,
+            paymoncoin: pmnc_clone
         }
     }
 
@@ -83,7 +89,7 @@ impl API {
     }
 
     fn get_transactions_to_approve(pmnc: &mut PaymonCoin, mut depth: u32, mut num_walks: u32) ->
-                                                                                              Result<Option<(Hash, Hash)>, TransactionError> {
+    Result<Option<(Hash, Hash)>, TransactionError> {
         let max_depth = match pmnc.tips_manager.lock() {
             Ok(tm) => tm.get_max_depth(),
             Err(_) => panic!("broken tips manager mutex")
@@ -216,7 +222,8 @@ impl API {
                                                     match API::get_transactions_to_approve(pmnc, depth, num_walks) {
                                                         Ok(Some((trunk, branch))) => {
                                                             let result = rpc::TransactionsToApprove {
-                                                                branch, trunk
+                                                                branch,
+                                                                trunk
                                                             };
                                                             return format_success_response!(result);
                                                         },
@@ -256,4 +263,276 @@ impl API {
     }
 
     pub fn shutdown(&mut self) {}
+
+    pub fn get_tips(&self) -> Result<LinkedList<Hash>, &'static str> {
+        if let Ok(paymoncoin) = self.paymoncoin.lock() {
+            if let Ok(tips_vm) = paymoncoin.tips_vm.lock() {
+                return Ok(tips_vm.get_tips().iter().map(|x| *x).collect::<LinkedList<Hash>>());
+            } else {
+                panic!("broken tips_view_model mutex")
+            }
+        } else {
+            panic!("broken paymoncoin mutex");
+        }
+    }
+    pub fn get_balances(&self, addrss: LinkedList<Address>, tips: LinkedList<Hash>, threshold: i32) ->
+    Result<(LinkedList<i32>, LinkedList<Hash>, u32), TransactionError> {
+        if threshold <= 0 || threshold > 100 {
+            return Err(TransactionError::InvalidData);
+        }
+
+        let addresses: LinkedList<Address> = addrss.iter().map(|address| *address).collect::<LinkedList<Address>>();
+        let mut hashes: LinkedList<Hash> = LinkedList::new();
+        let mut balances: HashMap<Address, i32> = HashMap::new();
+        let mut index: u32 = 0;
+        if let Ok(pmnc) = self.paymoncoin.lock() {
+            if let Ok(mls) = pmnc.milestone.lock() {
+                index = mls.latest_snapshot.index;
+                if tips.len() == 0 {
+                    hashes.push_back(mls.latest_solid_subhive_milestone);
+                } else {
+                    hashes = tips.iter().map(|address| *address).collect::<LinkedList<Hash>>();
+                }
+            }
+        }
+        for address in addresses.iter() {
+            let mut value: i32 = 0;
+            if let Ok(pmnc) = self.paymoncoin.lock() {
+                if let Ok(mls) = pmnc.milestone.lock() {
+                    value = match mls.latest_snapshot.get_balance(address) {
+                        Some(v) => v,
+                        None => panic!("Invalid balance")
+                    }
+                }
+            }
+            balances.insert(*address, value);
+        }
+
+        let mut visited_hashes: HashSet<Hash> = HashSet::new();
+        let mut diff: HashMap<Address, i64> = HashMap::new();
+
+        for tip in hashes.iter() {
+            if let Ok(pmc) = self.paymoncoin.lock() {
+                if let Ok(hive) = pmc.hive.lock() {
+                    if !hive.exists_transaction(*tip) {
+                        return Err(TransactionError::InvalidAddress);
+                    }
+                } else {
+                    panic!("broken hive mutex");
+                }
+            } else {
+                panic!("broken paymoncoin mutex");
+            }
+            if let Ok(pmc) = self.paymoncoin.lock() {
+                if let Ok(mut lv) = pmc.ledger_validator.lock() {
+                    let update_diff_is_ok = lv.update_diff(&mut visited_hashes, &mut diff, *tip)?;
+                    if !update_diff_is_ok {
+                        return Err(TransactionError::InvalidAddress);
+                    }
+                } else {
+                    panic!("broken hive mutex");
+                }
+            } else {
+                panic!("broken paymoncoin mutex");
+            }
+        }
+        diff.iter().for_each(|(key, value)| {
+            let new_value: i32;
+            let is_get: bool;
+            match balances.get(key) {
+                Some(v) => {
+                    new_value = *v + (*value as i32);
+                    is_get = true;
+                }
+                None => {
+                    new_value = 0;
+                    is_get = false;
+                }
+            }
+            if is_get {
+                balances.remove(key);
+                balances.insert(*key, new_value);
+            }
+        });
+
+        let elements: LinkedList<i32> = addresses.iter().map(|address| *balances.get(address).unwrap())
+            .collect::<LinkedList<i32>>();
+
+        return Ok((elements, hashes, index));
+    }
+
+    pub fn find_transaction_statement(request: HashMap<String, i64>) -> Result<Vec<Hash>, TransactionError> {
+        let mut found_transactions: HashSet<Hash> = HashSet::new();
+        let mut contains_key = false;
+
+        let mut bundles_transactions: HashSet<Hash> = HashSet::new();
+        if request.contains_key("bundles") {
+            // TODO get_parameter_as_set
+            let bundles: HashSet<Hash> = HashSet::new();//get_parameter_as_set(request, "bundles", HASH_SIZE);
+            for bundle in bundles.iter() {
+                // TODO bundle
+                //bundles_transactions.addAll(BundleViewModel.load(instance.tangle, new Hash(bundle)).getHashes());
+            }
+            for hash in bundles_transactions.iter() {
+                found_transactions.insert(*hash);
+            }
+            contains_key = true;
+        }
+
+        let mut addresses_transactions: HashSet<Hash> = HashSet::new();
+        if request.contains_key("addresses") {
+            //TODO
+            let mut addresses: HashSet<Address> = HashSet::new();//getParameterAsSet(request, "addresses", HASH_SIZE);
+            for address in addresses.iter() {
+                //TODO
+                //addresses_transactions.addAll(AddressViewModel.load(instance.tangle, new Hash(address)).getHashes());
+            }
+
+            for hash in addresses_transactions.iter() {
+                found_transactions.insert(*hash);
+            }
+            contains_key = true;
+        }
+
+        let mut tags_transactions: HashSet<Hash> = HashSet::new();
+        if request.contains_key("tags") {
+            let mut tags: HashSet<Hash> = HashSet::new(); //getParameterAsSet(request,"tags",0);
+            for tag in tags.iter() {
+                //TODO
+                //tag = padTag(tag);
+                //tagsTransactions.addAll(TagViewModel.load(instance.tangle, new Hash(tag)).getHashes());
+            }
+            if tags_transactions.is_empty() {
+                for tag in tags.iter() {
+                    //tag = padTag(tag);
+                    //tagsTransactions.addAll(TagViewModel.loadObsolete(instance.tangle, new Hash(tag)).getHashes());
+                }
+            }
+            for hash in tags_transactions.iter() {
+                found_transactions.insert(*hash);
+            }
+            contains_key = true;
+        }
+
+        let mut approvee_transactions: HashSet<Hash> = HashSet::new();
+        if request.contains_key("approvees") {
+            //TODO
+            let approvees: HashSet<Hash> = HashSet::new();//getParameterAsSet(request, "approvees", HASH_SIZE);
+            for approvee in approvees.iter() {
+                //   approveeTransactions.addAll(TransactionViewModel.fromHash(instance.tangle, new Hash(approvee)).getApprovers(instance.tangle).getHashes());
+            }
+            for hash in approvee_transactions.iter() {
+                found_transactions.insert(*hash);
+            }
+            contains_key = true;
+        }
+
+        if !contains_key {
+            return Err(TransactionError::InvalidData);
+        }
+
+        //Using multiple of these input fields returns the intersection of the values.
+        if request.contains_key("bundles") {
+            found_transactions.intersection(&bundles_transactions);
+        }
+        if request.contains_key("addresses") {
+            found_transactions.intersection(&addresses_transactions);
+        }
+        if request.contains_key("tags") {
+            found_transactions.intersection(&tags_transactions);
+        }
+        if request.contains_key("approvees") {
+            found_transactions.intersection(&approvee_transactions);
+        }
+        //TODO
+        /*if found_transactions.size() > maxFindTxs {
+            return ErrorResponse.create(overMaxErrorMessage);
+        }*/
+
+        let elements: Vec<Hash> = found_transactions.iter()
+            .map(|tx| *tx)
+            .collect::<Vec<Hash>>();
+
+        return Ok(elements);
+    }
+    fn get_parameter_as_set(request: HashMap<String, i64>, param_name: String, size: i32)->  Result<HashSet<Hash>,APIError>  {
+    /*
+            HashSet<String> result = getParameterAsList(request,paramName,size).stream().collect(Collectors.toCollection(HashSet::new));
+            if (result.contains(Hash.NULL_HASH.toString())) {
+                throw new ValidationException("Invalid " + paramName + " input");
+            }
+            return result;
+        */
+        unimplemented!();
+    }
+    /*        private AbstractResponse getNewInclusionStateStatement(final List<String> trans, final List<String> tps) throws Exception {
+            final List<Hash> transactions = trans.stream().map(Hash::new).collect(Collectors.toList());
+            final List<Hash> tips = tps.stream().map(Hash::new).collect(Collectors.toList());
+            int numberOfNonMetTransactions = transactions.size();
+            final int[] inclusionStates = new int[numberOfNonMetTransactions];
+
+            List<Integer> tipsIndex = new LinkedList<>();
+            {
+                for(Hash tip: tips) {
+                    TransactionViewModel tx = TransactionViewModel.fromHash(instance.tangle, tip);
+                    if (tx.getType() != TransactionViewModel.PREFILLED_SLOT) {
+                        tipsIndex.add(tx.snapshotIndex());
+                    }
+                }
+            }
+            int minTipsIndex = tipsIndex.stream().reduce((a,b) -> a < b ? a : b).orElse(0);
+            if(minTipsIndex > 0) {
+                int maxTipsIndex = tipsIndex.stream().reduce((a,b) -> a > b ? a : b).orElse(0);
+                int count = 0;
+                for(Hash hash: transactions) {
+                    TransactionViewModel transaction = TransactionViewModel.fromHash(instance.tangle, hash);
+                    if(transaction.getType() == TransactionViewModel.PREFILLED_SLOT || transaction.snapshotIndex() == 0) {
+                        inclusionStates[count] = -1;
+                    } else if(transaction.snapshotIndex() > maxTipsIndex) {
+                        inclusionStates[count] = -1;
+                    } else if(transaction.snapshotIndex() < maxTipsIndex) {
+                        inclusionStates[count] = 1;
+                    }
+                    count++;
+                }
+            }
+
+            Set<Hash> analyzedTips = new HashSet<>();
+            Map<Integer, Integer> sameIndexTransactionCount = new HashMap<>();
+            Map<Integer, Queue<Hash>> sameIndexTips = new HashMap<>();
+            for (final Hash tip : tips) {
+                TransactionViewModel transactionViewModel = TransactionViewModel.fromHash(instance.tangle, tip);
+                if (transactionViewModel.getType() == TransactionViewModel.PREFILLED_SLOT){
+                    return ErrorResponse.create("One of the tips absents");
+                }
+                int snapshotIndex = transactionViewModel.snapshotIndex();
+                sameIndexTips.putIfAbsent(snapshotIndex, new LinkedList<>());
+                sameIndexTips.get(snapshotIndex).add(tip);
+            }
+            for(int i = 0; i < inclusionStates.length; i++) {
+                if(inclusionStates[i] == 0) {
+                    TransactionViewModel transactionViewModel = TransactionViewModel.fromHash(instance.tangle, transactions.get(i));
+                    int snapshotIndex = transactionViewModel.snapshotIndex();
+                    sameIndexTransactionCount.putIfAbsent(snapshotIndex, 0);
+                    sameIndexTransactionCount.put(snapshotIndex, sameIndexTransactionCount.get(snapshotIndex) + 1);
+                }
+            }
+            for(Integer index : sameIndexTransactionCount.keySet()) {
+                Queue<Hash> sameIndexTip = sameIndexTips.get(index);
+                if (sameIndexTip != null) {
+                    //has tips in the same index level
+                    if (!exhaustiveSearchWithinIndex(sameIndexTip, analyzedTips, transactions, inclusionStates, sameIndexTransactionCount.get(index), index)) {
+                        return ErrorResponse.create("The subtangle is not solid");
+                    }
+                }
+            }
+            final boolean[] inclusionStatesBoolean = new boolean[inclusionStates.length];
+            for(int i = 0; i < inclusionStates.length; i++) {
+                inclusionStatesBoolean[i] = inclusionStates[i] == 1;
+            }
+            {
+                return GetInclusionStatesResponse.create(inclusionStatesBoolean);
+            }
+        }*/
 }
+
