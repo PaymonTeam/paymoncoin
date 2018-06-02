@@ -67,6 +67,7 @@ impl LedgerValidator {
                             return Ok(None);
                         }
                     } else {
+                        // TODO: check balance
                         if transaction.object.value != 0 && counted_tx.insert(transaction.get_hash()) {
                             let from_address = Address::from_public_key(&transaction.object.signature_pubkey);
                             let address = transaction.object.address;
@@ -84,17 +85,17 @@ impl LedgerValidator {
 
                             state.insert(address.clone(), value);
 
-//                            let value = match state.get(&from_address) {
-//                                Some(v) => {
-//                                    let (v, b) = (*v).overflowing_sub(transaction.object.value as i32);
-//                                    if b {
-//                                        return Err(TransactionError::InvalidData);
-//                                    }
-//                                    v
-//                                }
-//                                None => transaction.object.value as i32
-//                            };
-//                            state.insert(from_address.clone(), value);
+                            let value = match state.get(&from_address) {
+                                Some(v) => {
+                                    let (v, b) = (*v).overflowing_sub(transaction.object.value as i32);
+                                    if b {
+                                        return Err(TransactionError::InvalidData);
+                                    }
+                                    v
+                                }
+                                None => transaction.object.value as i32
+                            };
+                            state.insert(from_address.clone(), value);
                         }
 
                         non_analyzed_transactions.push_back(transaction.get_trunk_transaction_hash());
@@ -180,6 +181,7 @@ impl LedgerValidator {
         TransactionError> {
         let mut transaction;
         // println!("hive lock 11");
+        // deadlock
         if let Ok(mut hive) = self.hive.lock() {
             transaction = match hive.storage_load_transaction(&milestone_obj.hash) {
                 Some(t) => t,

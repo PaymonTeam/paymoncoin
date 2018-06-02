@@ -84,7 +84,7 @@ impl API {
 
     fn get_transactions_to_approve(pmnc: &mut PaymonCoin, mut depth: u32, mut num_walks: u32) ->
                                                                                               Result<Option<(Hash, Hash)>, TransactionError> {
-        println!("l0_1");
+//        println!("l0_1");
         let max_depth = match pmnc.tips_manager.lock() {
             Ok(tm) => tm.get_max_depth(),
             Err(_) => panic!("broken tips manager mutex")
@@ -97,7 +97,7 @@ impl API {
         let mut diff = HashMap::new();
         let mut h0: Option<Hash>;
         let mut h1: Option<Hash>;
-        println!("l0_2");
+//        println!("l0_2");
 
         if let Ok(tips_manager) = pmnc.tips_manager.lock() {
             h0 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, None,
@@ -105,7 +105,7 @@ impl API {
         } else {
             panic!("broken tips manager mutex");
         }
-        println!("l0_3");
+//        println!("l0_3");
 
         if let Ok(ref mut ledger_validator) = pmnc.ledger_validator.lock() {
             if h0.is_none() || !ledger_validator.update_diff(&mut visited_hashes, &mut diff, h0.unwrap())? {
@@ -114,7 +114,7 @@ impl API {
         } else {
             panic!("broken tips manager mutex");
         }
-        println!("l0_4");
+//        println!("l0_4");
 
         if let Ok(tips_manager) = pmnc.tips_manager.lock() {
             h1 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, None,
@@ -122,7 +122,7 @@ impl API {
         } else {
             panic!("broken tips manager mutex");
         }
-        println!("l0_5");
+//        println!("l0_5");
 
         if let Ok(ref mut ledger_validator) = pmnc.ledger_validator.lock() {
             if h1.is_none() || !ledger_validator.update_diff(&mut visited_hashes, &mut diff, h1.unwrap())? {

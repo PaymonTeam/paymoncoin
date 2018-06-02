@@ -134,6 +134,7 @@ impl TransactionValidator {
     pub fn check_solidity(&self, hash: Hash, milestone: bool) -> Result<bool,
         TransactionError> {
         // println!("hive lock 24");
+        // deadlock
         if let Ok(hive) = self.hive.lock() {
             match hive.storage_load_transaction(&hash) {
                 Some(t) => {
@@ -233,6 +234,8 @@ impl TransactionValidator {
         }
 
         while running.load(Ordering::SeqCst) {
+//            println!("propogating");
+
             let mut new_solid_hashes = HashSet::<Hash>::new();
             use_first.store(!use_first.load(Ordering::SeqCst), Ordering::SeqCst);
 
@@ -279,8 +282,10 @@ impl TransactionValidator {
                         // println!("hive unlock 28");
                         if let Some(arc) = transaction_validator.upgrade() {
                             if let Ok(mut tv) = arc.lock() {
+//                                info!("set solid");
                                 if tv.quiet_quick_set_solid(&mut tx) {
                                     // println!("hive lock 35");
+//                                    info!("set solid ok");
                                     if let Ok(mut hive) = hive.lock() {
                                         hive.update_transaction(&mut tx);
                                     }
