@@ -184,13 +184,13 @@ impl TipsManager {
     }
 
     fn entry_point(&self, reference: Option<Hash>, extra_tip: Option<Hash>, depth: u32) -> Hash {
-        println!("l2_1");
+//        println!("l2_1");
         if extra_tip.is_none() {
             //trunk
             if let Some(r) = reference {
                 return r;
             } else {
-                println!("l2_2");
+//                println!("l2_2");
                 if let Ok(mlstn) = self.milestone.lock() {
                     return mlstn.latest_solid_subhive_milestone;
                 } else {
@@ -198,17 +198,17 @@ impl TipsManager {
                 }
             }
         }
-        println!("l2_3");
+//        println!("l2_3");
         if let Ok(milestone) = self.milestone.lock() {
             let milestone_index = match milestone.latest_solid_subhive_milestone_index > depth {
                 true => max(milestone.latest_solid_subhive_milestone_index - depth - 1, 0),
                 false => 0
             };
 
-            println!("l2_4");
+//            println!("l2_4");
             // println!("hive lock 15");
             if let Ok(hive) = self.hive.lock() {
-                println!("l2_5");
+//                println!("l2_5");
                 if let Some(milestone) = hive.find_closest_next_milestone(milestone_index, self.testnet, self.milestone_start_index) {
                     let hash = milestone.get_hash();
                     if hash != HASH_NULL {

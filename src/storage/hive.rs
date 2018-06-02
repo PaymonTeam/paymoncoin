@@ -169,7 +169,7 @@ impl Hive {
                 trunk_transaction: th2.clone(),
                 hash: HASH_NULL,
                 nonce: 0,
-                tag: Hash([1u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+                tag: Hash([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1u8]),
                 timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 2,
                 value: 0,
                 data_type: TransactionType::Full,
@@ -282,11 +282,11 @@ impl Hive {
                 attachment_timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 9,
                 attachment_timestamp_lower_bound: 0u64,
                 attachment_timestamp_upper_bound: 0u64,
-                branch_transaction: mh1.clone(),
-                trunk_transaction: th4.clone(),
+                trunk_transaction: mh1.clone(),
+                branch_transaction: th4.clone(),
                 hash: HASH_NULL,
                 nonce: 0,
-                tag: Hash([2u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+                tag: Hash([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2u8]),
                 timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 10,
                 value: 0,
                 data_type: TransactionType::Full,
@@ -580,7 +580,7 @@ impl Hive {
         }
     }
 
-    pub fn storage_load_approvee(&mut self, hash: &Hash) -> Option<Vec<Hash>> {
+    pub fn storage_load_approvee(&self, hash: &Hash) -> Option<Vec<Hash>> {
         let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Approvee as usize]).unwrap
         (), hash);
         match vec {
@@ -805,7 +805,7 @@ impl Hive {
             } else if trunk.get_type() != TransactionType::HashOnly && transaction.get_height() == 0 {
                 let new_height = 1 + trunk.get_height();
                 if current_height != new_height {
-                    transaction.update_height(1);
+                    transaction.update_height(new_height);
                     self.update_transaction(&mut transaction)?;
                 }
             } else {

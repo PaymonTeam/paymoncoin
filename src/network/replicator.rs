@@ -4,7 +4,7 @@ use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use byteorder::{ByteOrder, BigEndian};
+use byteorder::{ByteOrder, NativeEndian, BigEndian, LittleEndian};
 
 use mio::{Poll, PollOpt, Ready, Token};
 use mio::net::TcpStream;
@@ -122,7 +122,7 @@ impl Replicator {
             } else {
                 let mut buf = [0u8; 4];
                 self.sock.read(&mut buf).expect("Failed to read 4-byte buf");
-                let msg_len = BigEndian::read_u32(buf.as_ref());
+                let msg_len = NativeEndian::read_u32(buf.as_ref());
                 return Ok(Some((msg_len >> 8) * 4));
             }
         } else {
@@ -301,7 +301,7 @@ impl Replicator {
         poll.reregister(
             &self.sock,
             self.token,
-            Ready::empty(),
+            Ready::readable(), //Ready::empty(),
             PollOpt::edge() | PollOpt::oneshot()
         ).and_then(|(),| {
             self.is_idle = false;

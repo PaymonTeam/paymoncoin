@@ -116,6 +116,7 @@ impl Node {
                 if let Some(arc) = receive_queue.upgrade() {
                     if let Ok(mut queue) = arc.lock() {
                         if let Some(mut t) = queue.pop_front() {
+                            info!("received tx: {:?}", t.get_hash());
                             let address = t.object.address.clone();
                             let validated = transaction::validate_transaction(&mut t, 7);
                             println!("validated={}", validated);
@@ -138,6 +139,7 @@ impl Node {
                                         if let Ok(mut tv) = arc.lock() {
                                             if let Err(e) = tv.update_status(&mut t) {
                                                 error!("update status err {:?}", e);
+                                                continue;
                                             }
                                         }
                                     }

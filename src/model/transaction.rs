@@ -422,10 +422,11 @@ impl Transaction {
             self.object.serialize_to_stream(&mut self.bytes);
         }
 
-        let mut sb = SerializedBuffer::new_with_size(ADDRESS_SIZE + 4 + 8);
+        let mut sb = SerializedBuffer::new_with_size(ADDRESS_SIZE + 4 + 8 + HASH_SIZE);
         sb.write_bytes(&self.object.address);
         sb.write_u32(self.object.value);
         sb.write_u64(self.object.timestamp);
+        sb.write_bytes(&self.object.tag);
 
         let mut sha = Sha3::sha3_256();
         sha.input(&sb.buffer);
