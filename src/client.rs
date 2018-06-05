@@ -145,7 +145,11 @@ fn send_coins(addr: Address, amount: u32) {
 
     unsafe {
         if let Some(ref n) = NEIGHBORS {
-            let mut st = json::encode(&rpc::GetTransactionsToApprove { }).unwrap();
+            let mut st = json::encode(&rpc::GetTransactionsToApprove {
+                depth: 4,
+                num_walks: 5,
+                reference: HASH_NULL
+            }).unwrap();
             let mut s = Json::from_str(&st).unwrap();
             s.as_object_mut().unwrap().insert("method".to_string(), "getTransactionsToApprove".to_string().to_json());
 

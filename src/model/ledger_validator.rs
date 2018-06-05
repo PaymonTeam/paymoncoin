@@ -24,8 +24,7 @@ impl LedgerValidator {
 
     pub fn get_latest_diff(&mut self, visited_non_milestone_subtangle_hashes: &mut HashSet<Hash>,
                            tip: Option<Hash>,
-                           latest_snapshot_index: u32, milestone: bool) ->
-                                                                                                  Result<Option<HashMap<Address, i32>>, TransactionError> {
+                           latest_snapshot_index: u32, milestone: bool) -> Result<Option<HashMap<Address, i32>>, TransactionError> {
         let mut state = HashMap::<Address, i32>::new();
         let mut number_of_analyzed_transactions = 0;
         let mut counted_tx = HashSet::<Hash>::new();
@@ -46,14 +45,12 @@ impl LedgerValidator {
                     transaction = match hive.storage_load_transaction(&hash) {
                         Some(t) => t,
                         None => {
-                            // println!("hive unlock 9");
                             return Err(TransactionError::InvalidHash)
                         }
                     };
                 } else {
                     panic!("broken hive mutex");
                 }
-                // println!("hive unlock 9");
 
                 println!("transaction.object.snapshot={}", transaction.object.snapshot);
                 println!("latest_snapshot_index={}", latest_snapshot_index);
@@ -272,47 +269,33 @@ impl LedgerValidator {
                 candidate_milestone = hive.storage_next_milestone(cm.index);
             }
         }
-        // println!("hive unlock 13");
         Ok(consistent_milestone)
     }
 
     pub fn update_diff(&mut self, approved_hashes: &mut HashSet<Hash>, diff: &mut HashMap<Address, i64>, tip: Hash) -> Result<bool, TransactionError> {
-        // println!("hive lock 14");
         if let Ok(mut hive) = self.hive.lock() {
-//            println!("tip={:?}", tip);
             match hive.storage_load_transaction(&tip) {
                 Some(t) => {
                     if !t.is_solid() {
-                        // println!("hive unlock 14");
                         return Ok(false);
                     }
                 },
                 None => {
-                    // println!("hive unlock 14");
                     return Err(TransactionError::InvalidHash)
                 }
             };
         }
-        // println!("hive unlock 14");
-//        println!("b");
 
         if approved_hashes.contains(&tip) {
             return Ok(true);
         }
-//        println!("c");
 
         let mut visited_hashes = approved_hashes.clone();
-
-//        println!("d");
 
         let milestone_latest_snapshot_index = match self.milestone.lock() {
             Ok(milestone) => milestone.latest_snapshot.index,
             Err(_) => panic!("broken milestone mutex")
         };
-
-        ;
-//        println!("visited_hashes={:?}", visited_hashes);
-//        println!("milestone_latest_snapshot_index={}", milestone_latest_snapshot_index);
 
         let mut current_state = match self.get_latest_diff(&mut visited_hashes, Some(tip.clone()),
                                    milestone_latest_snapshot_index, false)? {
