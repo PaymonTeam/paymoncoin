@@ -1,7 +1,7 @@
 use network::packet::{Serializable, SerializedBuffer};
 use model::{
     Transaction, TransactionObject,
-    transaction::Hash
+    transaction::*
 };
 
 /**
@@ -92,14 +92,38 @@ impl Serializable for BroadcastTransaction {
     GetTransactionsToApprove
 */
 #[derive(RustcDecodable, RustcEncodable)]
-pub struct GetTransactionsToApprove {}
+pub struct GetTransactionsToApprove {
+    pub depth: u32,
+    pub num_walks: u32,
+    pub reference: Hash
+}
 
 impl GetTransactionsToApprove { pub const SVUID : i32 = 5; }
 
 impl Serializable for GetTransactionsToApprove {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) { stream.write_i32(Self::SVUID); }
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
+        stream.write_u32(self.depth);
+        stream.write_u32(self.num_walks);
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) { }
+        if self.reference == HASH_NULL {
+            stream.write_bool(true);
+            stream.write_bytes(&self.reference);
+        } else {
+            stream.write_bool(false);
+        }
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        self.depth = stream.read_u32();
+        self.num_walks = stream.read_u32();
+
+        if stream.read_bool() {
+            stream.read_bytes(&mut self.reference, HASH_SIZE);
+        } else {
+            self.reference = HASH_NULL;
+        }
+    }
 }
 
 /**

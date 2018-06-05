@@ -760,12 +760,18 @@ impl Hive {
         Ok(())
     }
 
-    pub fn update_transaction(&mut self, transaction: &mut Transaction) -> Result<bool, TransactionError> {
-        if transaction.get_hash() == HASH_NULL {
+    pub fn update_transaction(&mut self, t: &mut Transaction) -> Result<bool, TransactionError> {
+        // TODO: check for existence?
+        let hash = t.get_hash();
+        if hash == HASH_NULL {
             return Ok(false);
         }
 
-        Ok(self.put_transaction(transaction))
+        let address = Address::from_public_key(&t.object.signature_pubkey);
+        self.put_address_transaction(address, hash);
+        self.put_approvee(t.get_branch_transaction_hash(), hash);
+        self.put_approvee(t.get_trunk_transaction_hash(), hash);
+        Ok(self.storage_put(CFType::Transaction, &t.object.hash, &t.object))
     }
 
     pub fn update_heights(&mut self, mut transaction: Transaction) -> Result<(),
