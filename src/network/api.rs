@@ -19,7 +19,7 @@ use model::transaction::*;
 use model::*;
 use std::collections::{HashMap, HashSet, LinkedList};
 use model::transaction_validator::TransactionError;
-
+use std::collections::linked_list::Iter;
 #[macro_export]
 macro_rules! format_success_response {
     ($a:ident) => {
@@ -54,6 +54,8 @@ pub struct APIRequest<T: Serializable> {
 
 pub enum APIError{
     InvalidStringParametr,
+    TipAbsent,
+    TheSubHiveIsNotSolid
 }
 impl API {
     pub fn new(pmnc: AM<PaymonCoin>, port: u16, running: Arc<(Mutex<bool>, Condvar)>) -> Self {
@@ -361,10 +363,10 @@ impl API {
         return Ok((elements, hashes, index));
     }
 
-    pub fn find_transaction_statement(request: HashMap<String, i64>) -> Result<Vec<Hash>, TransactionError> {
+    pub fn find_transaction_statement (json_obj: Option<json::Object>) -> Result<Vec<Hash>, TransactionError> {
         let mut found_transactions: HashSet<Hash> = HashSet::new();
         let mut contains_key = false;
-
+        let mut request: HashMap<String,i64> = HashMap::new();
         let mut bundles_transactions: HashSet<Hash> = HashSet::new();
         if request.contains_key("bundles") {
             // TODO get_parameter_as_set
@@ -455,84 +457,186 @@ impl API {
 
         return Ok(elements);
     }
-    fn get_parameter_as_set(request: HashMap<String, i64>, param_name: String, size: i32)->  Result<HashSet<Hash>,APIError>  {
-    /*
-            HashSet<String> result = getParameterAsList(request,paramName,size).stream().collect(Collectors.toCollection(HashSet::new));
-            if (result.contains(Hash.NULL_HASH.toString())) {
-                throw new ValidationException("Invalid " + paramName + " input");
-            }
-            return result;
-        */
+    fn get_parameter_as_set(request: HashMap<String, i64>, param_name: String, size: i32)->  Result<HashSet<Hash>,APIError> {
+        let list = API::get_parameter_as_list(request, param_name, size)?;
+        let mut hashset: Vec<Hash> = list.iter().map(|hash| *hash).collect::<Vec<Hash>>();
+        let mut result: HashSet<Hash> = HashSet::new();
+        for hash in hashset.iter(){
+            result.insert(*hash);
+        }
+        if result.contains(&HASH_NULL) {
+            return Err(APIError::InvalidStringParametr);
+        }
+        return Ok(result);
+    }
+    fn get_parameter_as_list(request: HashMap<String, i64>, param_name: String, size: i32) -> Result<LinkedList<Hash>, APIError>{
         unimplemented!();
     }
-    /*        private AbstractResponse getNewInclusionStateStatement(final List<String> trans, final List<String> tps) throws Exception {
-            final List<Hash> transactions = trans.stream().map(Hash::new).collect(Collectors.toList());
-            final List<Hash> tips = tps.stream().map(Hash::new).collect(Collectors.toList());
-            int numberOfNonMetTransactions = transactions.size();
-            final int[] inclusionStates = new int[numberOfNonMetTransactions];
+    pub fn get_new_inclusion_state_statement(trans: &LinkedList<Hash>, tps: &LinkedList<Hash> ) -> Result<Vec<bool>, APIError> {
+        let transactions = trans.clone();
+        let tips = tps.clone();
+        let number_of_non_met_transactions = transactions.len();
+        let mut inclusion_states: Vec<i32> = Vec::with_capacity(number_of_non_met_transactions);
 
-            List<Integer> tipsIndex = new LinkedList<>();
-            {
-                for(Hash tip: tips) {
-                    TransactionViewModel tx = TransactionViewModel.fromHash(instance.tangle, tip);
-                    if (tx.getType() != TransactionViewModel.PREFILLED_SLOT) {
-                        tipsIndex.add(tx.snapshotIndex());
-                    }
+        let mut tips_index: LinkedList<u32> = LinkedList::new();
+        {
+            for tip in tips.iter() {
+                let tx = Transaction::from_hash(*tip);
+                if tx.get_type() != TransactionType::HashOnly {
+                    tips_index.push_back(tx.object.get_snapshot_index());
                 }
             }
-            int minTipsIndex = tipsIndex.stream().reduce((a,b) -> a < b ? a : b).orElse(0);
-            if(minTipsIndex > 0) {
-                int maxTipsIndex = tipsIndex.stream().reduce((a,b) -> a > b ? a : b).orElse(0);
-                int count = 0;
-                for(Hash hash: transactions) {
-                    TransactionViewModel transaction = TransactionViewModel.fromHash(instance.tangle, hash);
-                    if(transaction.getType() == TransactionViewModel.PREFILLED_SLOT || transaction.snapshotIndex() == 0) {
-                        inclusionStates[count] = -1;
-                    } else if(transaction.snapshotIndex() > maxTipsIndex) {
-                        inclusionStates[count] = -1;
-                    } else if(transaction.snapshotIndex() < maxTipsIndex) {
-                        inclusionStates[count] = 1;
-                    }
-                    count++;
-                }
-            }
+        }
 
-            Set<Hash> analyzedTips = new HashSet<>();
-            Map<Integer, Integer> sameIndexTransactionCount = new HashMap<>();
-            Map<Integer, Queue<Hash>> sameIndexTips = new HashMap<>();
-            for (final Hash tip : tips) {
-                TransactionViewModel transactionViewModel = TransactionViewModel.fromHash(instance.tangle, tip);
-                if (transactionViewModel.getType() == TransactionViewModel.PREFILLED_SLOT){
-                    return ErrorResponse.create("One of the tips absents");
-                }
-                int snapshotIndex = transactionViewModel.snapshotIndex();
-                sameIndexTips.putIfAbsent(snapshotIndex, new LinkedList<>());
-                sameIndexTips.get(snapshotIndex).add(tip);
+        let min_tips_index = tips_index.iter().fold(0u32, |a, b| {
+            if a < *b {
+                return a;
+            } else {
+                return *b;
             }
-            for(int i = 0; i < inclusionStates.length; i++) {
-                if(inclusionStates[i] == 0) {
-                    TransactionViewModel transactionViewModel = TransactionViewModel.fromHash(instance.tangle, transactions.get(i));
-                    int snapshotIndex = transactionViewModel.snapshotIndex();
-                    sameIndexTransactionCount.putIfAbsent(snapshotIndex, 0);
-                    sameIndexTransactionCount.put(snapshotIndex, sameIndexTransactionCount.get(snapshotIndex) + 1);
+            return 0u32;
+        });
+        if min_tips_index > 0 {
+            let max_tips_index = tips_index.iter().fold(0u32, |a, b| {
+                if a > *b {
+                    return a;
+                } else {
+                    return *b;
+                }
+                return 0u32;
+            });
+            let mut count = 0;
+            for hash in transactions.iter() {
+                let transaction = Transaction::from_hash(*hash);
+                if transaction.get_type() == TransactionType::HashOnly || transaction.object.get_snapshot_index() == 0 {
+                    inclusion_states[count] = -1;
+                } else if transaction.object.get_snapshot_index() > max_tips_index {
+                    inclusion_states[count] = -1;
+                } else if transaction.object.get_snapshot_index() < max_tips_index {
+                    inclusion_states[count] = 1;
+                }
+                count += 1;
+            }
+        }
+        let mut analyzed_tips: HashSet<Hash> = HashSet::new();
+        let mut same_index_transaction_count: HashMap<u32, u32> = HashMap::new();
+        let mut same_index_tips: HashMap<u32, LinkedList<Hash>> = HashMap::new();
+        for tip in tips.iter() {
+            let transaction = Transaction::from_hash(*tip);
+            if transaction.get_type() == TransactionType::HashOnly {
+                return Err(APIError::TipAbsent);
+            }
+            let snapshot_index = transaction.object.get_snapshot_index();
+            if !same_index_tips.contains_key(&snapshot_index) {
+                let mut list = LinkedList::new();
+                same_index_tips.insert(snapshot_index, list);
+            }
+            same_index_tips.get_mut(&snapshot_index).unwrap().push_back(*tip);
+        }
+
+        for i in 0..inclusion_states.len() {
+            // LinkedList::get() impl
+            if inclusion_states[i] == 0 {
+                let mut it: Hash = HASH_NULL;
+                if transactions.len() > i {
+                    let mut count: usize = 0;
+                    for itr in transactions.iter() {
+                        if count == i {
+                            it = *itr;
+                        } else {
+                            count += 1;
+                        }
+                    }
+                } else {
+                    panic!("Incorrect index");
+                }
+                let transaction = Transaction::from_hash(it);
+                let snapshot_index = transaction.object.get_snapshot_index();
+                if !same_index_transaction_count.contains_key(&snapshot_index) {
+                    same_index_transaction_count.insert(snapshot_index, 0);
+                }
+                let same_index_transaction_count_clone = same_index_transaction_count.clone();
+                same_index_transaction_count.insert(snapshot_index, same_index_transaction_count_clone.get(&snapshot_index).unwrap() + 1);
+            }
+        }
+
+        for index in same_index_transaction_count.keys() {
+            let mut same_index_tip: LinkedList<Hash> = match same_index_tips.get(index){
+                Some(list) => (*list).clone(),
+                None => panic!("None returned")
+            };
+            if !same_index_tip.is_empty() {
+                //has tips in the same index level
+                let flag = API::exhaustive_search_within_index(& mut same_index_tip,
+                                                          & mut analyzed_tips,
+                                                          &transactions,
+                                                          & mut inclusion_states,
+                                                          *same_index_transaction_count.get(index).unwrap(),
+                                                          *index)?;
+                if !flag {
+                    return Err(APIError::TheSubHiveIsNotSolid);
                 }
             }
-            for(Integer index : sameIndexTransactionCount.keySet()) {
-                Queue<Hash> sameIndexTip = sameIndexTips.get(index);
-                if (sameIndexTip != null) {
-                    //has tips in the same index level
-                    if (!exhaustiveSearchWithinIndex(sameIndexTip, analyzedTips, transactions, inclusionStates, sameIndexTransactionCount.get(index), index)) {
-                        return ErrorResponse.create("The subtangle is not solid");
+        }
+
+        let mut inclusion_states_boolean: Vec<bool> = Vec::with_capacity(inclusion_states.len());
+        for i in 0..inclusion_states.len() {
+            inclusion_states_boolean[i] = inclusion_states[i] == 1;
+        }
+        {
+            return Ok(inclusion_states_boolean);
+        }
+        unimplemented!();
+    }
+    fn exhaustive_search_within_index(non_analyzed_transactions: & mut LinkedList<Hash>,
+                                      analyzed_tips: & mut HashSet<Hash>,
+                                      transactions: &LinkedList<Hash>,
+                                      inclusion_states: & mut Vec<i32>,
+                                      count: u32,
+                                      index: u32) -> Result<bool, APIError> {
+        let mut pointer: Option<Hash>;
+        let mut count_clone = count.clone();
+        pointer = non_analyzed_transactions.pop_front();
+        'MAIN_LOOP:
+        while pointer != None {
+            let hash = pointer.unwrap();
+            if analyzed_tips.insert(hash) {
+                let transaction = Transaction::from_hash(hash);
+                if transaction.object.get_snapshot_index() == index {
+                    if transaction.get_type() == TransactionType::HashOnly {
+                        return Ok(false);
+                    } else {
+                        for i in 0..inclusion_states.len() {
+                            // LinkedList::get() impl
+                            let mut it: Hash = HASH_NULL;
+                            if transactions.len() > i {
+                                let mut count: usize = 0;
+                                for itr in transactions.iter() {
+                                    if count == i {
+                                        it = *itr;
+                                    } else {
+                                        count += 1;
+                                    }
+                                }
+                            } else {
+                                panic!("Incorrect index");
+                            }
+                            if inclusion_states[i] < 1 && hash == it {
+                                inclusion_states[i] = 1;
+                                count_clone -= 1;
+                                if count_clone <= 0 {
+                                    break 'MAIN_LOOP;
+                                }
+                            }
+                        }
+                        non_analyzed_transactions.push_back(transaction.get_trunk_transaction_hash());
+                        non_analyzed_transactions.push_back(transaction.get_branch_transaction_hash());
                     }
                 }
             }
-            final boolean[] inclusionStatesBoolean = new boolean[inclusionStates.length];
-            for(int i = 0; i < inclusionStates.length; i++) {
-                inclusionStatesBoolean[i] = inclusionStates[i] == 1;
-            }
-            {
-                return GetInclusionStatesResponse.create(inclusionStatesBoolean);
-            }
-        }*/
+            pointer = non_analyzed_transactions.pop_front();
+        }
+        return Ok(true);
+    }
 }
 
