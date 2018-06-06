@@ -365,7 +365,7 @@ impl Hive {
         }
     }
 
-    pub fn put_approvee(&mut self, approvee: Hash, approved: Hash) -> bool {
+    pub fn put_approvee(&mut self, approved: Hash, approvee: Hash) -> bool {
         self.storage_merge(CFType::Approvee, &approved, &approvee)
     }
 

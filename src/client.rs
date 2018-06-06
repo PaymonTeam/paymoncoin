@@ -146,7 +146,7 @@ fn send_coins(addr: Address, amount: u32) {
     unsafe {
         if let Some(ref n) = NEIGHBORS {
             let mut st = json::encode(&rpc::GetTransactionsToApprove {
-                depth: 4,
+                depth: 1,
                 num_walks: 5,
                 reference: HASH_NULL
             }).unwrap();
@@ -218,12 +218,12 @@ fn send_coins(addr: Address, amount: u32) {
             if let Some(ref pk) = PK {
 //            if let Some(my_addr) = ADDRESS {
                 transaction.object.signature = transaction.calculate_signature(sk, pk).expect("failed to calculate signature");
-                println!("signed");
+//                println!("signed");
                 transaction.object.signature_pubkey = pk.clone();
 
-                println!("{:?}", pk);
-                println!("{:?}", transaction.object.hash);
-                println!("{:?}", transaction.object.signature);
+//                println!("{:?}", pk);
+                debug!("{:?}", transaction.object.hash);
+//                println!("{:?}", transaction.object.signature);
 //            } else {
 //                println!("Address is None")
 //            }
