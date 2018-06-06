@@ -172,8 +172,8 @@ impl TipsManager {
                                                           extra_tip,
                                                           &mut ratings,
                                                           iterations,
-                                                          (latest_solid_subhive_milestone_index -
-                                                              depth * 2),
+                                                          latest_solid_subhive_milestone_index -
+                                                              depth * 2,
                                                           &mut max_depth_ok)?);
             } else {
                 error!("starting tip failed consistency check");

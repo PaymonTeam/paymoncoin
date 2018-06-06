@@ -256,7 +256,7 @@ impl TransactionValidator {
             let mut it = new_solid_hashes.iter();
             while let Some(hash) = it.next() {
                 if running.load(Ordering::SeqCst) {
-                    let transaction;
+                    let mut transaction;
                     // println!("hive lock 27");
                     if let Ok(mut hive) = hive.lock() {
                         if let Some(t) = hive.storage_load_transaction(&hash) {

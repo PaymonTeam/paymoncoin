@@ -319,13 +319,21 @@ impl Transaction {
         self.object.solid
     }
 
-    pub fn get_approvers(&self, hive: &AM<Hive>) -> HashSet<Hash> {
+    pub fn get_approvers(&mut self, hive: &AM<Hive>) -> HashSet<Hash> {
         let mut res = self.approvers.clone();
         match res {
             Some(aprv) => aprv.get_hashes(),
             None => match Approvee::load(hive, &self.get_hash()) {
-                Some(aprv) => aprv.get_hashes(),
-                None => HashSet::new()
+                Some(aprv) => {
+                    let hashes = aprv.get_hashes();
+                    self.approvers = Some(Approvee::new(&hashes));
+                    hashes
+                },
+                None => {
+                    let empty_set = HashSet::new();
+                    self.approvers = Some(Approvee::new(&empty_set));
+                    empty_set
+                }
             }
         }
     }
@@ -400,7 +408,8 @@ impl Transaction {
 
     pub fn calculate_signature(&mut self, sk: &PrivateKey, pk: &PublicKey) -> Option<Signature> {
         let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-        println!("signing {:?} {:?} {:?}", self.object.hash, sk, pk);
+        debug!("signing {:?}", self.object.hash);
+//        println!("signing {:?} {:?} {:?}", self.object.hash, sk, pk);
         ntrumls.sign(&self.object.hash, sk, pk)
     }
 
@@ -657,8 +666,8 @@ pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
     let pk = &transaction.object.signature_pubkey;
     let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
 //    let pk = PublicKey(address_from.0.to_vec());
-    println!("{:?}", pk);
-    println!("{:?}", transaction.object.hash);
-    println!("{:?}", transaction.object.signature);
+//    println!("{:?}", pk);
+//    println!("{:?}", transaction.object.hash);
+//    println!("{:?}", transaction.object.signature);
     ntrumls.verify(&transaction.object.hash, sign, &pk)
 }
