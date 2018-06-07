@@ -55,7 +55,8 @@ pub struct APIRequest<T: Serializable> {
 pub enum APIError{
     InvalidStringParametr,
     TipAbsent,
-    TheSubHiveIsNotSolid
+    TheSubHiveIsNotSolid,
+    InvalidData
 }
 impl API {
     pub fn new(pmnc: AM<PaymonCoin>, port: u16, running: Arc<(Mutex<bool>, Condvar)>) -> Self {
@@ -363,14 +364,14 @@ impl API {
         return Ok((elements, hashes, index));
     }
 
-    pub fn find_transaction_statement (json_obj: Option<json::Object>) -> Result<Vec<Hash>, TransactionError> {
+    pub fn find_transaction_statement (json_obj: Option<json::Object>) -> Result<Vec<Hash>, APIError> {
         let mut found_transactions: HashSet<Hash> = HashSet::new();
         let mut contains_key = false;
         let mut request: HashMap<String,i64> = HashMap::new();
         let mut bundles_transactions: HashSet<Hash> = HashSet::new();
-        if request.contains_key("bundles") {
-            // TODO get_parameter_as_set
-            let bundles: HashSet<Hash> = HashSet::new();//get_parameter_as_set(request, "bundles", HASH_SIZE);
+        let request_clone = request.clone();
+        if request_clone.contains_key("bundles") {
+            let bundles: HashSet<Hash> = API::get_parameter_as_set(& request, "bundles".to_string(), HASH_SIZE)?;
             for bundle in bundles.iter() {
                 // TODO bundle
                 //bundles_transactions.addAll(BundleViewModel.load(instance.tangle, new Hash(bundle)).getHashes());
@@ -380,11 +381,9 @@ impl API {
             }
             contains_key = true;
         }
-
         let mut addresses_transactions: HashSet<Hash> = HashSet::new();
-        if request.contains_key("addresses") {
-            //TODO
-            let mut addresses: HashSet<Address> = HashSet::new();//getParameterAsSet(request, "addresses", HASH_SIZE);
+        if request_clone.contains_key("addresses") {
+            let mut addresses: HashSet<Address> = API::get_parameter_as_set_addresses(& request, "addresses".to_string(), HASH_SIZE)?;
             for address in addresses.iter() {
                 //TODO
                 //addresses_transactions.addAll(AddressViewModel.load(instance.tangle, new Hash(address)).getHashes());
@@ -397,8 +396,8 @@ impl API {
         }
 
         let mut tags_transactions: HashSet<Hash> = HashSet::new();
-        if request.contains_key("tags") {
-            let mut tags: HashSet<Hash> = HashSet::new(); //getParameterAsSet(request,"tags",0);
+        if request_clone.contains_key("tags") {
+            let mut tags: HashSet<Hash> = API::get_parameter_as_set(& request,"tags".to_string(),0)?;
             for tag in tags.iter() {
                 //TODO
                 //tag = padTag(tag);
@@ -417,9 +416,8 @@ impl API {
         }
 
         let mut approvee_transactions: HashSet<Hash> = HashSet::new();
-        if request.contains_key("approvees") {
-            //TODO
-            let approvees: HashSet<Hash> = HashSet::new();//getParameterAsSet(request, "approvees", HASH_SIZE);
+        if request_clone.contains_key("approvees") {
+            let approvees: HashSet<Hash> = API::get_parameter_as_set(& request, "approvees".to_string(), HASH_SIZE)?;
             for approvee in approvees.iter() {
                 //   approveeTransactions.addAll(TransactionViewModel.fromHash(instance.tangle, new Hash(approvee)).getApprovers(instance.tangle).getHashes());
             }
@@ -430,7 +428,7 @@ impl API {
         }
 
         if !contains_key {
-            return Err(TransactionError::InvalidData);
+            return Err(APIError::InvalidData);
         }
 
         //Using multiple of these input fields returns the intersection of the values.
@@ -457,7 +455,7 @@ impl API {
 
         return Ok(elements);
     }
-    fn get_parameter_as_set(request: HashMap<String, i64>, param_name: String, size: i32)->  Result<HashSet<Hash>,APIError> {
+    fn get_parameter_as_set(request: &HashMap<String, i64>, param_name: String, size: usize)->  Result<HashSet<Hash>, APIError> {
         let list = API::get_parameter_as_list(request, param_name, size)?;
         let mut hashset: Vec<Hash> = list.iter().map(|hash| *hash).collect::<Vec<Hash>>();
         let mut result: HashSet<Hash> = HashSet::new();
@@ -469,7 +467,24 @@ impl API {
         }
         return Ok(result);
     }
-    fn get_parameter_as_list(request: HashMap<String, i64>, param_name: String, size: i32) -> Result<LinkedList<Hash>, APIError>{
+    fn get_parameter_as_set_addresses(request: & HashMap<String, i64>, param_name: String, size: usize)->  Result<HashSet<Address>, APIError> {
+        let list = API::get_parameter_as_list_addresses(& request, param_name, size)?;
+        let mut hashset: Vec<Address> = list.iter().map(|adr| *adr).collect::<Vec<Address>>();
+        let mut result: HashSet<Address> = HashSet::new();
+        for adr in hashset.iter(){
+            result.insert(*adr);
+        }
+        if result.contains(&ADDRESS_NULL) {
+            return Err(APIError::InvalidStringParametr);
+        }
+        return Ok(result);
+    }
+    fn get_parameter_as_list(request: & HashMap<String, i64>, param_name: String, size: usize) -> Result<LinkedList<Hash>, APIError>{
+
+        unimplemented!();
+    }
+    fn get_parameter_as_list_addresses(request: & HashMap<String, i64>, param_name: String, size: usize) -> Result<LinkedList<Address>, APIError>{
+
         unimplemented!();
     }
     pub fn get_new_inclusion_state_statement(trans: &LinkedList<Hash>, tps: &LinkedList<Hash> ) -> Result<Vec<bool>, APIError> {
@@ -586,7 +601,6 @@ impl API {
         {
             return Ok(inclusion_states_boolean);
         }
-        unimplemented!();
     }
     fn exhaustive_search_within_index(non_analyzed_transactions: & mut LinkedList<Hash>,
                                       analyzed_tips: & mut HashSet<Hash>,
