@@ -40,10 +40,6 @@ use storage::Hive;
 use network::api::API;
 
 fn main() {
-    for i in 0..1 {
-        println!("{}", 1-i);
-    }
-
     use ntrumls::*;
     use rand::Rng;
 
@@ -59,28 +55,6 @@ fn main() {
     }
 
     builder.init().unwrap();
-
-//    let mut sk_data = [0u8; 32 * 8];
-//    rand::thread_rng().fill_bytes(&mut sk_data);
-////    let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
-//    use std::mem;
-//    let fg_16 : [u16; 128] = unsafe { mem::transmute(sk_data) };
-////    for n in fg_16.iter() {
-////        print!("{}, ", n);
-////    }
-////    println!();
-//    let mut mls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-//
-//    let (sk, pk) = mls.generate_keypair().unwrap();
-//
-//    let msg = "TEST MESSAGE";
-////    let msg = [1u8; 16];
-//    let sign = mls.sign(msg.as_bytes(), &sk, &pk).expect("fail");
-//
-//    println!("{:?}", sk);
-//    println!("{:?}", pk);
-//    println!("{:?}", sign);
-//    println!("{}", mls.verify(msg.as_bytes(), &sign, &pk));
 }
 
 #[test]
@@ -100,12 +74,12 @@ fn test_threads() {
 
     let mut jhs = VecDeque::new();
 
-    let ports = [70/*, 0, 10002*/].iter();
+    let ports = [70].iter();
     for port in ports {
         let port = *port;
         let mut neighbors = String::new();
         if port != 0 {
-            let ports2 = [70/*, 44832, 10002*/].iter();
+            let ports2 = [69].iter();
             let v: Vec<String> = ports2.filter(|p| **p != port).map(|p| format!("127.0.0.1:{}",
                                                                                 p)).collect();
             neighbors = v.join(" ");

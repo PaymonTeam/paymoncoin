@@ -92,7 +92,8 @@ impl API {
     }
 
     fn get_transactions_to_approve(pmnc: &mut PaymonCoin, mut depth: u32, mut num_walks: u32) ->
-    Result<Option<(Hash, Hash)>, TransactionError> {
+                                                                                              Result<Option<(Hash, Hash)>, TransactionError> {
+        println!("l0_1");
         let max_depth = match pmnc.tips_manager.lock() {
             Ok(tm) => tm.get_max_depth(),
             Err(_) => panic!("broken tips manager mutex")
@@ -105,13 +106,15 @@ impl API {
         let mut diff = HashMap::new();
         let mut h0: Option<Hash>;
         let mut h1: Option<Hash>;
+        println!("l0_2");
 
         if let Ok(tips_manager) = pmnc.tips_manager.lock() {
-            h0 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, HASH_NULL,
-                                                     HASH_NULL, depth, num_walks)?;
+            h0 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, None,
+                                                     None, depth, num_walks)?;
         } else {
             panic!("broken tips manager mutex");
         }
+        println!("l0_3");
 
         if let Ok(ref mut ledger_validator) = pmnc.ledger_validator.lock() {
             if h0.is_none() || !ledger_validator.update_diff(&mut visited_hashes, &mut diff, h0.unwrap())? {
@@ -120,13 +123,15 @@ impl API {
         } else {
             panic!("broken tips manager mutex");
         }
+        println!("l0_4");
 
         if let Ok(tips_manager) = pmnc.tips_manager.lock() {
-            h1 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, HASH_NULL,
-                                                     h0.unwrap(), depth, num_walks)?;
+            h1 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, None,
+                                                     h0, depth, num_walks)?;
         } else {
             panic!("broken tips manager mutex");
         }
+        println!("l0_5");
 
         if let Ok(ref mut ledger_validator) = pmnc.ledger_validator.lock() {
             if h1.is_none() || !ledger_validator.update_diff(&mut visited_hashes, &mut diff, h1.unwrap())? {
@@ -220,13 +225,14 @@ impl API {
                                                     if API::invalid_subtangle_status(pmnc) {
                                                         return Ok(API::format_error_response("The subhive has not been updated yet"));
                                                     }
+                                                    use rand::{thread_rng, Rng};
                                                     let depth = 3;
-                                                    let num_walks = 1;
+                                                    let num_walks = thread_rng().gen_range(2, 5);
+                                                    info!("num_walks={}", num_walks);
                                                     match API::get_transactions_to_approve(pmnc, depth, num_walks) {
                                                         Ok(Some((trunk, branch))) => {
                                                             let result = rpc::TransactionsToApprove {
-                                                                branch,
-                                                                trunk
+                                                                branch, trunk
                                                             };
                                                             return format_success_response!(result);
                                                         },

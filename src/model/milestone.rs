@@ -190,6 +190,7 @@ impl Milestone {
 
                 let mut hashes: Vec<Hash>;
                 let mut hashes_is_ok = false;
+                // println!("hive lock 1");
                 if let Ok(hive) = hive.lock() {
                     hashes = match hive.load_address_transactions(&coordinator){
                         Some(h) => {
@@ -204,21 +205,25 @@ impl Milestone {
                 } else {
                     panic!("broken hive mutex");
                 }
+                // println!("hive unlock 1");
                 // TODO: optimize
                 if hashes_is_ok {
                     for hash in hashes {
                         if let Ok(mut milestone) = milestone_clone_1.lock() {
                             if milestone.analyzed_milestone_candidates.insert(hash) {
                                 let mut t;
+                                // println!("hive lock 2");
                                 if let Ok(hive) = hive.lock() {
                                     t = hive.storage_load_transaction(&hash);
                                 } else {
                                     panic!("broken hive mutex");
                                 }
+                                // println!("hive unlock 2");
                                 if let Some(t) = t {
                                     let valid = milestone.validate_milestone(&t, milestone.get_index(&t));
                                     match valid {
                                         Validity::Valid => {
+                                            // println!("hive lock 3");
                                             if let Ok(hive) = hive.lock() {
                                                 match hive.storage_latest_milestone() {
                                                     Some(milestone_manager) => {
@@ -227,9 +232,13 @@ impl Milestone {
                                                             milestone.latest_milestone_index = milestone_manager.index();
                                                         }
                                                     }
-                                                    None => continue
+                                                    None => {
+                                                        // println!("hive unlock 3");
+                                                        continue;
+                                                    }
                                                 }
                                             }
+                                            // println!("hive unlock 3");
                                         }
 
                                         Validity::Incomplete => {
@@ -317,6 +326,7 @@ impl Milestone {
 
     fn update_latest_solid_subhive_milestone(&mut self) -> Result<(), TransactionError> {
         println!("upd");
+        // println!("hive lock 4");
         if let Ok(hive) = self.hive.lock() {
             if let Some(latest) = hive.storage_latest_milestone() {
                 let mut closest_milestone = hive.find_closest_next_milestone(self
@@ -345,6 +355,7 @@ impl Milestone {
                 }
             }
         }
+        // println!("hive unlock 4");
 
         Ok(())
     }
@@ -353,8 +364,10 @@ impl Milestone {
         if index < 0 || index >= 0x200000 {
             return Validity::Invalid;
         }
+        // println!("hive lock 5");
         if let Ok(mut hive) = self.hive.lock() {
             if hive.storage_load_milestone(index).is_some() {
+                // println!("hive unlock 5");
                 return Validity::Valid;
             }
 
@@ -366,13 +379,16 @@ impl Milestone {
                                 index,
                                 hash: transaction.get_hash()
                             });
+                        // println!("hive unlock 5");
                         return Validity::Valid;
                     } else {
+                        // println!("hive unlock 5");
                         return Validity::Invalid;
                     }
                 }
             }
         }
+        // println!("hive unlock 5");
         return Validity::Invalid;
     }
 
