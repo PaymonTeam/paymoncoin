@@ -242,41 +242,48 @@ impl TipsManager {
         let mut my_diff = diff.clone();
         let mut my_approved_hashes = visited_hashes.clone();
 
-        while let Some(tip_hash) = tip { // !tip.is_null() {
-            // println!("hive lock 16");
+        while let Some(tip_hash) = tip {
             transaction_obj = match self.hive.lock() {
                 Ok(hive) => hive.storage_load_transaction(&tip_hash).expect("tip is null"),
                 Err(_) => {
                     panic!("hive mutex is broken");
                 }
             };
-            // println!("hive unlock 16");
-            tip_set = transaction_obj.get_approvers(&self.hive).clone();
+
+            tip_set = transaction_obj.get_approvers(&self.hive);
+
+            if transaction_obj.get_type() == TransactionType::HashOnly {
+                info!("Reason to stop: transactionViewModel == null");
+                break;
+            }
+
             let check_solidity_is_ok = match self.transaction_validator.lock() {
                 Ok(tv) => tv.check_solidity(transaction_obj.get_hash(), false)?,
                 Err(_) => panic!("broken transaction validator mutex")
             };
+
+            if !check_solidity_is_ok {
+                info!("Reason to stop: !checkSolidity");
+                break;
+            }
+
+            if self.below_max_depth(transaction_obj.get_hash(), max_depth, max_depth_ok) {
+                info!("Reason to stop: !LedgerValidator");
+                break;
+            }
+
             let update_diff_is_ok = match self.ledger_validator.lock() {
                 Ok(mut lv) => lv.update_diff(&mut my_approved_hashes, &mut my_diff,
                                              transaction_obj.get_hash())?,
                 Err(_) => panic!("broken ledger validator mutex")
             };
 
-            if transaction_obj.get_type() == TransactionType::HashOnly {
-                info!("Reason to stop: transactionViewModel == null");
-                break;
-            } else if !check_solidity_is_ok {
-                info!("Reason to stop: !checkSolidity");
-                break;
-            } else if self.below_max_depth(transaction_obj.get_hash(),
-                                           max_depth,
-                                           max_depth_ok) {
-                info!("Reason to stop: !LedgerValidator");
-                break;
-            } else if !update_diff_is_ok {
+            if !update_diff_is_ok {
                 info!("Reason to stop: belowMaxDepth");
                 break;
-            } else if extra_tip.is_some() && transaction_obj.get_hash() == extra_tip.unwrap() {
+            }
+
+            if extra_tip.is_some() && transaction_obj.get_hash() == extra_tip.unwrap() {
                 info!("Reason to stop: transactionViewModel==extraTip");
                 break;
             }
@@ -305,8 +312,12 @@ impl TipsManager {
                 let mut max_rating: f64 = 0.0;
                 let mut tip_rating: i64 = match ratings.get(&tip_hash) {
                     Some(x) => *x,
-                    None => break
+                    None => {
+                        warn!("no rating");
+                        0
+                    }
                 };
+
                 for i in 0..tips.len() {
                     let v = ((tip_rating - TipsManager::get_or_default(ratings, tips[i], 0i64))
                         as f32).powf(-3 as f32) as f64;
@@ -315,17 +326,23 @@ impl TipsManager {
                 }
 
                 rating_weight = rnd.gen::<f64>() * max_rating;
+
                 approver_index = tips.len();
-                for i in 1..tips.len() {
-                    approver_index = i;
-                    rating_weight -= walk_ratings[approver_index];
-                    if rating_weight <= 0f64 {
-                        break;
+                loop {
+                    approverIndex -= 1;
+                    if approver_index > 1 {
+                        rating_weight -= walk_ratings[approver_index];
+                        if rating_weight <= 0f64 {
+                            break;
+                        }
                     }
                 }
+
                 tip = tips.get(approver_index as usize).cloned();
-                if transaction_obj.get_hash() == tip_hash {
-                    break;
+                if let Some(h) = tip {
+                    if transaction_obj.get_hash() == h {
+                        break;
+                    }
                 }
             }
         }
@@ -351,6 +368,7 @@ impl TipsManager {
             if let Some(tail) = self.random_walk(visited_hashes, diff, Some(tip), extra_tip,
                                                 ratings, max_depth,
                                     max_depth_ok)? {
+                // TODO: make binding
                 if monte_carlo_integrations.contains_key(&tail) {
                     let v = monte_carlo_integrations.get(&tail).cloned().unwrap();
                     monte_carlo_integrations.insert(tail.clone(), v + 1);
