@@ -131,66 +131,64 @@ impl TipsManager {
         if depth > self.max_depth {
             depth = self.max_depth;
         }
-        depth = 1;
+
         let latest_solid_subhive_milestone_index;
         let latest_solid_subhive_milestone;
-//        println!("l1_1");
+
         if let Ok(milestone) = self.milestone.lock() {
             latest_solid_subhive_milestone_index = milestone.latest_solid_subhive_milestone_index;
             latest_solid_subhive_milestone = milestone.latest_milestone_index;
         } else {
             panic!("broken milestone mutex");
         }
+
         if latest_solid_subhive_milestone_index > self.milestone_start_index || latest_solid_subhive_milestone == self.milestone_start_index {
             let mut ratings: HashMap<Hash, i64> = HashMap::new();
             let mut analyzed_tips: HashSet<Hash> = HashSet::new();
             let mut max_depth_ok: HashSet<Hash> = HashSet::new();
-//            println!("l1_2");
+
             let tip = self.entry_point(reference,
                                        extra_tip.clone(),
                                        depth);
-//            println!("l1_3");
+
             self.serial_update_ratings(visited_hashes,
                                        tip,
                                        &mut ratings,
                                        &mut analyzed_tips,
                                        extra_tip.clone());
             analyzed_tips.clear();
+
             let update_diff_is_ok;
-//            println!("diff before={:?}", diff);
-//            println!("l1_3");
             if let Ok(mut lv) = self.ledger_validator.lock() {
                 update_diff_is_ok = lv.update_diff(visited_hashes, diff, tip.clone())?;
-//                println!("diff after={:?}", diff);
             } else {
                 panic!("ledger validator is broken");
             }
+
             if update_diff_is_ok {
-//                println!("l1_4");
                 return Ok(self.markov_chain_monte_carlo(visited_hashes,
                                                           diff,
                                                           tip,
                                                           extra_tip,
                                                           &mut ratings,
                                                           iterations,
-                                                          (latest_solid_subhive_milestone_index - depth * 1), // TODO: 1 -> 2
+                                                          latest_solid_subhive_milestone_index -
+                                                              depth * 2,
                                                           &mut max_depth_ok)?);
             } else {
-                error!("Update Diff error");
+                error!("starting tip failed consistency check");
+                return Err(TransactionError::InvalidHash);
             }
-//            println!("done 1");
         }
         return Ok(None);
     }
 
     fn entry_point(&self, reference: Option<Hash>, extra_tip: Option<Hash>, depth: u32) -> Hash {
-        println!("l2_1");
         if extra_tip.is_none() {
             //trunk
             if let Some(r) = reference {
                 return r;
             } else {
-                println!("l2_2");
                 if let Ok(mlstn) = self.milestone.lock() {
                     return mlstn.latest_solid_subhive_milestone;
                 } else {
@@ -198,25 +196,21 @@ impl TipsManager {
                 }
             }
         }
-        println!("l2_3");
+
         if let Ok(milestone) = self.milestone.lock() {
-            let milestone_index = match milestone.latest_solid_subhive_milestone_index > depth {
-                true => max(milestone.latest_solid_subhive_milestone_index - depth - 1, 0),
+            //branch (extraTip)
+            let milestone_index = match milestone.latest_solid_subhive_milestone_index - 1 > depth {
+                true => milestone.latest_solid_subhive_milestone_index - depth - 1,
                 false => 0
             };
 
-            println!("l2_4");
-            // println!("hive lock 15");
             if let Ok(hive) = self.hive.lock() {
-                println!("l2_5");
                 if let Some(milestone) = hive.find_closest_next_milestone(milestone_index, self.testnet, self.milestone_start_index) {
                     let hash = milestone.get_hash();
                     if hash != HASH_NULL {
-                        // println!("hive unlock 15");
                         return hash;
                     }
                 }
-                // println!("hive unlock 15");
                 return milestone.latest_solid_subhive_milestone;
             } else {
                 panic!("broken hive mutex");
@@ -248,41 +242,48 @@ impl TipsManager {
         let mut my_diff = diff.clone();
         let mut my_approved_hashes = visited_hashes.clone();
 
-        while let Some(tip_hash) = tip { // !tip.is_null() {
-            // println!("hive lock 16");
+        while let Some(tip_hash) = tip {
             transaction_obj = match self.hive.lock() {
                 Ok(hive) => hive.storage_load_transaction(&tip_hash).expect("tip is null"),
                 Err(_) => {
                     panic!("hive mutex is broken");
                 }
             };
-            // println!("hive unlock 16");
-            tip_set = transaction_obj.get_approvers(&self.hive).clone();
+
+            tip_set = transaction_obj.get_approvers(&self.hive);
+
+            if transaction_obj.get_type() == TransactionType::HashOnly {
+                info!("Reason to stop: transactionViewModel == null");
+                break;
+            }
+
             let check_solidity_is_ok = match self.transaction_validator.lock() {
                 Ok(tv) => tv.check_solidity(transaction_obj.get_hash(), false)?,
                 Err(_) => panic!("broken transaction validator mutex")
             };
+
+            if !check_solidity_is_ok {
+                info!("Reason to stop: !checkSolidity");
+                break;
+            }
+
+            if self.below_max_depth(transaction_obj.get_hash(), max_depth, max_depth_ok) {
+                info!("Reason to stop: !LedgerValidator");
+                break;
+            }
+
             let update_diff_is_ok = match self.ledger_validator.lock() {
                 Ok(mut lv) => lv.update_diff(&mut my_approved_hashes, &mut my_diff,
                                              transaction_obj.get_hash())?,
                 Err(_) => panic!("broken ledger validator mutex")
             };
 
-            if transaction_obj.get_type() == TransactionType::HashOnly {
-                info!("Reason to stop: transactionViewModel == null");
-                break;
-            } else if !check_solidity_is_ok {
-                info!("Reason to stop: !checkSolidity");
-                break;
-            } else if self.below_max_depth(transaction_obj.get_hash(),
-                                           max_depth,
-                                           max_depth_ok) {
-                info!("Reason to stop: !LedgerValidator");
-                break;
-            } else if !update_diff_is_ok {
+            if !update_diff_is_ok {
                 info!("Reason to stop: belowMaxDepth");
                 break;
-            } else if extra_tip.is_some() && transaction_obj.get_hash() == extra_tip.unwrap() {
+            }
+
+            if extra_tip.is_some() && transaction_obj.get_hash() == extra_tip.unwrap() {
                 info!("Reason to stop: transactionViewModel==extraTip");
                 break;
             }
@@ -311,8 +312,12 @@ impl TipsManager {
                 let mut max_rating: f64 = 0.0;
                 let mut tip_rating: i64 = match ratings.get(&tip_hash) {
                     Some(x) => *x,
-                    None => break
+                    None => {
+                        warn!("no rating");
+                        0
+                    }
                 };
+
                 for i in 0..tips.len() {
                     let v = ((tip_rating - TipsManager::get_or_default(ratings, tips[i], 0i64))
                         as f32).powf(-3 as f32) as f64;
@@ -321,17 +326,23 @@ impl TipsManager {
                 }
 
                 rating_weight = rnd.gen::<f64>() * max_rating;
+
                 approver_index = tips.len();
-                for i in 1..tips.len() {
-                    approver_index = i;
-                    rating_weight -= walk_ratings[approver_index];
-                    if rating_weight <= 0f64 {
-                        break;
+                loop {
+                    approverIndex -= 1;
+                    if approver_index > 1 {
+                        rating_weight -= walk_ratings[approver_index];
+                        if rating_weight <= 0f64 {
+                            break;
+                        }
                     }
                 }
+
                 tip = tips.get(approver_index as usize).cloned();
-                if transaction_obj.get_hash() == tip_hash {
-                    break;
+                if let Some(h) = tip {
+                    if transaction_obj.get_hash() == h {
+                        break;
+                    }
                 }
             }
         }
@@ -357,6 +368,7 @@ impl TipsManager {
             if let Some(tail) = self.random_walk(visited_hashes, diff, Some(tip), extra_tip,
                                                 ratings, max_depth,
                                     max_depth_ok)? {
+                // TODO: make binding
                 if monte_carlo_integrations.contains_key(&tail) {
                     let v = monte_carlo_integrations.get(&tail).cloned().unwrap();
                     monte_carlo_integrations.insert(tail.clone(), v + 1);
@@ -406,26 +418,26 @@ impl TipsManager {
                              ratings: &mut HashMap<Hash, i64>,
                              analyzed_tips: &mut HashSet<Hash>,
                              extra_tip: Option<Hash>) {
-        let mut hashes_to_rate: Vec<Hash> = Vec::new();
+        let mut hashes_to_rate = Vec::<Hash>::new();
         hashes_to_rate.push(tx_hash);
         let mut current_hash: Hash;
-        let mut added_back = false;
+        let mut added_back;
+
         while !hashes_to_rate.is_empty() {
-            match hashes_to_rate.pop() {
-                Some(hash) => current_hash = hash,
+            current_hash = match hashes_to_rate.pop() {
+                Some(hash) => hash,
                 None => {
-                    error!("stack is empty!");
                     continue;
                 }
-            }
-            // println!("hive lock 18");
+            };
+
             let mut transaction = match self.hive.lock() {
                 Ok(hive) => hive.storage_load_transaction(&current_hash).expect("no such transaction"),
                 Err(_) => {
                     panic!("hive mutex is broken");
                 }
             };
-            // println!("hive unlock 18");
+
             added_back = false;
             let mut approvers = transaction.get_approvers(&self.hive).clone();
             for approver in &approvers {
@@ -438,7 +450,7 @@ impl TipsManager {
                 }
             }
             if !added_back && analyzed_tips.insert(current_hash) {
-                let rating: i64 = TipsManager::rating_calc(extra_tip, &visited_hashes, current_hash, &approvers, ratings);
+                let rating = TipsManager::rating_calc(extra_tip, &visited_hashes, current_hash, &approvers, ratings);
                 ratings.insert(current_hash.clone(), rating);
             }
         }
@@ -452,6 +464,7 @@ impl TipsManager {
             false => 1
         };
 
+        // TODO: cap_sum -> overflow_add
         result += approvers.iter().
             map(|x| ratings.get(x)).
             filter(|x| x.is_some()).

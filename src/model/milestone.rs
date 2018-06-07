@@ -303,7 +303,9 @@ impl Milestone {
                     let previous_solid_subhive_latest_milestone_index = milestone.latest_solid_subhive_milestone_index;
                     if milestone.latest_solid_subhive_milestone_index < milestone.latest_milestone_index {
                         println!("latest_milestone_index = {}", milestone.latest_milestone_index);
-                        milestone.update_latest_solid_subhive_milestone();
+                        if let Err(e) = milestone.update_latest_solid_subhive_milestone() {
+                            error!("Error updating latest solid subhive milestone: {:?}", e);
+                        }
                     }
 
                     if previous_solid_subhive_latest_milestone_index != milestone.latest_solid_subhive_milestone_index {
@@ -311,6 +313,8 @@ impl Milestone {
                         previous_solid_subhive_latest_milestone_index,
                                  milestone.latest_solid_subhive_milestone_index);
                     }
+                } else {
+                    panic!("broken milestone mutex");
                 }
 
                 let now = SystemTime::now();
@@ -326,37 +330,53 @@ impl Milestone {
 
     fn update_latest_solid_subhive_milestone(&mut self) -> Result<(), TransactionError> {
         println!("upd");
-        // println!("hive lock 4");
+        let latest;
+        let mut closest_milestone;
         if let Ok(hive) = self.hive.lock() {
-            if let Some(latest) = hive.storage_latest_milestone() {
-                let mut closest_milestone = hive.find_closest_next_milestone(self
-                                                     .latest_solid_subhive_milestone_index,
-                                                 self.testnet, self.milestone_start_index);
-                while let Some(mut milestone_obj) = closest_milestone.clone() {
-                    if milestone_obj.index() <= latest.index() && !self.shutting_down {
-                        if let Ok(tx_v) = self.transaction_validator.lock() {
-                            if let Some(ref mut arc) = self.ledger_validator {
-                                if let Ok(mut l_v) = arc.lock() {
-                                    let update_snapshot_is_ok = l_v.update_snapshot(&milestone_obj)?;
-                                    if tx_v.check_solidity(milestone_obj.get_hash(), true)? &&
-                                        milestone_obj.index() >= self.latest_solid_subhive_milestone_index && update_snapshot_is_ok {
+            latest = match hive.storage_latest_milestone() {
+                Some(m) => m,
+                _ => return Ok(())
+            };
+            closest_milestone = hive.find_closest_next_milestone(self.latest_solid_subhive_milestone_index,
+                                             self.testnet, self.milestone_start_index);
+        } else {
+            panic!("broken hive mutex");
+        }
 
-                                        self.latest_solid_subhive_milestone = milestone_obj.get_hash();
-                                        self.latest_solid_subhive_milestone_index = milestone_obj.index();
+        while let Some(mut milestone_obj) = closest_milestone.clone() {
+            if milestone_obj.index() <= latest.index() && !self.shutting_down {
 
-                                        closest_milestone = hive.storage_next_milestone(milestone_obj.index);
-                                    } else {
-                                        break;
-                                    }
-                                }
+                if let Ok(tx_v) = self.transaction_validator.lock() {
+                    if tx_v.check_solidity(milestone_obj.get_hash(), true)? &&
+                        milestone_obj.index() >= self.latest_solid_subhive_milestone_index {
+
+                        // TODO: handle errors
+                        let update_snapshot_is_ok;
+                        if let Some(ref mut arc) = self.ledger_validator {
+                            if let Ok(mut l_v) = arc.lock() {
+                                update_snapshot_is_ok = l_v.update_snapshot(&milestone_obj, &mut self.latest_snapshot)?;
+                            } else {
+                                panic!();
                             }
+                        } else {
+                            panic!();
                         }
+                        if update_snapshot_is_ok {
+                            self.latest_solid_subhive_milestone = milestone_obj.get_hash();
+                            self.latest_solid_subhive_milestone_index = milestone_obj.index();
+                        }
+                    } else {
+                        break;
                     }
+                }
+
+                if let Ok(hive) = self.hive.lock() {
+                    closest_milestone = hive.storage_next_milestone(milestone_obj.index);
+                } else {
+                    panic!("broken hive mutex");
                 }
             }
         }
-        // println!("hive unlock 4");
-
         Ok(())
     }
 
@@ -393,7 +413,8 @@ impl Milestone {
     }
 
     fn get_index(&self, tx: &Transaction) -> u32 {
-        tx.object.tag[0] as u32
+        use byteorder::{BigEndian, ByteOrder};
+        BigEndian::read_u32(&tx.object.tag[(HASH_SIZE - 4)..])
     }
 
     pub fn shutdown(&mut self){

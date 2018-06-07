@@ -40,25 +40,6 @@ use storage::Hive;
 use network::api::API;
 
 fn main() {
-    use ntrumls::*;
-    use rand::Rng;
-
-    let format = |record: &LogRecord| {
-        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
-    };
-
-    let mut builder = LogBuilder::new();
-    builder.format(format).filter(None, LogLevelFilter::Info);
-
-    if env::var("RUST_LOG").is_ok() {
-        builder.parse(&env::var("RUST_LOG").unwrap());
-    }
-
-    builder.init().unwrap();
-}
-
-#[test]
-fn test_threads() {
     let format = |record: &LogRecord| {
         format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
     };
@@ -116,7 +97,7 @@ fn test_threads() {
             thread::sleep(Duration::from_secs(10000));
 
             {
-    //            api_running.store(false, Ordering::SeqCst);
+                //            api_running.store(false, Ordering::SeqCst);
                 let &(ref lock, ref cvar) = &*api_running;
                 let mut is_running = lock.lock().unwrap();
                 *is_running = false;

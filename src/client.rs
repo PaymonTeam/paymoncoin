@@ -66,8 +66,10 @@ pub enum AppId {
     SendToInput,
     SendAmountInput,
     SendButton,
+    RefreshBalanceButton,
 
     StatusLabel,
+    BalanceLabel,
 
     TransactionsList,
 
@@ -92,13 +94,62 @@ static mut ADDRESS:Option<Address> = None;
 static mut NEIGHBORS:Option<Vec<SocketAddr>> = None;
 static mut NTRUMLS_INSTANCE:Option<NTRUMLS> = None;
 
+fn refresh_balance() -> Option<u32> {
+    unsafe {
+        if let Some(ref n) = NEIGHBORS {
+            return Some(10u32);
+//            let mut st = json::encode(&rpc::GetBalances {
+//
+//            }).unwrap();
+//            let mut s = Json::from_str(&st).unwrap();
+//            s.as_object_mut().unwrap().insert("method".to_string(), "getBalances".to_string()
+//                .to_json());
+//
+//            match send_request(s, n[0].clone()) {
+//                Some(json) => {
+//                    match json.as_object() {
+//                        Some(json) => {
+//                            println!("{:?}", json);
+//                            if !json.contains_key("trunk") || !json.contains_key("branch") {
+//                                error!("no tips");
+//                                return None;
+//                            } else {
+//                                h0 = HASH_NULL;
+//                                h0.copy_from_slice(&json.get("trunk").unwrap().as_string().unwrap
+//                                ().from_hex().unwrap());
+//                                h1 = HASH_NULL;
+//                                h1.copy_from_slice(&json.get("branch").unwrap().as_string().unwrap
+//                                ().from_hex().unwrap());
+//                            }
+//                        }
+//                        _ => {
+//                            println!("no json");
+//                            return None;
+//                        }
+//                    }
+//                }, //println!("Server name: {}", json["name"]),
+//                None => {
+//                    println!("no reponse");
+//                    return None;
+//                }
+//            }
+        } else {
+            return None;
+        }
+    }
+}
+
 fn send_coins(addr: Address, amount: u32) {
     let mut h0;
     let mut h1;
 
     unsafe {
         if let Some(ref n) = NEIGHBORS {
-            let mut st = json::encode(&rpc::GetTransactionsToApprove { }).unwrap();
+            let mut st = json::encode(&rpc::GetTransactionsToApprove {
+                depth: 1,
+                num_walks: 5,
+                reference: HASH_NULL
+            }).unwrap();
             let mut s = Json::from_str(&st).unwrap();
             s.as_object_mut().unwrap().insert("method".to_string(), "getTransactionsToApprove".to_string().to_json());
 
@@ -167,12 +218,12 @@ fn send_coins(addr: Address, amount: u32) {
             if let Some(ref pk) = PK {
 //            if let Some(my_addr) = ADDRESS {
                 transaction.object.signature = transaction.calculate_signature(sk, pk).expect("failed to calculate signature");
-                println!("signed");
+//                println!("signed");
                 transaction.object.signature_pubkey = pk.clone();
 
-                println!("{:?}", pk);
-                println!("{:?}", transaction.object.hash);
-                println!("{:?}", transaction.object.signature);
+//                println!("{:?}", pk);
+                debug!("{:?}", transaction.object.hash);
+//                println!("{:?}", transaction.object.signature);
 //            } else {
 //                println!("Address is None")
 //            }
@@ -351,6 +402,14 @@ nwg_template!(
         (SendButton, nwg_button!( parent=MainWindow; text="Send"; position=
         (270, 13+25+35+85); size=(80,22); font=Some(MainFont) )),
 
+    // balance
+    (Label(6), nwg_label!( parent=MainWindow; text="Balance: "; position=(355,40+35+85); size=
+    (55, 25); font=Some(TextFont) )),
+    (BalanceLabel, nwg_label!( parent=MainWindow; text="unknown"; position=(410,40+35+85); size=
+    (55, 25); font=Some(TextFont) )),
+    (RefreshBalanceButton, nwg_button!( parent=MainWindow; text="Refresh"; position=
+        (470, 13+25+35+85); size=(80,22); font=Some(MainFont) )),
+
     // status
         (Label(4), nwg_label!( parent=MainWindow; text="Status: "; position=(5,
         40+35+85+60); size=(75,25); font=Some(TextFont) )),
@@ -363,6 +422,7 @@ nwg_template!(
         (TransactionsList, nwg_listbox!( data=String; parent=MainWindow; position=(5,
         40+35+85+60+35+25); size=(630, 200); font=Some(TextFont) ))
     ];
+
     events: [
         (GeneratePrivateKeyButton, GeneratePrivateKey, Event::Click, |ui,_,_,_| {
 //            simple_message("msg", &format!("Hello {}!", your_name.get_text()) );
@@ -411,6 +471,15 @@ nwg::TextInput), (AddressInput, nwg::TextInput)]);
                 }
             } else {
                 status_label.set_text("Wrong participant address");
+            }
+        }),
+        (RefreshBalanceButton, Send, Event::Click, |ui,_,_,_| {
+            let mut balance_label = nwg_get_mut!(ui; (BalanceLabel, nwg::Label));
+
+            if let Some(value) = refresh_balance() {
+                balance_label.set_text(&format!("{}", value));
+            } else {
+                balance_label.set_text("unknown");
             }
         })
     ];
