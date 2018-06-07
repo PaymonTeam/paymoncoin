@@ -329,12 +329,14 @@ impl TipsManager {
 
                 approver_index = tips.len();
                 loop {
-                    approverIndex -= 1;
+                    approver_index -= 1;
                     if approver_index > 1 {
                         rating_weight -= walk_ratings[approver_index];
                         if rating_weight <= 0f64 {
                             break;
                         }
+                    } else {
+                        break;
                     }
                 }
 
