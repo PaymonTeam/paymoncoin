@@ -329,7 +329,6 @@ impl Milestone {
     }
 
     fn update_latest_solid_subhive_milestone(&mut self) -> Result<(), TransactionError> {
-        println!("upd");
         let latest;
         let mut closest_milestone;
         if let Ok(hive) = self.hive.lock() {

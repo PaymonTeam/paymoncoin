@@ -109,6 +109,7 @@ impl TipsManager {
                     }
                     if is_tip {
                         if let Ok(t_v) = self.transaction_validator.lock() {
+                            // TODO: update height?
                             if t_v.check_solidity(hash, false)? {
                                 t_v_m.set_solid(&hash);
                             }
