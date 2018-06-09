@@ -17,7 +17,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use model::transaction::*;
 use model::*;
-use std::collections::{HashMap, HashSet, LinkedList};
+use std::collections::{HashMap, HashSet, LinkedList, BTreeMap};
 use model::transaction_validator::TransactionError;
 use std::collections::linked_list::Iter;
 #[macro_export]
@@ -38,9 +38,6 @@ impl AfterMiddleware for DefaultContentType {
 
 static mut PMNC: Option<AM<PaymonCoin>> = None;
 const MILESTONE_START_INDEX: u32 = 0;
-const MIN_RANDOM_WALKS: u32 = 5;
-const MAX_RANDOM_WALKS: u32 = 27;
-const MAX_DEPTH: u32 = 15;
 
 pub struct API {
     listener: Listening,
@@ -59,7 +56,10 @@ pub enum APIError{
     InvalidStringParametr,
     TipAbsent,
     TheSubHiveIsNotSolid,
-    InvalidData
+    InvalidData,
+    InvalidRequest,
+    NoneParametr,
+    IncorrectJsonParsing
 }
 impl API {
     pub fn new(pmnc: AM<PaymonCoin>, port: u16, running: Arc<(Mutex<bool>, Condvar)>) -> Self {
@@ -94,12 +94,8 @@ impl API {
         Response::with((iron::status::Ok, format!("{{\"error\":\"{}\"}}\n", err.to_string())))
     }
 
-    fn get_transactions_to_approve(pmnc: &mut PaymonCoin, mut depth: u32, reference: Option<Hash>, mut num_walks: u32) ->
-                                                                                              Result<Option<(Hash, Hash)>, TransactionError> {
-        if num_walks > MAX_RANDOM_WALKS || num_walks == 0 {
-            num_walks = MAX_RANDOM_WALKS;
-        }
-
+    fn get_transactions_to_approve(pmnc: &mut PaymonCoin, mut depth: u32, mut num_walks: u32) ->
+    Result<Option<(Hash, Hash)>, TransactionError> {
         let max_depth = match pmnc.tips_manager.lock() {
             Ok(tm) => tm.get_max_depth(),
             Err(_) => panic!("broken tips manager mutex")
@@ -113,30 +109,9 @@ impl API {
         let mut h0: Option<Hash>;
         let mut h1: Option<Hash>;
 
-        if let Some(hash) = reference {
-            let hive = match pmnc.hive.lock() {
-                Ok(h) => h,
-                _ => panic!("broken hive mutex")
-            };
-            if !hive.exists_transaction(hash) {
-                return Err(TransactionError::InvalidHash);
-            } else {
-                let milestone_latest_solid_subhive_milestone_index = match pmnc.milestone.lock() {
-                    Ok(l) => l.latest_solid_subhive_milestone_index,
-                    _ => panic!("broken milestone mutex")
-                };
-
-                let tx = hive.storage_load_transaction(&hash).unwrap();
-
-                if tx.object.snapshot != 0 && tx.object.snapshot < milestone_latest_solid_subhive_milestone_index - depth {
-                    return Err(TransactionError::InvalidTimestamp);
-                }
-            }
-        }
-
         if let Ok(tips_manager) = pmnc.tips_manager.lock() {
-            h0 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, reference,
-                                                     None, depth, num_walks)?;
+            h0 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, HASH_NULL,
+                                                     HASH_NULL, depth, num_walks)?;
         } else {
             panic!("broken tips manager mutex");
         }
@@ -150,8 +125,8 @@ impl API {
         }
 
         if let Ok(tips_manager) = pmnc.tips_manager.lock() {
-            h1 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, reference,
-                                                     h0, depth, num_walks)?;
+            h1 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, HASH_NULL,
+                                                     h0.unwrap(), depth, num_walks)?;
         } else {
             panic!("broken tips manager mutex");
         }
@@ -241,50 +216,20 @@ impl API {
                             "getTransactionsToApprove" => {
                                 println!("getTransactionsToApprove");
                                 match json::decode::<rpc::GetTransactionsToApprove>(&json_str) {
-                                    Ok(object) => {
+                                    Ok(bt) => {
                                         unsafe {
                                             if let Some(ref arc) = PMNC {
                                                 if let Ok(ref mut pmnc) = arc.lock() {
                                                     if API::invalid_subtangle_status(pmnc) {
                                                         return Ok(API::format_error_response("The subhive has not been updated yet"));
                                                     }
-                                                    use rand::{thread_rng, Rng};
-//                                                    let depth = 3;
-//                                                    let num_walks = thread_rng().gen_range(2, 5);
-                                                    let depth = object.depth;
-                                                    let mut num_walks = match object.num_walks {
-                                                        0 => 1,
-                                                        v => v
-                                                    };
-                                                    if num_walks < MIN_RANDOM_WALKS {
-                                                        num_walks = MIN_RANDOM_WALKS;
-                                                    }
-
-//                                                    let reference = match object.reference {
-//                                                        v => Some(v),
-//                                                        HASH_NULL => None,
-//                                                    };
-
-                                                    let reference;
-                                                    if object.reference == HASH_NULL {
-                                                        reference = None;
-                                                    } else {
-                                                        reference = Some(object.reference);
-                                                    }
-
-                                                    if depth < 0 || (reference.is_none() && depth == 0) {
-                                                        return Ok(API::format_error_response("Invalid depth input"));
-                                                    }
-
-                                                    info!("num_walks={}", num_walks);
-
-                                                    match API::get_transactions_to_approve(pmnc,
-                                                                                           depth,
-                                                                                           reference,
-                                                                                           num_walks) {
+                                                    let depth = 3;
+                                                    let num_walks = 1;
+                                                    match API::get_transactions_to_approve(pmnc, depth, num_walks) {
                                                         Ok(Some((trunk, branch))) => {
                                                             let result = rpc::TransactionsToApprove {
-                                                                branch, trunk
+                                                                branch,
+                                                                trunk
                                                             };
                                                             return format_success_response!(result);
                                                         },
@@ -422,67 +367,111 @@ impl API {
         return Ok((elements, hashes, index));
     }
 
-    pub fn find_transaction_statement (json_obj: Option<json::Object>) -> Result<Vec<Hash>, APIError> {
+    pub fn find_transaction_statement (& self, json_obj: Option<json::Object>, json_str: &str) -> Result<Vec<Hash>, APIError> {
         let mut found_transactions: HashSet<Hash> = HashSet::new();
         let mut contains_key = false;
-        let mut request: HashMap<String,i64> = HashMap::new();
+        let mut request = match json_obj{
+            Some(map) => map,
+            None => {return Err(APIError::InvalidRequest);}
+        };
+
         let mut bundles_transactions: HashSet<Hash> = HashSet::new();
         let request_clone = request.clone();
         if request_clone.contains_key("bundles") {
-            let bundles: HashSet<Hash> = API::get_parameter_as_set(& request, "bundles".to_string(), HASH_SIZE)?;
-            for bundle in bundles.iter() {
-                // TODO bundle
-                //bundles_transactions.addAll(BundleViewModel.load(instance.tangle, new Hash(bundle)).getHashes());
+            match json::decode::<rpc::FindTransactionByHash>(&json_str) {
+                Ok(obj) => {
+                    let bundles: HashSet<Hash> = obj.list_hash.iter().map(|hash| *hash).collect::<HashSet<Hash>>();
+                    for bundle in bundles.iter() {
+                        // TODO bundle
+                        //bundles_transactions.addAll(BundleViewModel.load(instance.tangle, new Hash(bundle)).getHashes());
+                    }
+                    for hash in bundles_transactions.iter() {
+                        found_transactions.insert(*hash);
+                    }
+                    contains_key = true;
+                }
+                Err(e) => return Err(APIError::IncorrectJsonParsing)
             }
-            for hash in bundles_transactions.iter() {
-                found_transactions.insert(*hash);
-            }
-            contains_key = true;
         }
         let mut addresses_transactions: HashSet<Hash> = HashSet::new();
         if request_clone.contains_key("addresses") {
-            let mut addresses: HashSet<Address> = API::get_parameter_as_set_addresses(& request, "addresses".to_string(), HASH_SIZE)?;
-            for address in addresses.iter() {
-                //TODO
-                //addresses_transactions.addAll(AddressViewModel.load(instance.tangle, new Hash(address)).getHashes());
-            }
+            match json::decode::<rpc::FindTransactionByAddress>(&json_str) {
+                Ok(obj) => {
+                    let mut addresses: HashSet<Address> = obj.list_adr.iter().map(|adr| *adr).collect::<HashSet<Address>>();
+                    for address in addresses.iter() {
+                        if let Ok(pmc) = self.paymoncoin.lock() {
+                            if let Ok(hive) = pmc.hive.lock() {
+                                let hashes = hive.load_address_transactions(address);
+                                match hashes {
+                                    Some(h) => {
+                                        for adr in h.iter() {
+                                            addresses_transactions.insert(*adr);
+                                        }
+                                    }
+                                    None => { panic!("None returned"); }
+                                }
+                            } else {
+                                panic!("broken hive mutex");
+                            }
+                        } else {
+                            panic!("broken paymoncion mutex");
+                        }
+                    }
 
-            for hash in addresses_transactions.iter() {
-                found_transactions.insert(*hash);
+                    for hash in addresses_transactions.iter() {
+                        found_transactions.insert(*hash);
+                    }
+                    contains_key = true;
+                }
+                Err(e) => return Err(APIError::IncorrectJsonParsing)
             }
-            contains_key = true;
         }
 
         let mut tags_transactions: HashSet<Hash> = HashSet::new();
         if request_clone.contains_key("tags") {
-            let mut tags: HashSet<Hash> = API::get_parameter_as_set(& request,"tags".to_string(),0)?;
-            for tag in tags.iter() {
-                //TODO
-                //tag = padTag(tag);
-                //tagsTransactions.addAll(TagViewModel.load(instance.tangle, new Hash(tag)).getHashes());
-            }
-            if tags_transactions.is_empty() {
-                for tag in tags.iter() {
-                    //tag = padTag(tag);
-                    //tagsTransactions.addAll(TagViewModel.loadObsolete(instance.tangle, new Hash(tag)).getHashes());
+            match json::decode::<rpc::FindTransactionByHash>(&json_str) {
+                Ok(obj) => {
+                    let mut tags: HashSet<Hash> = obj.list_hash.iter().map(|hash| *hash).collect::<HashSet<Hash>>();
+                    for tag in tags.iter() {
+                        //TODO
+                        //tag = padTag(tag);
+                        //tagsTransactions.addAll(TagViewModel.load(instance.tangle, new Hash(tag)).getHashes());
+                    }
+                    if tags_transactions.is_empty() {
+                        for tag in tags.iter() {
+                            //tag = padTag(tag);
+                            //tagsTransactions.addAll(TagViewModel.loadObsolete(instance.tangle, new Hash(tag)).getHashes());
+                        }
+                    }
+                    for hash in tags_transactions.iter() {
+                        found_transactions.insert(*hash);
+                    }
+                    contains_key = true;
                 }
+                Err(e) => return Err(APIError::IncorrectJsonParsing)
             }
-            for hash in tags_transactions.iter() {
-                found_transactions.insert(*hash);
-            }
-            contains_key = true;
         }
 
         let mut approvee_transactions: HashSet<Hash> = HashSet::new();
         if request_clone.contains_key("approvees") {
-            let approvees: HashSet<Hash> = API::get_parameter_as_set(& request, "approvees".to_string(), HASH_SIZE)?;
-            for approvee in approvees.iter() {
-                //   approveeTransactions.addAll(TransactionViewModel.fromHash(instance.tangle, new Hash(approvee)).getApprovers(instance.tangle).getHashes());
+            match json::decode::<rpc::FindTransactionByHash>(&json_str) {
+                Ok(obj) => {
+                    let approvees: HashSet<Hash> = obj.list_hash.iter().map(|hash| *hash).collect::<HashSet<Hash>>();
+                    for approvee in approvees.iter() {
+                        if let Ok(pmc) = self.paymoncoin.lock() {
+                            let hashes = Transaction::from_hash(*approvee).get_approvers(&pmc.hive);
+                            for h in hashes.iter() {
+                                approvee_transactions.insert(*h);
+                            }
+                        }
+                    }
+                    for hash in approvee_transactions.iter() {
+                        found_transactions.insert(*hash);
+                    }
+                    contains_key = true;
+                }
+                Err(e) => return Err(APIError::IncorrectJsonParsing)
             }
-            for hash in approvee_transactions.iter() {
-                found_transactions.insert(*hash);
-            }
-            contains_key = true;
         }
 
         if !contains_key {
@@ -513,7 +502,8 @@ impl API {
 
         return Ok(elements);
     }
-    fn get_parameter_as_set(request: &HashMap<String, i64>, param_name: String, size: usize)->  Result<HashSet<Hash>, APIError> {
+    /*
+    fn get_parameter_as_set(request: &BTreeMap<String, Json>, param_name: String, size: usize)->  Result<HashSet<Hash>, APIError> {
         let list = API::get_parameter_as_list(request, param_name, size)?;
         let mut hashset: Vec<Hash> = list.iter().map(|hash| *hash).collect::<Vec<Hash>>();
         let mut result: HashSet<Hash> = HashSet::new();
@@ -525,7 +515,7 @@ impl API {
         }
         return Ok(result);
     }
-    fn get_parameter_as_set_addresses(request: & HashMap<String, i64>, param_name: String, size: usize)->  Result<HashSet<Address>, APIError> {
+    fn get_parameter_as_set_addresses(request: & BTreeMap<String, Json>, param_name: String, size: usize)->  Result<HashSet<Address>, APIError> {
         let list = API::get_parameter_as_list_addresses(& request, param_name, size)?;
         let mut hashset: Vec<Address> = list.iter().map(|adr| *adr).collect::<Vec<Address>>();
         let mut result: HashSet<Address> = HashSet::new();
@@ -537,14 +527,30 @@ impl API {
         }
         return Ok(result);
     }
-    fn get_parameter_as_list(request: & HashMap<String, i64>, param_name: String, size: usize) -> Result<LinkedList<Hash>, APIError>{
+    fn get_parameter_as_list(request: & BTreeMap<String, Json>, param_name: String, size: usize) -> Result<LinkedList<Hash>, APIError>{
+
+        /*let param_list = match request.get(&param_name) {
+            Some(data) => data,
+            None => return Err(APIError::NoneParametr)
+        };*/
+
+        /*if (paramList.size() > maxRequestList) {
+            throw new ValidationException(overMaxErrorMessage);
+        }
+
+        if (size > 0) {
+            //validate
+            for (final String param : paramList) {
+            validateTrytes(paramName, size, param);
+            }
+        }*/
+        unimplemented!();
+        //return Ok(param_list);
+    }
+    fn get_parameter_as_list_addresses(request: & BTreeMap<String, Json>, param_name: String, size: usize) -> Result<LinkedList<Address>, APIError>{
 
         unimplemented!();
-    }
-    fn get_parameter_as_list_addresses(request: & HashMap<String, i64>, param_name: String, size: usize) -> Result<LinkedList<Address>, APIError>{
-
-        unimplemented!();
-    }
+    }*/
     pub fn get_new_inclusion_state_statement(trans: &LinkedList<Hash>, tps: &LinkedList<Hash> ) -> Result<Vec<bool>, APIError> {
         let transactions = trans.clone();
         let tips = tps.clone();

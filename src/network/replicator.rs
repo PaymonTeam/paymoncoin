@@ -4,7 +4,7 @@ use std::io::{Error, ErrorKind};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use byteorder::{ByteOrder, NativeEndian, BigEndian, LittleEndian};
+use byteorder::{ByteOrder, BigEndian};
 
 use mio::{Poll, PollOpt, Ready, Token};
 use mio::net::TcpStream;
@@ -122,7 +122,7 @@ impl Replicator {
             } else {
                 let mut buf = [0u8; 4];
                 self.sock.read(&mut buf).expect("Failed to read 4-byte buf");
-                let msg_len = NativeEndian::read_u32(buf.as_ref());
+                let msg_len = BigEndian::read_u32(buf.as_ref());
                 return Ok(Some((msg_len >> 8) * 4));
             }
         } else {
@@ -132,13 +132,7 @@ impl Replicator {
 
     pub fn send_packet<T>(&mut self, packet: T, message_id : i64) where T: Serializable {
         let message_length = calculate_object_size(&packet);
-        let size = match message_length % 4 == 0 {
-            true => 8 + 4 + message_length as usize,
-            false => {
-                let additional = 4 - (message_length % 4) as usize;
-                8 + 4 + message_length as usize + additional
-            }
-        };
+        let size = 8 + 4 + message_length as usize;
         let mut buffer = SerializedBuffer::new_with_size(size);
         buffer.set_position(0);
         buffer.write_i64(message_id);
@@ -173,78 +167,53 @@ impl Replicator {
         self.send_queue.push_back(Arc::new(buffer));
         self.send_queue.push_back(Arc::new(buff));
 
-//        if !self.interest.is_writable() {
-//            self.interest.insert(Ready::writable());
-//        }
-        self.writable();
+        if !self.interest.is_writable() {
+            self.interest.insert(Ready::writable());
+        }
     }
 
     pub fn writable(&mut self) -> io::Result<()> {
-//        self.send_queue.pop_front()
-//            .ok_or(Error::new(ErrorKind::Other, "Could not pop send queue"))
-//            .and_then(|buf| {
-////                match self.write_message_length(&buf) {
-////                    Ok(None) => {
-////                        self.send_queue.push(buf);
-////                        return Ok(());
-////                    },
-////                    Ok(Some(())) => {
-////                        ()
-////                    },
-////                    Err(e) => {
-////                        error!("Failed to send buffer for {:?}, error: {}", self.token, e);
-////                        return Err(e);
-////                    }
-////                }
-//
-//                let lim = buf.limit();
-//                match self.sock.write(&(*buf).buffer[0..lim]) {
-//                    Ok(n) => {
-//                        debug!("CONN : we wrote {} bytes", n);
-//                        self.write_continuation = false;
-//                        Ok(())
+        self.send_queue.pop_front()
+            .ok_or(Error::new(ErrorKind::Other, "Could not pop send queue"))
+            .and_then(|buf| {
+//                match self.write_message_length(&buf) {
+//                    Ok(None) => {
+//                        self.send_queue.push(buf);
+//                        return Ok(());
+//                    },
+//                    Ok(Some(())) => {
+//                        ()
 //                    },
 //                    Err(e) => {
-//                        if e.kind() == ErrorKind::WouldBlock {
-//                            debug!("client flushing buf; WouldBlock");
-//
-//                            self.send_queue.push_front(buf);
-//                            self.write_continuation = true;
-//                            Ok(())
-//                        } else {
-//                            error!("Failed to send buffer for {:?}, error: {}", self.token, e);
-//                            Err(e)
-//                        }
+//                        error!("Failed to send buffer for {:?}, error: {}", self.token, e);
+//                        return Err(e);
 //                    }
 //                }
-//            })?;
 
-        while let Some(buf) = self.send_queue.pop_front() {
-            let lim = buf.limit();
-            match self.sock.write(&buf.buffer[0..lim]) {
-                Ok(n) => {
-                    debug!("CONN : we wrote {} bytes", n);
-                    self.write_continuation = false;
-//                    Ok(())
-                },
-                Err(e) => {
-                    if e.kind() == ErrorKind::WouldBlock {
-                        debug!("client flushing buf; WouldBlock");
+                let lim = buf.limit();
+                match self.sock.write(&(*buf).buffer[0..lim]) {
+                    Ok(n) => {
+                        debug!("CONN : we wrote {} bytes", n);
+                        self.write_continuation = false;
+                        Ok(())
+                    },
+                    Err(e) => {
+                        if e.kind() == ErrorKind::WouldBlock {
+                            debug!("client flushing buf; WouldBlock");
 
-                        self.send_queue.push_front(buf);
-                        self.write_continuation = true;
-//                        Ok(())
-                    } else {
-                        error!("Failed to send buffer for {:?}, error: {}", self.token, e);
-//                        Err(e)
+                            self.send_queue.push_front(buf);
+                            self.write_continuation = true;
+                            Ok(())
+                        } else {
+                            error!("Failed to send buffer for {:?}, error: {}", self.token, e);
+                            Err(e)
+                        }
                     }
                 }
-            };
-        }
+            })?;
 
         if self.send_queue.is_empty() {
             self.interest.remove(Ready::writable());
-            self.is_idle = false;
         }
 
         Ok(())
@@ -297,11 +266,12 @@ impl Replicator {
     }
 
     pub fn reregister(&mut self, poll: &mut Poll) -> io::Result<()> {
-        info!("connection reregister; token={:?}", self.token);
+        trace!("connection reregister; token={:?}", self.token);
+
         poll.reregister(
             &self.sock,
             self.token,
-            Ready::readable(), //Ready::empty(),
+            self.interest,
             PollOpt::edge() | PollOpt::oneshot()
         ).and_then(|(),| {
             self.is_idle = false;

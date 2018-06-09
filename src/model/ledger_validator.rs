@@ -24,7 +24,8 @@ impl LedgerValidator {
 
     pub fn get_latest_diff(&mut self, visited_non_milestone_subtangle_hashes: &mut HashSet<Hash>,
                            tip: Option<Hash>,
-                           latest_snapshot_index: u32, milestone: bool) -> Result<Option<HashMap<Address, i32>>, TransactionError> {
+                           latest_snapshot_index: u32, milestone: bool) ->
+                                                                                                  Result<Option<HashMap<Address, i32>>, TransactionError> {
         let mut state = HashMap::<Address, i32>::new();
         let mut number_of_analyzed_transactions = 0;
         let mut counted_tx = HashSet::<Hash>::new();
@@ -40,20 +41,16 @@ impl LedgerValidator {
         while let Some(hash) = non_analyzed_transactions.pop_front() {
             if visited_non_milestone_subtangle_hashes.insert(hash.clone()) {
                 let mut transaction;
-                // println!("hive lock 9");
+
                 if let Ok(mut hive) = self.hive.lock() {
                     transaction = match hive.storage_load_transaction(&hash) {
                         Some(t) => t,
-                        None => {
-                            return Err(TransactionError::InvalidHash)
-                        }
+                        None => return Err(TransactionError::InvalidHash)
                     };
                 } else {
                     panic!("broken hive mutex");
                 }
 
-                println!("transaction.object.snapshot={}", transaction.object.snapshot);
-                println!("latest_snapshot_index={}", latest_snapshot_index);
                 if transaction.object.snapshot == 0 || transaction.object.snapshot >
                     latest_snapshot_index {
 
@@ -64,11 +61,8 @@ impl LedgerValidator {
                             return Ok(None);
                         }
                     } else {
-                        // TODO: check balance
                         if transaction.object.value != 0 && counted_tx.insert(transaction.get_hash()) {
-                            let from_address = Address::from_public_key(&transaction.object.signature_pubkey);
                             let address = transaction.object.address;
-
                             let value = match state.get(&address) {
                                 Some(v) => {
                                     let (v, b) = (transaction.object.value as i32).overflowing_add(*v);
@@ -79,20 +73,7 @@ impl LedgerValidator {
                                 }
                                 None => transaction.object.value as i32
                             };
-
                             state.insert(address.clone(), value);
-
-                            let value = match state.get(&from_address) {
-                                Some(v) => {
-                                    let (v, b) = (*v).overflowing_sub(transaction.object.value as i32);
-                                    if b {
-                                        return Err(TransactionError::InvalidData);
-                                    }
-                                    v
-                                }
-                                None => transaction.object.value as i32
-                            };
-                            state.insert(from_address.clone(), value);
                         }
 
                         non_analyzed_transactions.push_back(transaction.get_trunk_transaction_hash());
@@ -121,31 +102,22 @@ impl LedgerValidator {
             if visited_hashes.insert(na_hash.clone()) {
                 let mut transaction;
 
-                // println!("hive lock 10");
                 if let Ok(mut hive) = self.hive.lock() {
                     transaction = match hive.storage_load_transaction(&na_hash) {
                         Some(t) => t,
-                        None => {
-                            // println!("hive unlock 10");
-                            return Err(TransactionError::InvalidHash)
-                        }
+                        None => return Err(TransactionError::InvalidHash)
                     };
 
                     if transaction.object.snapshot == 0 {
-                        if transaction.object.snapshot != index {
-                            transaction.object.snapshot = index;
-                            hive.update_transaction(&mut transaction);
-                        }
-                        info!("new solid tx: {:?}", transaction.get_hash());
-
-                        non_analyzed_transactions.push_back(transaction.get_trunk_transaction_hash());
-                        non_analyzed_transactions.push_back(transaction.get_branch_transaction_hash());
+                        transaction.object.snapshot = index;
+                        hive.update_transaction(&mut transaction);
                     }
                 } else {
                     panic!("broken hive mutex");
                 }
-                // println!("hive unlock 10");
 
+                non_analyzed_transactions.push_back(transaction.get_trunk_transaction_hash());
+                non_analyzed_transactions.push_back(transaction.get_branch_transaction_hash());
             }
         }
 
@@ -178,33 +150,30 @@ impl LedgerValidator {
         Ok(true)
     }
 
-    pub fn update_snapshot(&mut self, milestone_obj: &MilestoneObject, latest_snapshot: &mut Snapshot) ->
-    Result<bool,
+    pub fn update_snapshot(&mut self, milestone_obj: &MilestoneObject) -> Result<bool,
         TransactionError> {
         let mut transaction;
-        // println!("hive lock 11");
         if let Ok(mut hive) = self.hive.lock() {
             transaction = match hive.storage_load_transaction(&milestone_obj.hash) {
                 Some(t) => t,
-                None => {
-                    // println!("hive unlock 11");
-                    return Err(TransactionError::InvalidHash)
-                }
+                None => return Err(TransactionError::InvalidHash)
             };
         } else {
             panic!("broken hive mutex");
         }
-        // println!("hive unlock 11");
 
         let transaction_snapshot_index = transaction.object.snapshot;
         let mut has_snapshot = transaction_snapshot_index != 0;
-        debug!("has_snapshot={}", has_snapshot);
         if !has_snapshot {
             let tail = transaction.get_hash();
 
             let mut milestone_latest_snapshot_index;
 
-            milestone_latest_snapshot_index = /*milestone.*/latest_snapshot.index;
+            if let Ok(milestone) = self.milestone.lock() {
+                milestone_latest_snapshot_index = milestone.latest_snapshot.index;
+            } else {
+                panic!("broken milestone mutex");
+            }
 
             let mut current_state;
             match self.get_latest_diff(&mut HashSet::new(), Some(tail),
@@ -215,10 +184,13 @@ impl LedgerValidator {
                 None => return Ok(false)
             };
 
-            let mut patched = /*milestone.*/latest_snapshot.patched_diff(current_state.clone());
-            has_snapshot = Snapshot::is_consistent(&mut patched);
+            if let Ok(mut milestone) = self.milestone.lock() {
+                let mut patched = milestone.latest_snapshot.patched_diff(current_state.clone());
+                has_snapshot = Snapshot::is_consistent(&mut patched);
+            } else {
+                panic!("broken milestone mutex");
+            }
 
-            debug!("has_snapshot2={}", has_snapshot);
             if has_snapshot {
                 self.update_snapshot_milestone(milestone_obj.get_hash(), milestone_obj.index)?;
                 let state_diff = StateDiff {
@@ -227,14 +199,14 @@ impl LedgerValidator {
                 };
 
                 if !current_state.is_empty() {
-                    // println!("hive lock 12");
                     if let Ok(mut hive) = self.hive.lock() {
                         hive.put_state_diff(&state_diff);
                     }
-                    // println!("hive unlock 12");
                 }
 
-                latest_snapshot.apply(&current_state, milestone_obj.index);
+                if let Ok(mut milestone) = self.milestone.lock() {
+                    milestone.latest_snapshot.apply(&current_state, milestone_obj.index);
+                }
             }
         }
         Ok(has_snapshot)
@@ -243,7 +215,6 @@ impl LedgerValidator {
     fn build_snapshot(&self) -> Result<Option<MilestoneObject>, TransactionError> {
         let mut consistent_milestone = None;
 
-        // println!("hive lock 13");
         if let Ok(hive) = self.hive.lock() {
             let mut candidate_milestone = hive.storage_first_milestone();
             while let Some(cm) = candidate_milestone {
@@ -274,35 +245,41 @@ impl LedgerValidator {
 
     pub fn update_diff(&mut self, approved_hashes: &mut HashSet<Hash>, diff: &mut HashMap<Address, i64>, tip: Hash) -> Result<bool, TransactionError> {
         if let Ok(mut hive) = self.hive.lock() {
+            println!("tip={:?}", tip);
             match hive.storage_load_transaction(&tip) {
                 Some(t) => {
-                    if !t.is_solid() {
+                    if t.is_solid() {
                         return Ok(false);
                     }
                 },
-                None => {
-                    return Err(TransactionError::InvalidHash)
-                }
+                None => return Err(TransactionError::InvalidHash)
             };
         }
+//        println!("b");
 
         if approved_hashes.contains(&tip) {
             return Ok(true);
         }
+//        println!("c");
 
         let mut visited_hashes = approved_hashes.clone();
+
+//        println!("d");
 
         let milestone_latest_snapshot_index = match self.milestone.lock() {
             Ok(milestone) => milestone.latest_snapshot.index,
             Err(_) => panic!("broken milestone mutex")
         };
 
-        let mut current_state = match self.get_latest_diff(&mut visited_hashes, Some(tip.clone()),
+        let mut current_state;
+        match self.get_latest_diff(&mut visited_hashes, Some(tip.clone()),
                                    milestone_latest_snapshot_index, false)? {
-            Some(mut cs) => cs,
+            Some(mut cs) => {
+                current_state = cs;
+            }
             None => return Ok(false)
-        };
-        println!("current_state={:?}", current_state);
+        }
+//        println!("e");
 
         let is_consistent;
         if let Ok(mut milestone) = self.milestone.lock() {

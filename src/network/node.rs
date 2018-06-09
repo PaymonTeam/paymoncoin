@@ -72,14 +72,7 @@ impl Node {
                 for addr in s.split(" ") {
                     if let Ok(addr) = addr.parse::<SocketAddr>() {
                         if let Ok(mut neighbors) = self.neighbors.lock() {
-                            if neighbors.iter().find(|arc| {
-                                if let Ok(n) = arc.lock() {
-                                    return n.addr.ip() == addr.ip();
-                                }
-                                false
-                            }).is_none() {
-                                neighbors.push(Arc::new(Mutex::new(Neighbor::from_address(addr))));
-                            }
+                            neighbors.push(Arc::new(Mutex::new(Neighbor::from_address(addr))));
                         }
                     } else {
                         debug!("invalid address: {:?}", addr);
@@ -116,7 +109,6 @@ impl Node {
                 if let Some(arc) = receive_queue.upgrade() {
                     if let Ok(mut queue) = arc.lock() {
                         if let Some(mut t) = queue.pop_front() {
-                            info!("received tx: {:?}", t.get_hash());
                             let address = t.object.address.clone();
                             let validated = transaction::validate_transaction(&mut t, 7);
                             println!("validated={}", validated);
@@ -139,7 +131,6 @@ impl Node {
                                         if let Ok(mut tv) = arc.lock() {
                                             if let Err(e) = tv.update_status(&mut t) {
                                                 error!("update status err {:?}", e);
-                                                continue;
                                             }
                                         }
                                     }
@@ -172,7 +163,6 @@ impl Node {
                                 if let Ok(neighbors) = arc.lock() {
                                     for n in neighbors.iter() {
                                         if let Ok(mut n) = n.lock() {
-                                            info!("sending to {:?}", n.addr);
                                             let transaction = t.object.clone();
                                             n.send_packet(transaction);
                                         }
@@ -182,8 +172,9 @@ impl Node {
                         }
                     }
                 }
+
+                thread::sleep(Duration::from_secs(1));
             }
-            thread::sleep(Duration::from_secs(1));
         }
     }
 
@@ -204,7 +195,7 @@ impl Node {
         if let Ok(mut neighbors) = self.neighbors.lock() {
             let neighbor = match neighbors.iter().find(
                 |arc| {
-                    if let Ok(n) = arc.lock() { return n.addr.ip() == addr.ip() }
+                    if let Ok(n) = arc.lock() { return n.addr == addr }
                     false
                 }) {
                 Some(arc) => arc,
@@ -225,10 +216,10 @@ impl Node {
         let message_id = data.read_i64();
         let message_length = data.read_i32();
 
-//        if message_length != data.remaining() as i32 {
-//            error!("Received incorrect message length");
-//            return;
-//        }
+        if message_length != data.remaining() as i32 {
+            error!("Received incorrect message length");
+            return;
+        }
 
         let svuid = data.read_i32();
 

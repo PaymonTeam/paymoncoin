@@ -90,7 +90,7 @@ impl Snapshot {
         }
     }
 
-    pub fn patched_diff(&self, mut diff: HashMap<Address, i32>) -> HashMap<Address, i32> {
+    pub fn patched_diff(&mut self, mut diff: HashMap<Address, i32>) -> HashMap<Address, i32> {
         diff.into_iter().map(|(address, balance)| {
             let new_balance = match self.state.get(&address) {
                 Some(n) => *n,
@@ -123,8 +123,6 @@ impl Snapshot {
 
             self.state.insert(address.clone(), new_balance);
         });
-
-        self.index = new_index;
     }
 
     pub fn is_consistent(state: &mut HashMap<Address, i32>) -> bool {

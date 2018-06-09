@@ -210,7 +210,6 @@ impl Address {
         checksum_byte as u8
     }
 
-    // TODO: may cause panic?
     pub fn from_public_key(pk: &PublicKey) -> Self {
         let mut sha = Sha3::sha3_256();
         sha.input(&pk.0);
@@ -319,21 +318,13 @@ impl Transaction {
         self.object.solid
     }
 
-    pub fn get_approvers(&mut self, hive: &AM<Hive>) -> HashSet<Hash> {
+    pub fn get_approvers(&self, hive: &AM<Hive>) -> HashSet<Hash> {
         let mut res = self.approvers.clone();
         match res {
             Some(aprv) => aprv.get_hashes(),
             None => match Approvee::load(hive, &self.get_hash()) {
-                Some(aprv) => {
-                    let hashes = aprv.get_hashes();
-                    self.approvers = Some(Approvee::new(&hashes));
-                    hashes
-                },
-                None => {
-                    let empty_set = HashSet::new();
-                    self.approvers = Some(Approvee::new(&empty_set));
-                    empty_set
-                }
+                Some(aprv) => aprv.get_hashes(),
+                None => HashSet::new()
             }
         }
     }
@@ -408,8 +399,7 @@ impl Transaction {
 
     pub fn calculate_signature(&mut self, sk: &PrivateKey, pk: &PublicKey) -> Option<Signature> {
         let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-        debug!("signing {:?}", self.object.hash);
-//        println!("signing {:?} {:?} {:?}", self.object.hash, sk, pk);
+        println!("signing {:?} {:?} {:?}", self.object.hash, sk, pk);
         ntrumls.sign(&self.object.hash, sk, pk)
     }
 
@@ -431,11 +421,10 @@ impl Transaction {
             self.object.serialize_to_stream(&mut self.bytes);
         }
 
-        let mut sb = SerializedBuffer::new_with_size(ADDRESS_SIZE + 4 + 8 + HASH_SIZE);
+        let mut sb = SerializedBuffer::new_with_size(ADDRESS_SIZE + 4 + 8);
         sb.write_bytes(&self.object.address);
         sb.write_u32(self.object.value);
         sb.write_u64(self.object.timestamp);
-        sb.write_bytes(&self.object.tag);
 
         let mut sha = Sha3::sha3_256();
         sha.input(&sb.buffer);
@@ -588,10 +577,6 @@ impl Serializable for TransactionObject {
         };
         stream.write_byte(b);
         stream.write_byte_array(&self.signature.0);
-        stream.write_byte_array(&self.signature_pubkey.0);
-        stream.write_u32(self.snapshot);
-        stream.write_bool(self.solid);
-        stream.write_u64(self.height);
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
@@ -611,10 +596,6 @@ impl Serializable for TransactionObject {
             _ => TransactionType::HashOnly
         };
         self.signature = Signature(stream.read_byte_array().unwrap());
-        self.signature_pubkey = PublicKey(stream.read_byte_array().unwrap());
-        self.snapshot = stream.read_u32();
-        self.solid = stream.read_bool();
-        self.height = stream.read_u64();
     }
 }
 
@@ -666,8 +647,8 @@ pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
     let pk = &transaction.object.signature_pubkey;
     let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
 //    let pk = PublicKey(address_from.0.to_vec());
-//    println!("{:?}", pk);
-//    println!("{:?}", transaction.object.hash);
-//    println!("{:?}", transaction.object.signature);
+    println!("{:?}", pk);
+    println!("{:?}", transaction.object.hash);
+    println!("{:?}", transaction.object.signature);
     ntrumls.verify(&transaction.object.hash, sign, &pk)
 }

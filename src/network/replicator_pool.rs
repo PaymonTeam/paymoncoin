@@ -165,7 +165,7 @@ impl ReplicatorPool {
         }
 
         if event.is_hup() {
-            info!("Hup event for {:?}", token);
+            trace!("Hup event for {:?}", token);
             if let Ok(mut c) = self.find_connection_by_token(token) {
                 c.mark_reset();
             }
@@ -175,7 +175,7 @@ impl ReplicatorPool {
         let event = Ready::from(event);
 
         if event.is_writable() {
-            info!("Write event for {:?}", token);
+            trace!("Write event for {:?}", token);
             assert_ne!(self.token, token, "Received writable event for Server");
 
             if let Ok(mut conn) = self.find_connection_by_token(token) {
@@ -192,7 +192,7 @@ impl ReplicatorPool {
         }
 
         if event.is_readable() {
-            info!("Read event for {:?}", token);
+            trace!("Read event for {:?}", token);
             if self.token == token {
                 self.accept();
             } else {
@@ -244,7 +244,7 @@ impl ReplicatorPool {
                             if let Ok(mut neighbors) = node.neighbors.lock() {
                                 for neighbor_arc in neighbors.iter() {
                                     if let Ok(neighbor) = neighbor_arc.lock() {
-                                        if addr.ip() == neighbor.addr.ip() {
+                                        if addr == neighbor.addr {
                                             neighbor_exsists = true;
                                             break;
                                         }
