@@ -132,7 +132,6 @@ impl TipsManager {
         if depth > self.max_depth {
             depth = self.max_depth;
         }
-
         let latest_solid_subhive_milestone_index;
         let latest_solid_subhive_milestone;
 
@@ -160,6 +159,7 @@ impl TipsManager {
             analyzed_tips.clear();
 
             let update_diff_is_ok;
+
             if let Ok(mut lv) = self.ledger_validator.lock() {
                 update_diff_is_ok = lv.update_diff(visited_hashes, diff, tip.clone())?;
             } else {
@@ -268,6 +268,7 @@ impl TipsManager {
                 break;
             }
 
+
             if self.below_max_depth(transaction_obj.get_hash(), max_depth, max_depth_ok) {
                 info!("Reason to stop: !LedgerValidator");
                 break;
@@ -349,6 +350,7 @@ impl TipsManager {
                 }
             }
         }
+
         return Ok(tail);
     }
 
@@ -486,14 +488,14 @@ impl TipsManager {
     fn below_max_depth(&self, tip: Hash, depth: u32, max_depth_ok: &mut HashSet<Hash>) -> bool {
         //if tip is confirmed stop
 
-        // println!("hive lock 19");
+//         println!("hive lock 19");
         let mut transaction = match self.hive.lock() {
             Ok(hive) => hive.storage_load_transaction(&tip).expect("can't find transaction"),
             Err(_) => {
                 panic!("hive mutex is broken");
             }
         };
-        // println!("hive unlock 19");
+//         println!("hive unlock 19");
 
         if transaction.object.get_snapshot_index() >= depth {
             return false;
@@ -503,14 +505,10 @@ impl TipsManager {
         let mut non_analyzed_transactions = LinkedList::new();
         non_analyzed_transactions.push_back(tip);
         let mut analyzed_transactions: HashSet<Hash> = HashSet::new();
-        let mut hash: Hash;
-        while non_analyzed_transactions.front() != None {
-            hash = match non_analyzed_transactions.front() {
-                Some(h) => *h,
-                None => break
-            };
+
+        while let Some(hash) = non_analyzed_transactions.pop_front() {
             if analyzed_transactions.insert(hash) {
-                // println!("hive lock 20");
+//                 println!("hive lock 20");
                 let mut transaction = match self.hive.lock() {
                     Ok(hive) => hive.storage_load_transaction(&hash).expect("can't load \
                     transaction"),
