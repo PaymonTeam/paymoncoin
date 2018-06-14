@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use std::collections::HashMap;
 use model::transaction::*;
 use storage::hive;
+use model::transaction_validator::TransactionError;
 
 pub const SNAPSHOT_PUBKEY: &str = "ABC123";
 pub const SNAPSHOT_INDEX: u32 = 1;
@@ -90,7 +91,7 @@ impl Snapshot {
         }
     }
 
-    pub fn patched_diff(&mut self, mut diff: HashMap<Address, i32>) -> HashMap<Address, i32> {
+    pub fn patched_diff(&self, mut diff: HashMap<Address, i32>) -> HashMap<Address, i32> {
         diff.into_iter().map(|(address, balance)| {
             let new_balance = match self.state.get(&address) {
                 Some(n) => *n,
@@ -101,9 +102,10 @@ impl Snapshot {
         }).collect()
     }
 
-    pub fn apply(&mut self, patch: &HashMap<Address, i32>, new_index: u32) {
+    pub fn apply(&mut self, patch: &HashMap<Address, i32>, new_index: u32) -> Result<(), TransactionError> {
         if patch.values().sum::<i32>() != 0 {
-            panic!("Diff isn't consistent");
+            error!("Diff isn't consistent");
+            return Err(TransactionError::InvalidData);
         }
 
         patch.iter().for_each(|(address, balance)| {
@@ -123,6 +125,10 @@ impl Snapshot {
 
             self.state.insert(address.clone(), new_balance);
         });
+
+        self.index = new_index;
+
+        Ok(())
     }
 
     pub fn is_consistent(state: &mut HashMap<Address, i32>) -> bool {

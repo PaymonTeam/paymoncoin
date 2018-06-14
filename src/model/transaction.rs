@@ -361,6 +361,7 @@ impl Transaction {
     pub fn from_bytes(mut bytes: SerializedBuffer) -> Self {
         let mut transaction = TransactionObject::new();
         transaction.read_params(&mut bytes);
+        transaction.data_type = TransactionType::Full;
 
         Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
