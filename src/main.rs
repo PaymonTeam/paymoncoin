@@ -34,7 +34,7 @@ use mio::Poll;
 use mio::net::TcpListener;
 
 use network::node::*;
-use network::replicator_pool::ReplicatorPool;
+use network::replicator_pool::ReplicatorSourcePool;
 use model::config::{PORT, Configuration, ConfigurationSettings};
 use model::config;
 use network::paymoncoin::PaymonCoin;

@@ -7,11 +7,12 @@ use std::collections::VecDeque;
 use network::packet;
 use network::packet::{SerializedBuffer, Serializable};
 use std::net::{SocketAddr, IpAddr};
-use network::replicator::Replicator;
+use network::replicator::*;
 
 pub struct Neighbor {
     pub addr: SocketAddr,
-    pub replicator: Option<Weak<Mutex<Replicator>>>,
+    pub replicator_source: Option<Weak<Mutex<ReplicatorSource>>>,
+    pub replicator_sink: Option<Weak<Mutex<ReplicatorSink>>>,
 }
 
 impl Neighbor {
@@ -21,21 +22,24 @@ impl Neighbor {
 
         Neighbor {
             addr,
-            replicator: None,
+            replicator_source: None,
+            replicator_sink: None,
         }
     }
 
     pub fn from_address(addr: SocketAddr) -> Self {
         Neighbor {
             addr,
-            replicator: None,
+            replicator_source: None,
+            replicator_sink: None,
         }
     }
 
-    pub fn from_replicator(replicator: Weak<Mutex<Replicator>>, addr: SocketAddr) -> Self {
+    pub fn from_replicator_source(replicator: Weak<Mutex<ReplicatorSource>>, addr: SocketAddr) -> Self {
         Neighbor {
             addr,
-            replicator: Some(replicator),
+            replicator_source: Some(replicator),
+            replicator_sink: None,
         }
     }
 
@@ -46,7 +50,7 @@ impl Neighbor {
     pub fn send_packet<T>(&mut self, packet: T) where T : Serializable {
         let sb = packet::get_serialized_object(&packet, true);
 
-        if let Some(ref o) = self.replicator {
+        if let Some(ref o) = self.replicator_source {
             if let Some(arc) = o.upgrade() {
                 if let Ok(mut replicator) = arc.lock() {
                     replicator.send_packet(packet, 0);

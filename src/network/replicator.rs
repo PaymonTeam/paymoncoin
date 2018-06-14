@@ -12,11 +12,16 @@ use network::packet::{SerializedBuffer, Serializable, calculate_object_size};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 
-pub struct Replicator {
+
+#[cfg(any(target_os = "dragonfly",
+target_os = "freebsd", target_os = "ios", target_os = "macos",target_os="linux"))]
+use mio::unix::UnixReady;
+
+pub struct ReplicatorSource {
     sock: TcpStream,
     pub token: Token,
-    interest: Ready,
-    send_queue: VecDeque<Arc<SerializedBuffer>>,
+    pub interest: Ready,
+    pub send_queue: VecDeque<Arc<SerializedBuffer>>,
     is_idle: bool,
     is_reset: bool,
     read_continuation: Option<u32>,
@@ -25,15 +30,11 @@ pub struct Replicator {
     pub last_packet_length: usize
 }
 
-#[cfg(any(target_os = "dragonfly",
-target_os = "freebsd", target_os = "ios", target_os = "macos",target_os="linux"))]
-use mio::unix::UnixReady;
-
-impl Replicator {
+impl ReplicatorSource {
     #[cfg(any(target_os = "dragonfly",
     target_os = "freebsd", target_os = "ios", target_os = "macos",target_os="linux"))]
-    pub fn new(sock: TcpStream, token: Token) -> Replicator {
-        Replicator {
+    pub fn new(sock: TcpStream, token: Token) -> ReplicatorSource {
+        ReplicatorSource {
             sock,
             token,
             interest: Ready::from(UnixReady::hup()),
@@ -48,8 +49,8 @@ impl Replicator {
     }
 
     #[cfg(any(target_os = "windows"))]
-    pub fn new(sock: TcpStream, token: Token) -> Replicator {
-        Replicator {
+    pub fn new(sock: TcpStream, token: Token) -> ReplicatorSource {
+        ReplicatorSource {
             sock,
             token,
             interest: Ready::from(Ready::hup()),
@@ -69,11 +70,15 @@ impl Replicator {
 
     pub fn readable(&mut self) -> io::Result<Option<SerializedBuffer>> {
         let msg_len = match self.read_message_length()? {
-            None => { return Ok(None); },
+            None => {
+//                return Err(Error::new(ErrorKind::ConnectionReset, "Read 0 bytes"));
+                return Ok(None);
+            },
             Some(n) => n,
         };
 
         if msg_len == 0 {
+//            return Err(Error::new(ErrorKind::ConnectionReset, "Read 0 bytes"));
             return Ok(None);
         }
 
@@ -82,14 +87,15 @@ impl Replicator {
 
         let mut recv_buf : Vec<u8> = Vec::with_capacity(msg_len);
         unsafe { recv_buf.set_len(msg_len); }
-//
+//        let mut recv_buf = [0u8; msg_len];
 //        // UFCS: resolve "multiple applicable items in scope [E0034]" error
         let sock_ref = <TcpStream as Read>::by_ref(&mut self.sock);
-        match sock_ref.take(msg_len as u64).read(&mut recv_buf) {
-            Ok(n) => {
-                if n < msg_len as usize {
-                    return Err(Error::new(ErrorKind::InvalidData, "Did not read enough bytes"));
-                }
+        match sock_ref.read_exact(&mut recv_buf) {//take(msg_len as u64).read(&mut recv_buf) {
+            Ok(()) => {
+//                debug!("n={}", n);
+//                if n < msg_len as usize {
+//                    return Err(Error::new(ErrorKind::InvalidData, "Did not read enough bytes"));
+//                }
 
                 self.read_continuation = None;
 
@@ -173,10 +179,11 @@ impl Replicator {
         self.send_queue.push_back(Arc::new(buffer));
         self.send_queue.push_back(Arc::new(buff));
 
-//        if !self.interest.is_writable() {
-//            self.interest.insert(Ready::writable());
-//        }
-        self.writable();
+        if !self.interest.is_writable() {
+            self.interest.insert(Ready::writable());
+        }
+//        self.reregister()
+//        self.writable();
     }
 
     pub fn writable(&mut self) -> io::Result<()> {
@@ -301,7 +308,7 @@ impl Replicator {
         poll.reregister(
             &self.sock,
             self.token,
-            Ready::readable(), //Ready::empty(),
+            self.interest, //Ready::readable(), //Ready::empty(),
             PollOpt::edge() | PollOpt::oneshot()
         ).and_then(|(),| {
             self.is_idle = false;
@@ -333,4 +340,108 @@ impl Replicator {
     pub fn is_idle(&self) -> bool {
         self.is_idle
     }
+}
+
+pub struct ReplicatorSink {
+    sock: TcpStream,
+    pub token: Token,
+    interest: Ready,
+    shutdown: bool,
+}
+
+impl ReplicatorSink {
+    fn new(sock: TcpStream, token: Token) -> Self {
+
+        ReplicatorSink {
+            sock,
+            token,
+            interest: Ready::empty(),
+            shutdown: false,
+        }
+    }
+
+//    fn readable(&mut self, poll: &mut Poll) -> io::Result<()> {
+//        debug!("client socket readable");
+//
+//        let mut buf = self.mut_buf.take().unwrap();
+//
+//        match self.sock.try_read_buf(&mut buf) {
+//            Ok(None) => {
+//                debug!("CLIENT : spurious read wakeup");
+//                self.mut_buf = Some(buf);
+//            }
+//            Ok(Some(r)) => {
+//                debug!("CLIENT : We read {} bytes!", r);
+//
+//                // prepare for reading
+//                let mut buf = buf.flip();
+//
+//                while buf.has_remaining() {
+//                    let actual = buf.read_byte().unwrap();
+//                    let expect = self.rx.read_byte().unwrap();
+//
+//                    assert!(actual == expect, "actual={}; expect={}", actual, expect);
+//                }
+//
+//                self.mut_buf = Some(buf.flip());
+//
+//                self.interest.remove(Ready::readable());
+//
+//                if !self.rx.has_remaining() {
+//                    self.next_msg(poll).unwrap();
+//                }
+//            }
+//            Err(e) => {
+//                panic!("not implemented; client err={:?}", e);
+//            }
+//        };
+//
+//        if !self.interest.is_empty() {
+//            assert!(self.interest.is_readable() || self.interest.is_writable(), "actual={:?}", self.interest);
+//            poll.reregister(&self.sock, self.token, self.interest,
+//                            PollOpt::edge() | PollOpt::oneshot())?;
+//        }
+//
+//        Ok(())
+//    }
+
+//    fn writable(&mut self, poll: &mut Poll) -> io::Result<()> {
+//        debug!("client socket writable");
+//
+//        match self.sock.try_write_buf(&mut self.tx) {
+//            Ok(None) => {
+//                debug!("client flushing buf; WOULDBLOCK");
+//                self.interest.insert(Ready::writable());
+//            }
+//            Ok(Some(r)) => {
+//                debug!("CLIENT : we wrote {} bytes!", r);
+//                self.interest.insert(Ready::readable());
+//                self.interest.remove(Ready::writable());
+//            }
+//            Err(e) => debug!("not implemented; client err={:?}", e)
+//        }
+//
+//        if self.interest.is_readable() || self.interest.is_writable() {
+//            poll.reregister(&self.sock, self.token, self.interest,PollOpt::edge() | PollOpt::oneshot())?;
+//        }
+//
+//        Ok(())
+//    }
+
+//    fn next_msg(&mut self, poll: &mut Poll) -> io::Result<()> {
+//        if self.msgs.is_empty() {
+//            self.shutdown = true;
+//            return Ok(());
+//        }
+//
+//        let curr = self.msgs.remove(0);
+//
+//        debug!("client prepping next message");
+//        self.tx = SliceBuf::wrap(curr.as_bytes());
+//        self.rx = SliceBuf::wrap(curr.as_bytes());
+//
+//        self.interest.insert(Ready::writable());
+//        poll.reregister(&self.sock, self.token, self.interest,
+//                        PollOpt::edge() | PollOpt::oneshot())
+//    }
 }

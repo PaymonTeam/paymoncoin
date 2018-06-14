@@ -24,8 +24,8 @@ impl LedgerValidator {
 
     pub fn get_latest_diff(&mut self, visited_non_milestone_subtangle_hashes: &mut HashSet<Hash>,
                            tip: Option<Hash>,
-                           latest_snapshot_index: u32, milestone: bool) -> Result<Option<HashMap<Address, i32>>, TransactionError> {
-        let mut state = HashMap::<Address, i32>::new();
+                           latest_snapshot_index: u32, milestone: bool) -> Result<Option<HashMap<Address, i64>>, TransactionError> {
+        let mut state = HashMap::<Address, i64>::new();
         let mut number_of_analyzed_transactions = 0;
         let mut counted_tx = HashSet::<Hash>::new();
         counted_tx.insert(HASH_NULL);
@@ -67,26 +67,26 @@ impl LedgerValidator {
 
                             let value = match state.get(&address) {
                                 Some(v) => {
-                                    let (v, b) = (transaction.object.value as i32).overflowing_add(*v);
+                                    let (v, b) = (transaction.object.value as i64).overflowing_add(*v);
                                     if b {
                                         return Err(TransactionError::InvalidData);
                                     }
                                     v
                                 }
-                                None => transaction.object.value as i32
+                                None => transaction.object.value as i64
                             };
 
                             state.insert(address.clone(), value);
 
                             let value = match state.get(&from_address) {
                                 Some(v) => {
-                                    let (v, b) = (*v).overflowing_sub(transaction.object.value as i32);
+                                    let (v, b) = (*v).overflowing_sub(transaction.object.value as i64);
                                     if b {
                                         return Err(TransactionError::InvalidData);
                                     }
                                     v
                                 }
-                                None => -(transaction.object.value as i32)
+                                None => -(transaction.object.value as i64)
                             };
                             state.insert(from_address.clone(), value);
                         }
@@ -297,8 +297,8 @@ impl LedgerValidator {
         if let Ok(mut milestone) = self.milestone.lock() {
             diff.iter().for_each(|(k, v)| {
                 let new_value = match current_state.get(k) {
-                    Some(old_value) => *v as i32 + *old_value,
-                    None => v.clone() as i32
+                    Some(old_value) => *v as i64 + *old_value,
+                    None => v.clone() as i64
                 };
                 if current_state.get(k).is_none() {
                     current_state.insert(k.clone(), new_value);

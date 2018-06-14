@@ -63,6 +63,7 @@ impl Serializable for AttachTransaction {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let _ = stream.read_i32();
         self.transaction.read_params(stream);
     }
 }
@@ -84,6 +85,7 @@ impl Serializable for BroadcastTransaction {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let _ = stream.read_i32();
         self.transaction.read_params(stream);
     }
 }
@@ -145,7 +147,9 @@ impl Serializable for TransactionsToApprove {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let _ = stream.read_i32();
         self.trunk.read_params(stream);
+        let _ = stream.read_i32();
         self.branch.read_params(stream);
     }
 }
@@ -154,14 +158,52 @@ impl Serializable for TransactionsToApprove {
     GetBalances
 */
 #[derive(RustcDecodable, RustcEncodable)]
-pub struct GetBalances {}
+pub struct GetBalances {
+    pub addresses: Vec<Address>,
+    pub tips: Vec<Hash>,
+    pub threshold: u8,
+}
 
 impl GetBalances { pub const SVUID : i32 = 7; }
 
 impl Serializable for GetBalances {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) { stream.write_i32(Self::SVUID); }
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) { }
+        stream.write_u32(self.addresses.len() as u32);
+        for addr in &self.addresses {
+//            addr.serialize_to_stream(stream);
+            stream.write_bytes(&addr);
+        }
+
+        stream.write_u32(self.tips.len() as u32);
+        for v in &self.tips {
+//            v.serialize_to_stream(stream);
+            stream.write_bytes(&v);
+        }
+
+        stream.write_byte(self.threshold);
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        self.addresses.clear();
+        let len = stream.read_u32();
+        for _ in 0..len {
+            let mut addr = ADDRESS_NULL;
+            addr.read_params(stream);
+            self.addresses.push(addr);
+        }
+
+        self.tips.clear();
+        let len = stream.read_u32();
+        for _ in 0..len {
+            let mut v = HASH_NULL;
+            v.read_params(stream);
+            self.tips.push(v);
+        }
+
+        self.threshold = stream.read_byte();
+    }
 }
 
 /**
@@ -169,7 +211,7 @@ impl Serializable for GetBalances {
 */
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct Balances {
-    pub balances: Vec<u32>,
+    pub balances: Vec<u64>,
 }
 
 impl Balances { pub const SVUID : i32 = 8; }
@@ -179,7 +221,8 @@ impl Serializable for Balances {
         stream.write_i32(Self::SVUID);
         stream.write_u32(self.balances.len() as u32);
         for b in &self.balances {
-            b.serialize_to_stream(stream);
+//            b.serialize_to_stream(stream);
+            stream.write_u64(*b);
         }
     }
 
@@ -188,7 +231,7 @@ impl Serializable for Balances {
 
         let len = stream.read_u32();
         for _ in 0..len {
-            let balance = stream.read_u32();
+            let balance = stream.read_u64();
             self.balances.push(balance);
         }
     }

@@ -19,6 +19,7 @@ use model::transaction::*;
 use model::*;
 use std::collections::{HashMap, HashSet};
 use model::transaction_validator::TransactionError;
+use std::collections::LinkedList;
 
 #[macro_export]
 macro_rules! format_success_response {
@@ -168,6 +169,84 @@ impl API {
         }
     }
 
+    fn get_balances(pmnc: &mut PaymonCoin,
+                    addresses: Vec<Address>,
+                    mut hashes: Vec<Hash>,
+                    threshold: u8) -> Result<Vec<u64>, TransactionError> {
+        if threshold <= 0 || threshold > 100 {
+            return Err(TransactionError::InvalidData);
+        }
+
+//        let addresses: LinkedList<Address> = addrss.iter().map(|address| *address).collect::<LinkedList<Address>>();
+        let mut hashes = Vec::<Hash>::new();
+        let mut balances = HashMap::<Address, i64>::new();
+        let mut index;
+
+        if let Ok(mls) = pmnc.milestone.lock() {
+            index = mls.latest_snapshot.index;
+            if hashes.is_empty() {
+                hashes.push(mls.latest_solid_subhive_milestone);
+            }
+        } else {
+            panic!("broken milestone mutex");
+        }
+
+        for address in addresses.iter() {
+            let mut value;
+            if let Ok(mls) = pmnc.milestone.lock() {
+                value = mls.latest_snapshot.get_balance(address).unwrap_or(0);
+            } else {
+                panic!("broken milestone mutex");
+            }
+            balances.insert(*address, value);
+        }
+
+        let mut visited_hashes = HashSet::<Hash>::new();
+        let mut diff = HashMap::<Address, i64>::new();
+
+        for tip in hashes.iter() {
+            if let Ok(hive) = pmnc.hive.lock() {
+                if !hive.exists_transaction(*tip) {
+                    return Err(TransactionError::InvalidAddress);
+                }
+            } else {
+                panic!("broken hive mutex");
+            }
+
+            if let Ok(mut lv) = pmnc.ledger_validator.lock() {
+                if !lv.update_diff(&mut visited_hashes, &mut diff, *tip)? {
+                    return Err(TransactionError::InvalidAddress);
+                }
+            } else {
+                panic!("broken hive mutex");
+            }
+        }
+
+        diff.iter().for_each(|(key, value)| {
+            let mut new_value = 0;
+            let has_value;
+
+            match balances.get(key) {
+                Some(v) => {
+                    new_value = v + value;
+                    has_value = true;
+                }
+                None => {
+                    has_value = false;
+                }
+            }
+
+            if has_value {
+                balances.insert(*key, new_value);
+            }
+        });
+
+        let elements = addresses.iter().map(|address| *balances.get(address).unwrap() as u64)
+            .collect::<Vec<u64>>();
+
+        return Ok(elements);
+    }
+
     fn invalid_subtangle_status(pmnc: &mut PaymonCoin) -> bool {
         if let Ok(milestone) = pmnc.milestone.lock() {
             return milestone.latest_solid_subhive_milestone_index == MILESTONE_START_INDEX;
@@ -299,10 +378,31 @@ impl API {
                             }
                             "getBalances" => {
                                 println!("getBalances");
-                                let result = rpc::Balances {
-                                    balances: vec![1000u32, 2000u32, ]
+
+                                match json::decode::<rpc::GetBalances>(&json_str) {
+                                    Ok(object) => {
+                                        unsafe {
+                                            if let Some(ref arc) = PMNC {
+                                                if let Ok(ref mut pmnc) = arc.lock() {
+                                                    match API::get_balances(pmnc,
+                                                                            object.addresses,
+                                                                            object.tips,
+                                                                            object.threshold) {
+                                                        Ok(balances) => {
+                                                            let result = rpc::Balances {
+                                                                balances
+                                                            };
+                                                            return format_success_response!(result);
+                                                        },
+                                                        _ => return Ok(API::format_error_response("Internal error"))
+                                                    }
+                                                }
+                                            }
+                                        };
+                                        return Ok(API::format_error_response("Internal error"));
+                                    }
+                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
                                 };
-                                format_success_response!(result)
                             }
                             _ => Ok(API::format_error_response("Unknown 'method' parameter"))
                         }

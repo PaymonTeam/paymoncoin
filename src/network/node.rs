@@ -34,7 +34,7 @@ pub struct Node {
     config: Configuration,
     node_tx: Sender<()>,
     pmnc_rx: Receiver<()>,
-    broadcast_queue: AM<VecDeque<Transaction>>,
+    pub broadcast_queue: AM<VecDeque<Transaction>>,
     receive_queue: AM<VecDeque<Transaction>>,
     running: Arc<AtomicBool>,
     thread_join_handles: VecDeque<JoinHandle<()>>,

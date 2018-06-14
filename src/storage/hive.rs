@@ -33,7 +33,7 @@ use std::str::FromStr;
 
 static CF_NAMES: [&str; 7] = ["transaction", "transaction-metadata", "address",
     "address_transactions", "approvee", "milestone", "state_diff"];
-pub const SUPPLY : u32 = 10_000;
+pub const SUPPLY : u64 = 10_000;
 
 pub enum Error {
     IO(io::Error),
