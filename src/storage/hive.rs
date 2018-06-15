@@ -314,7 +314,7 @@ impl Hive {
     }
 
     pub fn storage_load_milestone(&self, index: u32) -> Option<MilestoneObject> {
-        let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize]).unwrap
+        let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Transaction as usize]).unwrap
         (), &get_serialized_object(&index, false));
         match vec {
             Ok(res) => {
@@ -423,8 +423,7 @@ impl Hive {
             Ok(res) => {
                 let buf = SerializedBuffer::from_slice(&res?);
                 if buf.len() < HASH_SIZE || buf.len() % HASH_SIZE != 0 {
-                    return Some(Vec::new());
-//                    return None;
+                    return None;
                 }
                 let mut arr = vec![];
                 let mut pos = 0;
@@ -438,8 +437,7 @@ impl Hive {
             },
             Err(e) => {
                 warn!("get transaction from storage error ({})", e);
-                Some(Vec::new())
-//                None
+                None
             }
         }
     }

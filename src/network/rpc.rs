@@ -237,4 +237,131 @@ impl Serializable for FindTransactionByAddress {
         }
     }
 }
+#[derive(RustcDecodable, RustcEncodable)]
+pub struct FindTransaction {
+    pub hashes: Vec<Hash>,
+}
+
+impl FindTransaction { pub const SVUID : i32 = 11; }
+
+impl Serializable for FindTransaction {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
+        stream.write_u32(self.hashes.len() as u32);
+        for hash in &self.hashes {
+            hash.serialize_to_stream(stream);
+        }
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let len = stream.read_u32();
+        for _ in 0..len {
+            if stream.read_bool() {
+                let mut hash: Hash = HASH_NULL;
+                stream.read_bytes(&mut *hash, HASH_SIZE);
+                self.hashes.push(hash);
+            } else {
+                self.hashes.push(HASH_NULL);
+            }
+        }
+    }
+}
+#[derive(RustcDecodable, RustcEncodable)]
+pub struct GetNewInclusionStateStatement {
+    pub list_tx: LinkedList<Hash>,
+    pub list_tps: LinkedList<Hash>
+}
+
+impl GetNewInclusionStateStatement { pub const SVUID : i32 = 12; }
+
+impl Serializable for GetNewInclusionStateStatement {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
+        stream.write_u32(self.list_tx.len() as u32);
+        for hash in &self.list_tx {
+            hash.serialize_to_stream(stream);
+        }
+        stream.write_u32(self.list_tps.len() as u32);
+        for hash in &self.list_tps {
+            hash.serialize_to_stream(stream);
+        }
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let len_tx = stream.read_u32();
+        for _ in 0..len_tx {
+            if stream.read_bool() {
+                let mut hash: Hash = HASH_NULL;
+                stream.read_bytes(&mut *hash, HASH_SIZE);
+                self.list_tx.push_back(hash);
+            } else {
+                self.list_tx.push_back(HASH_NULL);
+            }
+        }
+        let len_tps = stream.read_u32();
+        for _ in 0..len_tps {
+            if stream.read_bool() {
+                let mut hash: Hash = HASH_NULL;
+                stream.read_bytes(&mut *hash, HASH_SIZE);
+                self.list_tps.push_back(hash);
+            } else {
+                self.list_tps.push_back(HASH_NULL);
+            }
+        }
+    }
+}
+#[derive(RustcDecodable, RustcEncodable)]
+pub struct GetInclusionStates {
+    pub booleans: Vec<bool>
+}
+
+impl GetInclusionStates { pub const SVUID : i32 = 13; }
+
+impl Serializable for GetInclusionStates {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
+        stream.write_u32(self.booleans.len() as u32);
+        for b in &self.booleans {
+            b.serialize_to_stream(stream);
+        }
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let len = stream.read_u32();
+        for _ in 0..len {
+            let b = stream.read_bool();
+            self.booleans.push(b);
+        }
+    }
+}
+
+#[derive(RustcDecodable, RustcEncodable)]
+pub struct GetTips {
+    pub hashes: LinkedList<Hash>
+}
+
+impl GetTips { pub const SVUID : i32 = 14; }
+
+impl Serializable for GetTips {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
+        stream.write_u32(self.hashes.len() as u32);
+        for hash in &self.hashes {
+            hash.serialize_to_stream(stream);
+        }
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let len = stream.read_u32();
+        for _ in 0..len {
+            if stream.read_bool() {
+                let mut hash: Hash = HASH_NULL;
+                stream.read_bytes(&mut *hash, HASH_SIZE);
+                self.hashes.push_back(hash);
+            } else {
+                self.hashes.push_back(HASH_NULL);
+            }
+        }
+    }
+}
 

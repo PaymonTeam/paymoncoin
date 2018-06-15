@@ -149,7 +149,7 @@ fn send_coins(addr: Address, amount: u32) {
         tag: HASH_NULL,
         timestamp: time::SystemTime::now().elapsed().unwrap().as_secs(),
         value: amount,
-        data_type: TransactionType::Full,
+        data_type: TransactionType::HashOnly,
         signature: Signature(vec![]),
         signature_pubkey: PublicKey(vec![]),
         snapshot: 0,

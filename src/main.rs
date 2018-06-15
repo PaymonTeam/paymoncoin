@@ -7,7 +7,6 @@ extern crate rustc_serialize;
 extern crate iron;
 extern crate ntrumls;
 extern crate linked_hash_set;
-extern crate crypto;
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;

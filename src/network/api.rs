@@ -51,7 +51,7 @@ pub struct APIRequest<T: Serializable> {
     pub method: String,
     pub object: T,
 }
-
+#[derive(Debug)]
 pub enum APIError{
     InvalidStringParametr,
     TipAbsent,
@@ -191,7 +191,8 @@ impl API {
                 if !o.contains_key("method") {
                     return Ok(API::format_error_response("No 'method' parameter"));
                 }
-
+                let json_object_clone = Some(o.clone());
+                let json_str_clone = json_str.clone();
                 match o.get("method").unwrap().as_string() {
                     Some(method) => {
                         match method {
@@ -258,6 +259,65 @@ impl API {
                                 };
                                 format_success_response!(result)
                             }
+                            "getTips" => {
+                                unsafe {
+                                    if let Some(ref arc) = PMNC {
+                                        match API::get_tips(arc.clone()){
+                                            Ok(tips) => {
+                                                let result = rpc::GetTips {
+                                                    hashes: tips
+                                                };
+                                                return format_success_response!(result);
+                                            },
+                                            _ => return Ok(API::format_error_response("Internal error"))
+                                        }
+                                    } else {
+                                        panic!("None returned")
+                                    }
+                                }
+                            }
+                            "findTransactions" => {
+                                unsafe {
+                                    if let Some(ref arc) = PMNC {
+                                        match API::find_transaction_statement(arc.clone(),
+                                                                              json_object_clone,
+                                                                              &json_str_clone) {
+                                            Ok(vec) => {
+                                                let result = rpc::FindTransaction {
+                                                    hashes: vec
+                                                };
+                                                return format_success_response!(result);
+                                            },
+                                            _ => return Ok(API::format_error_response("Internal error"))
+                                        }
+                                    } else {
+                                        panic!("None returned")
+                                    }
+                                }
+                            }
+                            "getInclusionStates" => {
+                                match json::decode::<rpc::GetNewInclusionStateStatement>(&json_str) {
+                                    Ok(object) => {
+                                        unsafe {
+                                            if let Some(ref arc) = PMNC {
+                                                match API::get_new_inclusion_state_statement(&object.list_tx.clone(),
+                                                                                             &object.list_tps.clone()) {
+                                                    Ok(vec) => {
+                                                        let result = rpc::GetInclusionStates {
+                                                            booleans: vec
+                                                        };
+                                                        return format_success_response!(result);
+                                                    },
+                                                    _ => return Ok(API::format_error_response("Internal error"))
+                                                }
+                                            } else {
+                                                panic!("None returned")
+                                            }
+                                        }
+                                    }
+                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                }
+                            }
                             _ => Ok(API::format_error_response("Unknown 'method' parameter"))
                         }
                     }
@@ -270,8 +330,8 @@ impl API {
 
     pub fn shutdown(&mut self) {}
 
-    pub fn get_tips(&self) -> Result<LinkedList<Hash>, &'static str> {
-        if let Ok(paymoncoin) = self.paymoncoin.lock() {
+    pub fn get_tips(pmnc: AM<PaymonCoin>) -> Result<LinkedList<Hash>, APIError> {
+        if let Ok(ref mut paymoncoin) = pmnc.lock() {
             if let Ok(tips_vm) = paymoncoin.tips_vm.lock() {
                 return Ok(tips_vm.get_tips().iter().map(|x| *x).collect::<LinkedList<Hash>>());
             } else {
@@ -367,7 +427,7 @@ impl API {
         return Ok((elements, hashes, index));
     }
 
-    pub fn find_transaction_statement (& self, json_obj: Option<json::Object>, json_str: &str) -> Result<Vec<Hash>, APIError> {
+    pub fn find_transaction_statement (pmnc: AM<PaymonCoin>, json_obj: Option<json::Object>, json_str: &str) -> Result<Vec<Hash>, APIError> {
         let mut found_transactions: HashSet<Hash> = HashSet::new();
         let mut contains_key = false;
         let mut request = match json_obj{
@@ -399,7 +459,7 @@ impl API {
                 Ok(obj) => {
                     let mut addresses: HashSet<Address> = obj.list_adr.iter().map(|adr| *adr).collect::<HashSet<Address>>();
                     for address in addresses.iter() {
-                        if let Ok(pmc) = self.paymoncoin.lock() {
+                        if let Ok(pmc) = pmnc.lock() {
                             if let Ok(hive) = pmc.hive.lock() {
                                 let hashes = hive.load_address_transactions(address);
                                 match hashes {
@@ -458,7 +518,7 @@ impl API {
                 Ok(obj) => {
                     let approvees: HashSet<Hash> = obj.list_hash.iter().map(|hash| *hash).collect::<HashSet<Hash>>();
                     for approvee in approvees.iter() {
-                        if let Ok(pmc) = self.paymoncoin.lock() {
+                        if let Ok(pmc) = pmnc.lock() {
                             let hashes = Transaction::from_hash(*approvee).get_approvers(&pmc.hive);
                             for h in hashes.iter() {
                                 approvee_transactions.insert(*h);
