@@ -38,12 +38,13 @@ impl AfterMiddleware for DefaultContentType {
 
 static mut PMNC: Option<AM<PaymonCoin>> = None;
 const MILESTONE_START_INDEX: u32 = 0;
+const MIN_RANDOM_WALKS: u32 = 5;
+const MAX_RANDOM_WALKS: u32 = 27;
+const MAX_DEPTH: u32 = 15;
 
 pub struct API {
     listener: Listening,
     running: Arc<(Mutex<bool>, Condvar)>,
-    paymoncoin: AM<PaymonCoin>,
-
 }
 
 #[derive(RustcDecodable, RustcEncodable)]
@@ -69,7 +70,7 @@ impl API {
         let listener = Iron::new(chain)
             .http(format!("127.0.0.1:{}", port))
             .expect("failed to start API server");
-        let pmnc_clone = pmnc.clone();
+
         unsafe {
             PMNC = Some(pmnc);
         }
@@ -77,7 +78,6 @@ impl API {
         Self {
             listener,
             running,
-            paymoncoin: pmnc_clone
         }
     }
 
@@ -94,8 +94,12 @@ impl API {
         Response::with((iron::status::Ok, format!("{{\"error\":\"{}\"}}\n", err.to_string())))
     }
 
-    fn get_transactions_to_approve(pmnc: &mut PaymonCoin, mut depth: u32, mut num_walks: u32) ->
-    Result<Option<(Hash, Hash)>, TransactionError> {
+    fn get_transactions_to_approve(pmnc: &mut PaymonCoin, mut depth: u32, reference: Option<Hash>, mut num_walks: u32) ->
+                                                                                              Result<Option<(Hash, Hash)>, TransactionError> {
+        if num_walks > MAX_RANDOM_WALKS || num_walks == 0 {
+            num_walks = MAX_RANDOM_WALKS;
+        }
+
         let max_depth = match pmnc.tips_manager.lock() {
             Ok(tm) => tm.get_max_depth(),
             Err(_) => panic!("broken tips manager mutex")
@@ -109,9 +113,30 @@ impl API {
         let mut h0: Option<Hash>;
         let mut h1: Option<Hash>;
 
+        if let Some(hash) = reference {
+            let hive = match pmnc.hive.lock() {
+                Ok(h) => h,
+                _ => panic!("broken hive mutex")
+            };
+            if !hive.exists_transaction(hash) {
+                return Err(TransactionError::InvalidHash);
+            } else {
+                let milestone_latest_solid_subhive_milestone_index = match pmnc.milestone.lock() {
+                    Ok(l) => l.latest_solid_subhive_milestone_index,
+                    _ => panic!("broken milestone mutex")
+                };
+
+                let tx = hive.storage_load_transaction(&hash).unwrap();
+
+                if tx.object.snapshot != 0 && tx.object.snapshot < milestone_latest_solid_subhive_milestone_index - depth {
+                    return Err(TransactionError::InvalidTimestamp);
+                }
+            }
+        }
+
         if let Ok(tips_manager) = pmnc.tips_manager.lock() {
-            h0 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, HASH_NULL,
-                                                     HASH_NULL, depth, num_walks)?;
+            h0 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, reference,
+                                                     None, depth, num_walks)?;
         } else {
             panic!("broken tips manager mutex");
         }
@@ -125,8 +150,8 @@ impl API {
         }
 
         if let Ok(tips_manager) = pmnc.tips_manager.lock() {
-            h1 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, HASH_NULL,
-                                                     h0.unwrap(), depth, num_walks)?;
+            h1 = tips_manager.transaction_to_approve(&mut visited_hashes, &mut diff, reference,
+                                                     h0, depth, num_walks)?;
         } else {
             panic!("broken tips manager mutex");
         }
@@ -150,6 +175,84 @@ impl API {
         } else {
             panic!("broken tips manager mutex");
         }
+    }
+
+    fn get_balances(pmnc: &mut PaymonCoin,
+                    addresses: Vec<Address>,
+                    mut hashes: Vec<Hash>,
+                    threshold: u8) -> Result<Vec<u64>, TransactionError> {
+        if threshold <= 0 || threshold > 100 {
+            return Err(TransactionError::InvalidData);
+        }
+
+//        let addresses: LinkedList<Address> = addrss.iter().map(|address| *address).collect::<LinkedList<Address>>();
+        let mut hashes = Vec::<Hash>::new();
+        let mut balances = HashMap::<Address, i64>::new();
+        let mut index;
+
+        if let Ok(mls) = pmnc.milestone.lock() {
+            index = mls.latest_snapshot.index;
+            if hashes.is_empty() {
+                hashes.push(mls.latest_solid_subhive_milestone);
+            }
+        } else {
+            panic!("broken milestone mutex");
+        }
+
+        for address in addresses.iter() {
+            let mut value;
+            if let Ok(mls) = pmnc.milestone.lock() {
+                value = mls.latest_snapshot.get_balance(address).unwrap_or(0);
+            } else {
+                panic!("broken milestone mutex");
+            }
+            balances.insert(*address, value);
+        }
+
+        let mut visited_hashes = HashSet::<Hash>::new();
+        let mut diff = HashMap::<Address, i64>::new();
+
+        for tip in hashes.iter() {
+            if let Ok(hive) = pmnc.hive.lock() {
+                if !hive.exists_transaction(*tip) {
+                    return Err(TransactionError::InvalidAddress);
+                }
+            } else {
+                panic!("broken hive mutex");
+            }
+
+            if let Ok(mut lv) = pmnc.ledger_validator.lock() {
+                if !lv.update_diff(&mut visited_hashes, &mut diff, *tip)? {
+                    return Err(TransactionError::InvalidAddress);
+                }
+            } else {
+                panic!("broken hive mutex");
+            }
+        }
+
+        diff.iter().for_each(|(key, value)| {
+            let mut new_value = 0;
+            let has_value;
+
+            match balances.get(key) {
+                Some(v) => {
+                    new_value = v + value;
+                    has_value = true;
+                }
+                None => {
+                    has_value = false;
+                }
+            }
+
+            if has_value {
+                balances.insert(*key, new_value);
+            }
+        });
+
+        let elements = addresses.iter().map(|address| *balances.get(address).unwrap() as u64)
+            .collect::<Vec<u64>>();
+
+        return Ok(elements);
     }
 
     fn invalid_subtangle_status(pmnc: &mut PaymonCoin) -> bool {
@@ -217,16 +320,47 @@ impl API {
                             "getTransactionsToApprove" => {
                                 println!("getTransactionsToApprove");
                                 match json::decode::<rpc::GetTransactionsToApprove>(&json_str) {
-                                    Ok(bt) => {
+                                    Ok(object) => {
                                         unsafe {
                                             if let Some(ref arc) = PMNC {
                                                 if let Ok(ref mut pmnc) = arc.lock() {
                                                     if API::invalid_subtangle_status(pmnc) {
                                                         return Ok(API::format_error_response("The subhive has not been updated yet"));
                                                     }
-                                                    let depth = 3;
-                                                    let num_walks = 1;
-                                                    match API::get_transactions_to_approve(pmnc, depth, num_walks) {
+                                                    use rand::{thread_rng, Rng};
+//                                                    let depth = 3;
+//                                                    let num_walks = thread_rng().gen_range(2, 5);
+                                                    let depth = object.depth;
+                                                    let mut num_walks = match object.num_walks {
+                                                        0 => 1,
+                                                        v => v
+                                                    };
+                                                    if num_walks < MIN_RANDOM_WALKS {
+                                                        num_walks = MIN_RANDOM_WALKS;
+                                                    }
+
+//                                                    let reference = match object.reference {
+//                                                        v => Some(v),
+//                                                        HASH_NULL => None,
+//                                                    };
+
+                                                    let reference;
+                                                    if object.reference == HASH_NULL {
+                                                        reference = None;
+                                                    } else {
+                                                        reference = Some(object.reference);
+                                                    }
+
+                                                    if depth < 0 || (reference.is_none() && depth == 0) {
+                                                        return Ok(API::format_error_response("Invalid depth input"));
+                                                    }
+
+                                                    info!("num_walks={}", num_walks);
+
+                                                    match API::get_transactions_to_approve(pmnc,
+                                                                                           depth,
+                                                                                           reference,
+                                                                                           num_walks) {
                                                         Ok(Some((trunk, branch))) => {
                                                             let result = rpc::TransactionsToApprove {
                                                                 branch,
@@ -255,7 +389,7 @@ impl API {
                             "getBalances" => {
                                 println!("getBalances");
                                 let result = rpc::Balances {
-                                    balances: vec![1000u32, 2000u32, ]
+                                    balances: vec![1000u64, 2000u64, ]
                                 };
                                 format_success_response!(result)
                             }
@@ -300,8 +434,8 @@ impl API {
                                     Ok(object) => {
                                         unsafe {
                                             if let Some(ref arc) = PMNC {
-                                                match API::get_new_inclusion_state_statement(&object.list_tx.clone(),
-                                                                                             &object.list_tps.clone()) {
+                                                match API::get_new_inclusion_state_statement(&object.transactions.clone(),
+                                                                                             &object.tips.clone()) {
                                                     Ok(vec) => {
                                                         let result = rpc::GetInclusionStates {
                                                             booleans: vec
@@ -341,7 +475,7 @@ impl API {
             panic!("broken paymoncoin mutex");
         }
     }
-    pub fn get_balances(&self, addrss: LinkedList<Address>, tips: LinkedList<Hash>, threshold: i32) ->
+    /*pub fn get_balances(&self, addrss: LinkedList<Address>, tips: LinkedList<Hash>, threshold: i32) ->
     Result<(LinkedList<i32>, LinkedList<Hash>, u32), TransactionError> {
         if threshold <= 0 || threshold > 100 {
             return Err(TransactionError::InvalidData);
@@ -426,13 +560,16 @@ impl API {
 
         return Ok((elements, hashes, index));
     }
-
+*/
     pub fn find_transaction_statement (pmnc: AM<PaymonCoin>, json_obj: Option<json::Object>, json_str: &str) -> Result<Vec<Hash>, APIError> {
         let mut found_transactions: HashSet<Hash> = HashSet::new();
         let mut contains_key = false;
         let mut request = match json_obj{
             Some(map) => map,
-            None => {return Err(APIError::InvalidRequest);}
+            None => {
+                //println!("570");
+                return Err(APIError::InvalidRequest);
+            }
         };
 
         let mut bundles_transactions: HashSet<Hash> = HashSet::new();
@@ -440,7 +577,7 @@ impl API {
         if request_clone.contains_key("bundles") {
             match json::decode::<rpc::FindTransactionByHash>(&json_str) {
                 Ok(obj) => {
-                    let bundles: HashSet<Hash> = obj.list_hash.iter().map(|hash| *hash).collect::<HashSet<Hash>>();
+                    let bundles: HashSet<Hash> = obj.hashes.iter().map(|hash| *hash).collect::<HashSet<Hash>>();
                     for bundle in bundles.iter() {
                         // TODO bundle
                         //bundles_transactions.addAll(BundleViewModel.load(instance.tangle, new Hash(bundle)).getHashes());
@@ -450,14 +587,18 @@ impl API {
                     }
                     contains_key = true;
                 }
-                Err(e) => return Err(APIError::IncorrectJsonParsing)
+                Err(e) => {
+                    //println!("588");
+                    return Err(APIError::IncorrectJsonParsing);
+                }
             }
         }
         let mut addresses_transactions: HashSet<Hash> = HashSet::new();
         if request_clone.contains_key("addresses") {
+
             match json::decode::<rpc::FindTransactionByAddress>(&json_str) {
                 Ok(obj) => {
-                    let mut addresses: HashSet<Address> = obj.list_adr.iter().map(|adr| *adr).collect::<HashSet<Address>>();
+                    let mut addresses: HashSet<Address> = obj.addresses.iter().map(|adr| *adr).collect::<HashSet<Address>>();
                     for address in addresses.iter() {
                         if let Ok(pmc) = pmnc.lock() {
                             if let Ok(hive) = pmc.hive.lock() {
@@ -483,7 +624,10 @@ impl API {
                     }
                     contains_key = true;
                 }
-                Err(e) => return Err(APIError::IncorrectJsonParsing)
+                Err(e) => {
+                    println!("627");
+                    return Err(APIError::IncorrectJsonParsing);
+                }
             }
         }
 
@@ -491,7 +635,7 @@ impl API {
         if request_clone.contains_key("tags") {
             match json::decode::<rpc::FindTransactionByHash>(&json_str) {
                 Ok(obj) => {
-                    let mut tags: HashSet<Hash> = obj.list_hash.iter().map(|hash| *hash).collect::<HashSet<Hash>>();
+                    let mut tags: HashSet<Hash> = obj.hashes.iter().map(|hash| *hash).collect::<HashSet<Hash>>();
                     for tag in tags.iter() {
                         //TODO
                         //tag = padTag(tag);
@@ -508,7 +652,10 @@ impl API {
                     }
                     contains_key = true;
                 }
-                Err(e) => return Err(APIError::IncorrectJsonParsing)
+                Err(e) => {
+                    //println!("646");
+                    return Err(APIError::IncorrectJsonParsing);
+                }
             }
         }
 
@@ -516,7 +663,7 @@ impl API {
         if request_clone.contains_key("approvees") {
             match json::decode::<rpc::FindTransactionByHash>(&json_str) {
                 Ok(obj) => {
-                    let approvees: HashSet<Hash> = obj.list_hash.iter().map(|hash| *hash).collect::<HashSet<Hash>>();
+                    let approvees: HashSet<Hash> = obj.hashes.iter().map(|hash| *hash).collect::<HashSet<Hash>>();
                     for approvee in approvees.iter() {
                         if let Ok(pmc) = pmnc.lock() {
                             let hashes = Transaction::from_hash(*approvee).get_approvers(&pmc.hive);
@@ -530,11 +677,16 @@ impl API {
                     }
                     contains_key = true;
                 }
-                Err(e) => return Err(APIError::IncorrectJsonParsing)
+
+                Err(e) => {
+                    //println!("668");
+                    return Err(APIError::IncorrectJsonParsing);
+                }
             }
         }
 
         if !contains_key {
+            //println!("672");
             return Err(APIError::InvalidData);
         }
 

@@ -69,6 +69,7 @@ impl Serializable for AttachTransaction {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let _ = stream.read_i32();
         self.transaction.read_params(stream);
     }
 }
@@ -90,6 +91,7 @@ impl Serializable for BroadcastTransaction {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let _ = stream.read_i32();
         self.transaction.read_params(stream);
     }
 }
@@ -98,14 +100,38 @@ impl Serializable for BroadcastTransaction {
     GetTransactionsToApprove
 */
 #[derive(RustcDecodable, RustcEncodable)]
-pub struct GetTransactionsToApprove {}
+pub struct GetTransactionsToApprove {
+    pub depth: u32,
+    pub num_walks: u32,
+    pub reference: Hash
+}
 
 impl GetTransactionsToApprove { pub const SVUID : i32 = 5; }
 
 impl Serializable for GetTransactionsToApprove {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) { stream.write_i32(Self::SVUID); }
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
+        stream.write_u32(self.depth);
+        stream.write_u32(self.num_walks);
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) { }
+        if self.reference == HASH_NULL {
+            stream.write_bool(true);
+            stream.write_bytes(&self.reference);
+        } else {
+            stream.write_bool(false);
+        }
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        self.depth = stream.read_u32();
+        self.num_walks = stream.read_u32();
+
+        if stream.read_bool() {
+            stream.read_bytes(&mut self.reference, HASH_SIZE);
+        } else {
+            self.reference = HASH_NULL;
+        }
+    }
 }
 
 /**
@@ -127,7 +153,9 @@ impl Serializable for TransactionsToApprove {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let _ = stream.read_i32();
         self.trunk.read_params(stream);
+        let _ = stream.read_i32();
         self.branch.read_params(stream);
     }
 }
@@ -136,14 +164,52 @@ impl Serializable for TransactionsToApprove {
     GetBalances
 */
 #[derive(RustcDecodable, RustcEncodable)]
-pub struct GetBalances {}
+pub struct GetBalances {
+    pub addresses: Vec<Address>,
+    pub tips: Vec<Hash>,
+    pub threshold: u8,
+}
 
 impl GetBalances { pub const SVUID : i32 = 7; }
 
 impl Serializable for GetBalances {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) { stream.write_i32(Self::SVUID); }
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) { }
+        stream.write_u32(self.addresses.len() as u32);
+        for addr in &self.addresses {
+//            addr.serialize_to_stream(stream);
+            stream.write_bytes(&addr);
+        }
+
+        stream.write_u32(self.tips.len() as u32);
+        for v in &self.tips {
+//            v.serialize_to_stream(stream);
+            stream.write_bytes(&v);
+        }
+
+        stream.write_byte(self.threshold);
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        self.addresses.clear();
+        let len = stream.read_u32();
+        for _ in 0..len {
+            let mut addr = ADDRESS_NULL;
+            addr.read_params(stream);
+            self.addresses.push(addr);
+        }
+
+        self.tips.clear();
+        let len = stream.read_u32();
+        for _ in 0..len {
+            let mut v = HASH_NULL;
+            v.read_params(stream);
+            self.tips.push(v);
+        }
+
+        self.threshold = stream.read_byte();
+    }
 }
 
 /**
@@ -151,7 +217,7 @@ impl Serializable for GetBalances {
 */
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct Balances {
-    pub balances: Vec<u32>,
+    pub balances: Vec<u64>,
 }
 
 impl Balances { pub const SVUID : i32 = 8; }
@@ -161,7 +227,8 @@ impl Serializable for Balances {
         stream.write_i32(Self::SVUID);
         stream.write_u32(self.balances.len() as u32);
         for b in &self.balances {
-            b.serialize_to_stream(stream);
+//            b.serialize_to_stream(stream);
+            stream.write_u64(*b);
         }
     }
 
@@ -170,38 +237,33 @@ impl Serializable for Balances {
 
         let len = stream.read_u32();
         for _ in 0..len {
-            let balance = stream.read_u32();
+            let balance = stream.read_u64();
             self.balances.push(balance);
         }
     }
 }
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct FindTransactionByHash {
-    pub list_hash: LinkedList<Hash>,
+    pub hashes: LinkedList<Hash>,
 }
 impl FindTransactionByHash { pub const SVUID : i32 = 9; }
 
 impl Serializable for FindTransactionByHash {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
         stream.write_i32(Self::SVUID);
-        stream.write_u32(self.list_hash.len() as u32);
-        for hash in &self.list_hash {
-            hash.serialize_to_stream(stream);
+        stream.write_u32(self.hashes.len() as u32);
+        for hash in &self.hashes {
+            stream.write_bytes(&hash);
         }
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        self.list_hash.clear();
-
+        self.hashes.clear();
         let len = stream.read_u32();
         for _ in 0..len {
-            if stream.read_bool() {
-                let mut hash: Hash = HASH_NULL;
-                stream.read_bytes(&mut *hash, HASH_SIZE);
-                self.list_hash.push_back(hash);
-            } else {
-                self.list_hash.push_back(HASH_NULL);
-            }
+            let mut hash = HASH_NULL;
+            hash.read_params(stream);
+            self.hashes.push_back(hash);
         }
     }
 
@@ -209,31 +271,26 @@ impl Serializable for FindTransactionByHash {
 }
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct FindTransactionByAddress {
-    pub list_adr: LinkedList<Address>,
+    pub addresses: LinkedList<Address>,
 }
 impl FindTransactionByAddress { pub const SVUID : i32 = 10; }
 
 impl Serializable for FindTransactionByAddress {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
         stream.write_i32(Self::SVUID);
-        stream.write_u32(self.list_adr.len() as u32);
-        for adr in &self.list_adr {
-            adr.serialize_to_stream(stream);
+        stream.write_u32(self.addresses.len() as u32);
+        for addr in &self.addresses {
+            stream.write_bytes(&addr);
         }
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        self.list_adr.clear();
-
+        self.addresses.clear();
         let len = stream.read_u32();
         for _ in 0..len {
-            if stream.read_bool() {
-                let mut adr: Address = ADDRESS_NULL;
-                stream.read_bytes(&mut adr, ADDRESS_SIZE);
-                self.list_adr.push_back(adr);
-            } else {
-                self.list_adr.push_back(ADDRESS_NULL);
-            }
+            let mut addr = ADDRESS_NULL;
+            addr.read_params(stream);
+            self.addresses.push_back(addr);
         }
     }
 }
@@ -254,59 +311,49 @@ impl Serializable for FindTransaction {
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        self.hashes.clear();
         let len = stream.read_u32();
         for _ in 0..len {
-            if stream.read_bool() {
-                let mut hash: Hash = HASH_NULL;
-                stream.read_bytes(&mut *hash, HASH_SIZE);
-                self.hashes.push(hash);
-            } else {
-                self.hashes.push(HASH_NULL);
-            }
+            let mut v = HASH_NULL;
+            v.read_params(stream);
+            self.hashes.push(v);
         }
     }
 }
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct GetNewInclusionStateStatement {
-    pub list_tx: LinkedList<Hash>,
-    pub list_tps: LinkedList<Hash>
+    pub transactions: LinkedList<Hash>,
+    pub tips: LinkedList<Hash>
 }
 
 impl GetNewInclusionStateStatement { pub const SVUID : i32 = 12; }
-
 impl Serializable for GetNewInclusionStateStatement {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
         stream.write_i32(Self::SVUID);
-        stream.write_u32(self.list_tx.len() as u32);
-        for hash in &self.list_tx {
+        stream.write_u32(self.transactions.len() as u32);
+        for hash in &self.transactions {
             hash.serialize_to_stream(stream);
         }
-        stream.write_u32(self.list_tps.len() as u32);
-        for hash in &self.list_tps {
+        stream.write_u32(self.tips.len() as u32);
+        for hash in &self.tips {
             hash.serialize_to_stream(stream);
         }
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        self.transactions.clear();
         let len_tx = stream.read_u32();
         for _ in 0..len_tx {
-            if stream.read_bool() {
-                let mut hash: Hash = HASH_NULL;
-                stream.read_bytes(&mut *hash, HASH_SIZE);
-                self.list_tx.push_back(hash);
-            } else {
-                self.list_tx.push_back(HASH_NULL);
-            }
+            let mut v = HASH_NULL;
+            v.read_params(stream);
+            self.transactions.push_back(v);
         }
+        self.transactions.clear();
         let len_tps = stream.read_u32();
         for _ in 0..len_tps {
-            if stream.read_bool() {
-                let mut hash: Hash = HASH_NULL;
-                stream.read_bytes(&mut *hash, HASH_SIZE);
-                self.list_tps.push_back(hash);
-            } else {
-                self.list_tps.push_back(HASH_NULL);
-            }
+            let mut v = HASH_NULL;
+            v.read_params(stream);
+            self.tips.push_back(v);
         }
     }
 }
