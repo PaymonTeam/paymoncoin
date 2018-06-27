@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use std::collections::HashMap;
 use model::transaction::*;
 use storage::hive;
+use model::transaction_validator::TransactionError;
 
 pub const SNAPSHOT_PUBKEY: &str = "ABC123";
 pub const SNAPSHOT_INDEX: u32 = 1;
@@ -12,14 +13,13 @@ pub static INITIAL_SNAPSHOT: Option<Mutex<Snapshot>> = None;
 // TODO: make singleton
 #[derive(Clone)]
 pub struct Snapshot {
-    pub state: HashMap<Address, i32>,
+    pub state: HashMap<Address, i64>,
     pub index: u32,
 }
 
 impl Snapshot {
     pub fn init(path: String, snapshot_sig_path: String) -> Option<Snapshot> {
         if INITIAL_SNAPSHOT.is_none() {
-
             // TODO: check file signature
 
             match Snapshot::init_initial_state(path.clone()) {
@@ -39,23 +39,23 @@ impl Snapshot {
         None
     }
 
-    fn init_initial_state(snapshot_file_path: String) -> Result<HashMap<Address, i32>,
+    fn init_initial_state(snapshot_file_path: String) -> Result<HashMap<Address, i64>,
         hive::Error> {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
         use self::rustc_serialize::hex::{ToHex, FromHex};
 
-        let mut balances = HashMap::<Address, i32>::new();
+        let mut balances = HashMap::<Address, i64>::new();
 
         let mut f = File::open("db/snapshot.dat")?;
         let file = BufReader::new(&f);
 
-        let mut total = 0i32;
+        let mut total = 0i64;
 
         for line in file.lines() {
             let l = line?;
             let arr : Vec<&str> = l.splitn(2, ' ').collect();
-            let (addr_str, balance) = (String::from(arr[0]), String::from(arr[1]).parse::<i32>()?);
+            let (addr_str, balance) = (String::from(arr[0]), String::from(arr[1]).parse::<i64>()?);
             let mut arr = [0u8; ADDRESS_SIZE];
             arr.copy_from_slice(&addr_str[1..].from_hex().expect("failed to load snapshot")[..ADDRESS_SIZE]);
             let addr = Address(arr);
@@ -76,21 +76,21 @@ impl Snapshot {
             total = v;
         }
 
-        if total != hive::SUPPLY as i32 {
+        if total != hive::SUPPLY as i64 {
             panic!("corrupted snapshot")
         }
 
         Ok(balances)
     }
 
-    pub fn get_balance(&self, addr: &Address) -> Option<i32> {
+    pub fn get_balance(&self, addr: &Address) -> Option<i64> {
         match self.state.get(addr) {
             Some(i) => Some(*i),
             None => None
         }
     }
 
-    pub fn patched_diff(&mut self, mut diff: HashMap<Address, i32>) -> HashMap<Address, i32> {
+    pub fn patched_diff(&self, mut diff: HashMap<Address, i64>) -> HashMap<Address, i64> {
         diff.into_iter().map(|(address, balance)| {
             let new_balance = match self.state.get(&address) {
                 Some(n) => *n,
@@ -101,9 +101,10 @@ impl Snapshot {
         }).collect()
     }
 
-    pub fn apply(&mut self, patch: &HashMap<Address, i32>, new_index: u32) {
-        if patch.values().sum::<i32>() != 0 {
-            panic!("Diff isn't consistent");
+    pub fn apply(&mut self, patch: &HashMap<Address, i64>, new_index: u32) -> Result<(), TransactionError> {
+        if patch.values().sum::<i64>() != 0 {
+            error!("Diff isn't consistent");
+            return Err(TransactionError::InvalidData);
         }
 
         patch.iter().for_each(|(address, balance)| {
@@ -123,9 +124,13 @@ impl Snapshot {
 
             self.state.insert(address.clone(), new_balance);
         });
+
+        self.index = new_index;
+
+        Ok(())
     }
 
-    pub fn is_consistent(state: &mut HashMap<Address, i32>) -> bool {
+    pub fn is_consistent(state: &mut HashMap<Address, i64>) -> bool {
         let mut consistent = true;
         let mut to_remove = Vec::<Address>::new();
 

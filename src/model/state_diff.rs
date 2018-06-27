@@ -3,7 +3,7 @@ use model::transaction::*;
 use network::packet::*;
 
 pub struct StateDiffObject {
-    pub state: HashMap<Address, i32>
+    pub state: HashMap<Address, i64>
 }
 
 impl StateDiffObject {
@@ -22,8 +22,10 @@ impl Serializable for StateDiffObject {
         stream.write_u32(self.state.len() as u32);
 
         for (addr, value) in &self.state {
-            stream.write_bytes(addr);
-            stream.write_i32(*value);
+            stream.write_bytes(&addr);
+            stream.write_i64(*value);
+//            addr.serialize_to_stream(stream);
+//            value.serialize_to_stream(stream);
         }
     }
 
@@ -32,8 +34,8 @@ impl Serializable for StateDiffObject {
 
         for i in 0..len {
             let mut addr = ADDRESS_NULL;
-            stream.read_bytes(&mut addr, ADDRESS_SIZE);
-            let value = stream.read_i32();
+            addr.read_params(stream);
+            let value = stream.read_i64();
             self.state.insert(addr, value);
         }
     }

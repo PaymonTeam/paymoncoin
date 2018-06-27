@@ -7,9 +7,13 @@ license = "GPL-3.0"
 [dependencies]
 rocksdb = "0.9.1"
 rust-crypto = "^0.2"
+patricia-trie = "0.1.0"
 log = "0.3.9"
 rand = "0.3.20"
 time = "0.1.39"
+hashdb = "0.1.1"
+ethcore-bigint = "0.2.1"
+memorydb = "0.1.1"
 threadpool = "1.7.1"
 rustc-serialize = "0.3.24"
 mio = "0.6.13"
@@ -23,7 +27,6 @@ rlibc = "1.0.0"
 lazy_static = "1.0"
 iron = "*"
 linked_hash_set = "0.1.2"
-
 
 [target.'cfg(windows)'.dependencies]
 native-windows-gui = "0.2.0"

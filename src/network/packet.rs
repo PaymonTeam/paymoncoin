@@ -14,6 +14,17 @@ impl Serializable for i32 {
     }
 }
 
+impl Serializable for i64 {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(0);
+        stream.write_i64(*self);
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        *self = stream.read_i64();
+    }
+}
+
 impl Serializable for u32 {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
         stream.write_i32(0);
@@ -22,6 +33,17 @@ impl Serializable for u32 {
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
         *self = stream.read_u32();
+    }
+}
+
+impl Serializable for u64 {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(0);
+        stream.write_u64(*self);
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        *self = stream.read_u64();
     }
 }
 

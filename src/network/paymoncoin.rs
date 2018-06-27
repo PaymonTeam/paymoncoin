@@ -9,7 +9,7 @@ use std::{
 };
 use storage::Hive;
 use network::node::*;
-use network::replicator_pool::ReplicatorPool;
+use network::replicator_pool::ReplicatorSourcePool;
 use model::config::{PORT, Configuration, ConfigurationSettings};
 use model::config;
 use model::TipsViewModel;
@@ -87,9 +87,11 @@ impl PaymonCoin {
     }
 
     pub fn run(&mut self) -> AM<Node> {
+        // println!("hive lock 6");
         if let Ok(mut hive) = self.hive.lock() {
             hive.init();
         }
+        // println!("hive unlock 6");
         Milestone::init(self.milestone.clone(), self.ledger_validator.clone());
         if let Ok(mut tv) = self.transaction_validator.lock() {
             tv.init(true, 9);
@@ -102,8 +104,8 @@ impl PaymonCoin {
 //        let (tx, replicator_rx) = channel::<()>();
 
         let replicator_jh = thread::spawn(move || {
-            let mut replicator_pool = ReplicatorPool::new(&config_copy, Arc::downgrade(&node_copy),
-                                                          replicator_rx);
+            let mut replicator_pool = ReplicatorSourcePool::new(&config_copy, Arc::downgrade(&node_copy),
+                                                                replicator_rx);
             replicator_pool.run();
         });
 

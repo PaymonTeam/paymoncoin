@@ -9,7 +9,7 @@ target_os = "freebsd", target_os = "ios", target_os = "macos"))]
 use mio::unix::UnixReady;
 use slab;
 
-use network::replicator::Replicator;
+use network::replicator::ReplicatorSource;
 use network::packet::{SerializedBuffer};
 use model::config::{Configuration, ConfigurationSettings, PORT};
 use network::node::Node;
@@ -19,17 +19,17 @@ use network::Neighbor;
 
 type Slab<T> = slab::Slab<T, Token>;
 
-pub struct ReplicatorPool {
+pub struct ReplicatorSourcePool {
     poll: Poll,
     sock: TcpListener,
     token: Token,
-    conns: Slab<Arc<Mutex<Replicator>>>,
+    conns: Slab<Arc<Mutex<ReplicatorSource>>>,
     events: Events,
     node: Weak<Mutex<Node>>,
     node_rx: Receiver<()>,
 }
 
-impl ReplicatorPool {
+impl ReplicatorSourcePool {
     pub fn new(config: &Configuration, node: Weak<Mutex<Node>>, node_rx: Receiver<()>) -> Self {
         let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
         let port = config.get_int(ConfigurationSettings::Port).unwrap_or(PORT as i32) as u16;
@@ -38,7 +38,7 @@ impl ReplicatorPool {
 
         debug!("Started listener on port {}", port);
 
-        ReplicatorPool {
+        ReplicatorSourcePool {
             poll: Poll::new().expect("Failed to create Poll"),
             sock,
             token: Token(1_000_000),
@@ -55,6 +55,7 @@ impl ReplicatorPool {
 
     pub fn run(&mut self) -> io::Result<()> {
         use std::time::Duration;
+        use std::thread;
 
         self.register()?;
 
@@ -85,16 +86,27 @@ impl ReplicatorPool {
                         for arc2 in neighbors.iter() {
                             let mut f = false;
                             if let Ok(mut n) = arc2.lock() {
-                                if n.replicator.is_none() {
+                                if n.replicator_source.is_none() {
                                     use std::net;
                                     match net::TcpStream::connect_timeout(&n.addr, Duration::from_secs(3)) {
                                         Ok(stream) => {
                                             if let Ok(stream) = TcpStream::from_stream(stream) {
-                                                n.replicator = self.add_replicator(stream);
+                                                n.replicator_source = self.add_replicator(stream);
                                             }
                                         }
                                         Err(e) => {
                                             error!("Couldn't connect to neighbor: {:?}", e);
+                                        }
+                                    }
+                                } else {
+                                    if let Some(ref weak) = n.replicator_source {
+                                        if let Some(arc) = weak.upgrade() {
+                                            if let Ok(ref mut replicator) = arc.lock() {
+                                                if !replicator.send_queue.is_empty() {
+                                                    replicator.interest.insert(Ready::writable());
+                                                    replicator.reregister(&mut self.poll);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -103,6 +115,8 @@ impl ReplicatorPool {
                     }
                 }
             }
+
+            thread::sleep(Duration::from_secs(1));
         }
 
         info!("Shutting down replicator source pool...");
@@ -153,7 +167,7 @@ impl ReplicatorPool {
     }
 
     fn ready(&mut self, token: Token, event: Ready) {
-//        debug!("{:?} event = {:?}", token, event);
+        debug!("{:?} event = {:?}", token, event);
         let event = Ready::from(event);
 
         if event.is_error() {
@@ -165,7 +179,7 @@ impl ReplicatorPool {
         }
 
         if event.is_hup() {
-            trace!("Hup event for {:?}", token);
+            info!("Hup event for {:?}", token);
             if let Ok(mut c) = self.find_connection_by_token(token) {
                 c.mark_reset();
             }
@@ -175,36 +189,36 @@ impl ReplicatorPool {
         let event = Ready::from(event);
 
         if event.is_writable() {
-            trace!("Write event for {:?}", token);
+            debug!("Write event for {:?}", token);
             assert_ne!(self.token, token, "Received writable event for Server");
 
             if let Ok(mut conn) = self.find_connection_by_token(token) {
                 if conn.is_reset() {
-                    info!("{:?} has already been reset", token);
+                    debug!("{:?} has already been reset", token);
                     return;
                 }
 
                 conn.writable().unwrap_or_else(|e| {
-                    warn!("Write event failed for {:?}, {:?}", token, e);
+                    debug!("Write event failed for {:?}, {:?}", token, e);
                     conn.mark_reset();
                 });
             }
         }
 
         if event.is_readable() {
-            trace!("Read event for {:?}", token);
+            debug!("Read event for {:?}", token);
             if self.token == token {
                 self.accept();
             } else {
                 if let Ok(mut conn) = self.find_connection_by_token(token) {
                     if conn.is_reset() {
-                        info!("{:?} has already been reset", token);
+                        debug!("{:?} has already been reset", token);
                         return;
                     }
                 }
 
                 self.readable(token).unwrap_or_else(|e| {
-                    warn!("Read event failed for {:?}: {:?}", token, e);
+                    debug!("Read event failed for {:?}: {:?}", token, e);
                     if let Ok(mut conn) = self.find_connection_by_token(token) {
                         conn.mark_reset();
                     }
@@ -244,7 +258,7 @@ impl ReplicatorPool {
                             if let Ok(mut neighbors) = node.neighbors.lock() {
                                 for neighbor_arc in neighbors.iter() {
                                     if let Ok(neighbor) = neighbor_arc.lock() {
-                                        if addr == neighbor.addr {
+                                        if addr.ip() == neighbor.addr.ip() {
                                             neighbor_exsists = true;
                                             break;
                                         }
@@ -254,7 +268,7 @@ impl ReplicatorPool {
 
                             if !neighbor_exsists {
                                 if let Ok(mut neighbors) = node.neighbors.lock() {
-                                    neighbors.push(Arc::new(Mutex::new(Neighbor::from_replicator(replicator_weak, addr.clone()))))
+                                    neighbors.push(Arc::new(Mutex::new(Neighbor::from_replicator_source(replicator_weak, addr.clone()))))
                                 }
                             }
                         }
@@ -264,11 +278,11 @@ impl ReplicatorPool {
         }
     }
 
-    fn add_replicator(&mut self, sock: TcpStream) -> Option<Weak<Mutex<Replicator>>> {
+    fn add_replicator(&mut self, sock: TcpStream) -> Option<Weak<Mutex<ReplicatorSource>>> {
         match self.conns.vacant_entry() {
             Some(entry) => {
                 debug!("registering {:?} with poller", entry.index());
-                let mut replicator = Replicator::new(sock, entry.index());
+                let mut replicator = ReplicatorSource::new(sock, entry.index());
                 if let Err(e) = replicator.register(&self.poll) {
                     error!("Failed to register  connection with poller, {:?}", e);
                     return None;
@@ -310,12 +324,20 @@ impl ReplicatorPool {
         Ok(())
     }
 
-    fn find_connection_by_token(&self, token: Token) -> LockResult<MutexGuard<Replicator>> {
+    fn find_connection_by_token(&self, token: Token) -> LockResult<MutexGuard<ReplicatorSource>> {
         self.conns[token].lock()
     }
 
     pub fn shutdown(&mut self) {
-        println!("shutting down");
+        info!("shutting down");
         self.poll.deregister(&self.sock);
     }
+}
+
+pub struct ReplicatorSinkPool {
+
+}
+
+impl ReplicatorSinkPool {
+
 }

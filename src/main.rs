@@ -2,11 +2,15 @@ extern crate byteorder;
 extern crate mio;
 extern crate rand;
 extern crate slab;
+extern crate ethcore_bigint as bigint;
+extern crate memorydb;
+extern crate patricia_trie;
 extern crate env_logger;
 extern crate rustc_serialize;
 extern crate iron;
 extern crate ntrumls;
 extern crate linked_hash_set;
+extern crate crypto;
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
@@ -15,7 +19,7 @@ extern crate linked_hash_set;
 pub mod network;
 pub mod model;
 pub mod storage;
-//
+
 use std::{
     sync::{mpsc::channel, Condvar, Arc, Weak, Mutex, atomic::{AtomicBool, Ordering}},
     io::{self, Read},
@@ -30,7 +34,7 @@ use mio::Poll;
 use mio::net::TcpListener;
 
 use network::node::*;
-use network::replicator_pool::ReplicatorPool;
+use network::replicator_pool::ReplicatorSourcePool;
 use model::config::{PORT, Configuration, ConfigurationSettings};
 use model::config;
 use network::paymoncoin::PaymonCoin;
@@ -40,56 +44,13 @@ use storage::Hive;
 use network::api::API;
 
 fn main() {
-    for i in 0..1 {
-        println!("{}", 1-i);
-    }
-
-    use ntrumls::*;
-    use rand::Rng;
-
     let format = |record: &LogRecord| {
-        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
+        format!("[{}]: {}", record.level(), record.args())
+//        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
     };
 
     let mut builder = LogBuilder::new();
-    builder.format(format).filter(None, LogLevelFilter::Info);
 
-    if env::var("RUST_LOG").is_ok() {
-        builder.parse(&env::var("RUST_LOG").unwrap());
-    }
-
-    builder.init().unwrap();
-
-//    let mut sk_data = [0u8; 32 * 8];
-//    rand::thread_rng().fill_bytes(&mut sk_data);
-////    let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
-//    use std::mem;
-//    let fg_16 : [u16; 128] = unsafe { mem::transmute(sk_data) };
-////    for n in fg_16.iter() {
-////        print!("{}, ", n);
-////    }
-////    println!();
-//    let mut mls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-//
-//    let (sk, pk) = mls.generate_keypair().unwrap();
-//
-//    let msg = "TEST MESSAGE";
-////    let msg = [1u8; 16];
-//    let sign = mls.sign(msg.as_bytes(), &sk, &pk).expect("fail");
-//
-//    println!("{:?}", sk);
-//    println!("{:?}", pk);
-//    println!("{:?}", sign);
-//    println!("{}", mls.verify(msg.as_bytes(), &sign, &pk));
-}
-
-#[test]
-fn test_threads() {
-    let format = |record: &LogRecord| {
-        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
-    };
-
-    let mut builder = LogBuilder::new();
     builder.format(format).filter(None, LogLevelFilter::Info);
 
     if env::var("RUST_LOG").is_ok() {
@@ -100,17 +61,17 @@ fn test_threads() {
 
     let mut jhs = VecDeque::new();
 
-    let ports = [70/*, 0, 10002*/].iter();
+    let ports = [70].iter();
     for port in ports {
         let port = *port;
         let mut neighbors = String::new();
         if port != 0 {
-            let ports2 = [70/*, 44832, 10002*/].iter();
+            let ports2 = [69].iter();
             let v: Vec<String> = ports2.filter(|p| **p != port).map(|p| format!("127.0.0.1:{}",
                                                                                 p)).collect();
             neighbors = v.join(" ");
         }
-        println!("{}", neighbors);
+//        println!("{}", neighbors);
 
         let jh = Builder::new().name(format!("pmnc {}", port)).spawn(move || {
             let mut config = Configuration::new();
@@ -142,7 +103,7 @@ fn test_threads() {
             thread::sleep(Duration::from_secs(10000));
 
             {
-    //            api_running.store(false, Ordering::SeqCst);
+                //            api_running.store(false, Ordering::SeqCst);
                 let &(ref lock, ref cvar) = &*api_running;
                 let mut is_running = lock.lock().unwrap();
                 *is_running = false;
@@ -189,7 +150,7 @@ fn hive_test() {
     assert!(hive.put_approvee(h2, h0));
 
     let hashes = hive.storage_load_approvee(&h0).expect("failed to load hashes");
-    println!("{:?}", hashes);
+//    println!("{:?}", hashes);
 
     let mut t0 = TransactionObject::new_random();
     hive.storage_put(CFType::Transaction, &t0.hash, &t0);

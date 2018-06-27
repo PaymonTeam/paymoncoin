@@ -135,8 +135,14 @@ impl TransactionValidator {
         TransactionError> {
         if let Ok(hive) = self.hive.lock() {
             match hive.storage_load_transaction(&hash) {
-                Some(t) => return Ok(t.is_solid()),
-                None => return Err(TransactionError::InvalidHash)
+                Some(t) => {
+                    if t.is_solid() {
+                        return Ok(true);
+                    }
+                },
+                None => {
+                    return Err(TransactionError::InvalidHash);
+                }
             };
         }
 
@@ -148,32 +154,35 @@ impl TransactionValidator {
 
         while let Some(ref hash_pointer) = non_analyzed_hashes.pop_front() {
             if analyzed_hashes.insert(hash_pointer.clone()) {
+                let t;
                 if let Ok(mut hive) = self.hive.lock() {
-                    match hive.storage_load_transaction(&hash_pointer) {
-                        Some(t) => {
-                            if !t.is_solid() {
-                                if t.object.data_type == TransactionType::HashOnly &&
-                                    *hash_pointer != HASH_NULL {
-
-                                    if let Ok(mut tr) = self.transaction_requester.lock() {
-                                        tr.request_transaction(hash_pointer.clone(), milestone);
-                                    } else {
-                                        return Err(TransactionError::InvalidData);
-                                    }
-
-                                    solid = false;
-                                    break;
-                                } else {
-                                    non_analyzed_hashes.push_back(t.object.trunk_transaction);
-                                    non_analyzed_hashes.push_back(t.object.branch_transaction);
-                                }
-                            }
-                        }
+                    t = match hive.storage_load_transaction(hash_pointer) {
+                        Some(t) => t,
                         None => return Err(TransactionError::InvalidHash)
                     };
+                } else {
+                    panic!("broken hive mutex");
+                }
+
+                if !t.is_solid() {
+                    if t.object.data_type == TransactionType::HashOnly && *hash_pointer != HASH_NULL {
+                        if let Ok(mut tr) = self.transaction_requester.lock() {
+                            tr.request_transaction(hash_pointer.clone(), milestone);
+                        } else {
+                            return Err(TransactionError::InvalidData);
+                        }
+
+                        solid = false;
+                        break;
+                    } else {
+                        non_analyzed_hashes.push_back(t.object.trunk_transaction);
+                        non_analyzed_hashes.push_back(t.object.branch_transaction);
+                    }
                 }
             }
         }
+
+        debug!("solid={}", solid);
 
         if solid {
             if let Ok(mut hive) = self.hive.lock() {
@@ -219,6 +228,8 @@ impl TransactionValidator {
         }
 
         while running.load(Ordering::SeqCst) {
+//            println!("propogating");
+
             let mut new_solid_hashes = HashSet::<Hash>::new();
             use_first.store(!use_first.load(Ordering::SeqCst), Ordering::SeqCst);
 
@@ -239,42 +250,56 @@ impl TransactionValidator {
             let mut it = new_solid_hashes.iter();
             while let Some(hash) = it.next() {
                 if running.load(Ordering::SeqCst) {
-                    let transaction;
+                    let mut transaction;
+                    // println!("hive lock 27");
                     if let Ok(mut hive) = hive.lock() {
                         if let Some(t) = hive.storage_load_transaction(&hash) {
                             transaction = t;
                         } else {
+                            // println!("hive unlock 27");
                             continue;
                         }
                     } else {
                         panic!("broken hive mutex");
                     }
+                    // println!("hive unlock 27");
                     let approvers = transaction.get_approvers(&hive);
-                    if let Ok(mut hive) = hive.lock() {
-                        for h in approvers {
-                            if let Some(ref mut tx) = hive.storage_load_transaction(&hash) {
-                                if let Some(arc) = transaction_validator.upgrade() {
-                                    if let Ok(mut tv) = arc.lock() {
-                                        if tv.quiet_quick_set_solid(tx) {
-                                            hive.update_transaction(tx);
-                                        } else if transaction.is_solid() {
-                                            if use_first.load(Ordering::Relaxed) {
-                                                if let Ok(mut list) = solid_transaction_list_one.lock() {
-                                                    list.insert(hash.clone());
-                                                }
-                                            } else {
-                                                if let Ok(mut list) = solid_transaction_list_two.lock() {
-                                                    list.insert(hash.clone());
-                                                }
-                                            }
+                    // TODO: optimize lock
+                    for h in approvers {
+                        let mut tx;
+                        // println!("hive lock 28");
+                        if let Ok(mut hive) = hive.lock() {
+                            tx = hive.storage_load_transaction(&hash).unwrap();
+                        } else {
+                            panic!("broken hive mutex");
+                        }
+                        // println!("hive unlock 28");
+                        if let Some(arc) = transaction_validator.upgrade() {
+                            if let Ok(mut tv) = arc.lock() {
+//                                info!("set solid");
+                                if tv.quiet_quick_set_solid(&mut tx) {
+                                    // println!("hive lock 35");
+//                                    info!("set solid ok");
+                                    if let Ok(mut hive) = hive.lock() {
+                                        hive.update_transaction(&mut tx);
+                                    }
+                                    // println!("hive unlock 35");
+                                } else if transaction.is_solid() {
+                                    if use_first.load(Ordering::Relaxed) {
+                                        if let Ok(mut list) = solid_transaction_list_one.lock() {
+                                            list.insert(hash.clone());
                                         }
                                     } else {
-                                        panic!("broken transaction_validator mutex");
+                                        if let Ok(mut list) = solid_transaction_list_two.lock() {
+                                            list.insert(hash.clone());
+                                        }
                                     }
-                                } else {
-                                    panic!("transaction_validator is null");
                                 }
+                            } else {
+                                panic!("broken transaction_validator mutex");
                             }
+                        } else {
+                            panic!("transaction_validator is null");
                         }
                     }
                 }
@@ -305,11 +330,13 @@ impl TransactionValidator {
             let trunk_tx;
             let branch_tx;
 
+            // println!("hive lock 29");
             if let Ok(mut hive) = self.hive.lock() {
                 if let Some(tx) = hive.storage_load_transaction(&transaction.object
                     .trunk_transaction) {
                     trunk_tx = tx;
                 } else {
+                    // println!("hive unlock 29");
                     return Err(TransactionError::InvalidHash);
                 }
 
@@ -317,11 +344,13 @@ impl TransactionValidator {
                     .branch_transaction) {
                     branch_tx = tx;
                 } else {
+                    // println!("hive unlock 29");
                     return Err(TransactionError::InvalidHash);
                 }
             } else {
                 panic!("hive mutex is broken")
             }
+            // println!("hive unlock 29");
 
             if !self.check_approvee(&trunk_tx) {
                 solid = false;
@@ -333,11 +362,13 @@ impl TransactionValidator {
 
             if solid {
                 transaction.update_solidity(solid);
+                // println!("hive lock 30");
                 if let Ok(mut hive) = self.hive.lock() {
                     hive.update_heights(transaction.clone());
                 } else {
                     panic!("hive mutex is broken")
                 }
+                // println!("hive unlock 30");
 
                 return Ok(true);
             }
@@ -355,9 +386,10 @@ impl TransactionValidator {
         }
 
         let approvers = transaction.get_approvers(&self.hive);
+        // println!("hive lock 31");
         if let Ok(mut hive) = self.hive.lock() {
             if let Ok(mut tvm) = self.tips_view_model.lock() {
-                println!(2);
+//                println!(2);
                 if approvers.len() == 0 {
                     tvm.add_tip(transaction.get_hash());
                 }
@@ -365,8 +397,9 @@ impl TransactionValidator {
                 tvm.remove_tip(&transaction.get_branch_transaction_hash());
             }
         }
+        // println!("hive unlock 31");
 
-        println!(3);
+//        println!(3);
         if self.quick_set_solid(transaction)? {
             self.add_solid_transaction(transaction.get_hash());
         }
