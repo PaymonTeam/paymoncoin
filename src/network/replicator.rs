@@ -304,7 +304,7 @@ impl ReplicatorSource {
     }
 
     pub fn reregister(&mut self, poll: &mut Poll) -> io::Result<()> {
-        info!("connection reregister; token={:?}", self.token);
+        debug!("connection reregister; token={:?}", self.token);
         poll.reregister(
             &self.sock,
             self.token,

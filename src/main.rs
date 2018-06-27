@@ -45,10 +45,12 @@ use network::api::API;
 
 fn main() {
     let format = |record: &LogRecord| {
-        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
+        format!("[{}]: {}", record.level(), record.args())
+//        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
     };
 
     let mut builder = LogBuilder::new();
+
     builder.format(format).filter(None, LogLevelFilter::Info);
 
     if env::var("RUST_LOG").is_ok() {
@@ -69,7 +71,7 @@ fn main() {
                                                                                 p)).collect();
             neighbors = v.join(" ");
         }
-        println!("{}", neighbors);
+//        println!("{}", neighbors);
 
         let jh = Builder::new().name(format!("pmnc {}", port)).spawn(move || {
             let mut config = Configuration::new();
@@ -148,7 +150,7 @@ fn hive_test() {
     assert!(hive.put_approvee(h2, h0));
 
     let hashes = hive.storage_load_approvee(&h0).expect("failed to load hashes");
-    println!("{:?}", hashes);
+//    println!("{:?}", hashes);
 
     let mut t0 = TransactionObject::new_random();
     hive.storage_put(CFType::Transaction, &t0.hash, &t0);

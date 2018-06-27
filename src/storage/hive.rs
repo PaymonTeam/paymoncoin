@@ -117,7 +117,7 @@ impl Hive {
             calculate signature");
             genesis.object.signature_pubkey = pk.clone();
 
-            info!("genesis({:?})={}", th1, self.put_transaction(&genesis));
+            debug!("genesis({:?})={}", th1, self.put_transaction(&genesis));
         }
 
         {
@@ -154,7 +154,7 @@ impl Hive {
             calculate signature");
             genesis.object.signature_pubkey = pk.clone();
 
-            info!("genesis2({:?})={}", th2, self.put_transaction(&genesis));
+            debug!("genesis2({:?})={}", th2, self.put_transaction(&genesis));
         }
 
         // milestone
@@ -192,12 +192,12 @@ impl Hive {
             calculate signature");
             ms.object.signature_pubkey = pk.clone();
 
-            info!("milestone_transaction1={}", self.put_transaction(&ms));
+            debug!("milestone_transaction1={}", self.put_transaction(&ms));
             let milestone = MilestoneObject {
                 index: 1,
                 hash: mh1.clone()
             };
-            info!("milestone1 ({:?}) ={}", mh1, self.put_milestone(&milestone));
+            debug!("milestone1 ({:?}) ={}", mh1, self.put_milestone(&milestone));
         }
 
         {
@@ -234,7 +234,7 @@ impl Hive {
             calculate signature");
             genesis.object.signature_pubkey = pk.clone();
 
-            info!("genesis3({:?})={}", th3, self.put_transaction(&genesis));
+            debug!("genesis3({:?})={}", th3, self.put_transaction(&genesis));
         }
 
         {
@@ -271,7 +271,7 @@ impl Hive {
             calculate signature");
             genesis.object.signature_pubkey = pk.clone();
 
-            info!("genesis4({:?})={}", th4, self.put_transaction(&genesis));
+            debug!("genesis4({:?})={}", th4, self.put_transaction(&genesis));
         }
 
         // milestone
@@ -309,12 +309,12 @@ impl Hive {
             calculate signature");
             ms.object.signature_pubkey = pk.clone();
 
-            info!("milestone_transaction2={}", self.put_transaction(&ms));
+            debug!("milestone_transaction2={}", self.put_transaction(&ms));
             let milestone = MilestoneObject {
                 index: 2,
                 hash: mh2.clone()
             };
-            info!("milestone2 ({:?}) ={}", mh2, self.put_milestone(&milestone));
+            debug!("milestone2 ({:?}) ={}", mh2, self.put_milestone(&milestone));
         }
 
         {
@@ -330,7 +330,7 @@ impl Hive {
                 hash: mh1.clone(),
                 state_diff_object: sdo
             };
-            info!("state_diff1={}", self.put_state_diff(&sd));
+            debug!("state_diff1={}", self.put_state_diff(&sd));
         }
         {
             let mut state = HashMap::new();
@@ -344,7 +344,7 @@ impl Hive {
                 hash: mh2.clone(),
                 state_diff_object: sdo
             };
-            info!("state_diff2={}", self.put_state_diff(&sd));
+            debug!("state_diff2={}", self.put_state_diff(&sd));
         }
 
 //        println!("put addr1={}", self.put_address_transaction(coordinator.clone(), th1.clone()));
@@ -453,7 +453,7 @@ impl Hive {
                 })
             }
             None => {
-                warn!("get next milestone from storage error");
+                debug!("get next milestone from storage error");
                 None
             }
         }
@@ -513,7 +513,7 @@ impl Hive {
         let object = get_serialized_object(packet, false);
         match self.db.merge_cf(self.db.cf_handle(CF_NAMES[t as usize]).unwrap(), key, &object) {
             Ok(_) => return true,
-            Err(e) => println!("{:?}", e)
+            Err(e) => error!("{:?}", e)
         };
         false
     }

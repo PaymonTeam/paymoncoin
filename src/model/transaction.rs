@@ -212,6 +212,12 @@ impl Address {
 
     // TODO: may cause panic?
     pub fn from_public_key(pk: &PublicKey) -> Self {
+        let mut buf = [0u8; 32];
+        let mut sha = Sha3::sha3_256();
+        sha.input(&[0u8, 12]);
+        sha.result(&mut buf);
+//        println!("{}", buf[..].to_hex());
+
         let mut sha = Sha3::sha3_256();
         sha.input(&pk.0);
 

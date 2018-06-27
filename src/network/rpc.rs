@@ -236,3 +236,69 @@ impl Serializable for Balances {
         }
     }
 }
+
+#[derive(RustcDecodable, RustcEncodable)]
+pub struct GetNewInclusionStateStatement {
+    pub transactions: Vec<Hash>,
+    pub tips: Vec<Hash>
+}
+
+impl GetNewInclusionStateStatement { pub const SVUID : i32 = 12; }
+
+impl Serializable for GetNewInclusionStateStatement {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
+        stream.write_u32(self.transactions.len() as u32);
+        for hash in &self.transactions {
+            stream.write_bytes(&hash);
+        }
+        stream.write_u32(self.tips.len() as u32);
+        for hash in &self.tips {
+            stream.write_bytes(&hash);
+        }
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        self.transactions.clear();
+        let len_tx = stream.read_u32();
+        for _ in 0..len_tx {
+            let mut v = HASH_NULL;
+//            v.read_params(stream);
+            stream.read_bytes(&mut v, HASH_SIZE);
+            self.transactions.push(v);
+        }
+        self.transactions.clear();
+        let len_tps = stream.read_u32();
+        for _ in 0..len_tps {
+            let mut v = HASH_NULL;
+//            v.read_params(stream);
+            stream.read_bytes(&mut v, HASH_SIZE);
+            self.tips.push(v);
+        }
+    }
+}
+
+#[derive(RustcDecodable, RustcEncodable)]
+pub struct GetInclusionStates {
+    pub booleans: Vec<bool>
+}
+
+impl GetInclusionStates { pub const SVUID : i32 = 13; }
+
+impl Serializable for GetInclusionStates {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
+        stream.write_u32(self.booleans.len() as u32);
+        for b in &self.booleans {
+            stream.write_bool(*b);
+        }
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let len = stream.read_u32();
+        for _ in 0..len {
+            let b = stream.read_bool();
+            self.booleans.push(b);
+        }
+    }
+}

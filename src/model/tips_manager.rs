@@ -254,7 +254,7 @@ impl TipsManager {
             tip_set = transaction_obj.get_approvers(&self.hive);
 
             if transaction_obj.get_type() == TransactionType::HashOnly {
-                info!("Reason to stop: transactionViewModel == null");
+                debug!("Reason to stop: transactionViewModel == null");
                 break;
             }
 
@@ -264,13 +264,13 @@ impl TipsManager {
             };
 
             if !check_solidity_is_ok {
-                info!("Reason to stop: !checkSolidity");
+                debug!("Reason to stop: !checkSolidity");
                 break;
             }
 
 
             if self.below_max_depth(transaction_obj.get_hash(), max_depth, max_depth_ok) {
-                info!("Reason to stop: !LedgerValidator");
+                debug!("Reason to stop: !LedgerValidator");
                 break;
             }
 
@@ -281,12 +281,12 @@ impl TipsManager {
             };
 
             if !update_diff_is_ok {
-                info!("Reason to stop: belowMaxDepth");
+                debug!("Reason to stop: belowMaxDepth");
                 break;
             }
 
             if extra_tip.is_some() && transaction_obj.get_hash() == extra_tip.unwrap() {
-                info!("Reason to stop: transactionViewModel==extraTip");
+                debug!("Reason to stop: transactionViewModel==extraTip");
                 break;
             }
 
@@ -294,7 +294,7 @@ impl TipsManager {
             traversed_tails += 1;
 
             if tip_set.len() == 0 {
-                info!("Reason to stop: TransactionViewModel is a tip");
+                debug!("Reason to stop: TransactionViewModel is a tip");
                 break;
             } else if tip_set.len() == 1 {
                 tip = tip_set.iter().next().cloned();
@@ -315,7 +315,7 @@ impl TipsManager {
                 let mut tip_rating: i64 = match ratings.get(&tip_hash) {
                     Some(x) => *x,
                     None => {
-                        warn!("no rating");
+                        debug!("no rating");
                         0
                     }
                 };

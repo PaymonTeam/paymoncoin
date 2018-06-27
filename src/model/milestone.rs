@@ -302,14 +302,14 @@ impl Milestone {
                 if let Ok(mut milestone) = milestone_clone_2.lock() {
                     let previous_solid_subhive_latest_milestone_index = milestone.latest_solid_subhive_milestone_index;
                     if milestone.latest_solid_subhive_milestone_index < milestone.latest_milestone_index {
-                        println!("latest_milestone_index = {}", milestone.latest_milestone_index);
+                        debug!("latest_milestone_index = {}", milestone.latest_milestone_index);
                         if let Err(e) = milestone.update_latest_solid_subhive_milestone() {
                             error!("Error updating latest solid subhive milestone: {:?}", e);
                         }
                     }
 
                     if previous_solid_subhive_latest_milestone_index != milestone.latest_solid_subhive_milestone_index {
-                        info!("Latest SOLID SUBHIVE milestone has changed from #{} to #{}",
+                        info!("Latest solid subhive milestone has changed from #{} to #{}",
                         previous_solid_subhive_latest_milestone_index,
                                  milestone.latest_solid_subhive_milestone_index);
                     }

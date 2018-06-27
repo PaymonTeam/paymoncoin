@@ -54,6 +54,17 @@ pub struct APIRequest<T: Serializable> {
     pub object: T,
 }
 
+#[derive(Debug)]
+pub enum APIError{
+    InvalidStringParametr,
+    TipAbsent,
+    TheSubHiveIsNotSolid,
+    InvalidData,
+    InvalidRequest,
+    NoneParametr,
+    IncorrectJsonParsing
+}
+
 impl API {
     pub fn new(pmnc: AM<PaymonCoin>, port: u16, running: Arc<(Mutex<bool>, Condvar)>) -> Self {
         info!("Running API on port {}", port);
@@ -87,7 +98,7 @@ impl API {
     }
 
     fn get_transactions_to_approve(pmnc: &mut PaymonCoin, mut depth: u32, reference: Option<Hash>, mut num_walks: u32) ->
-                                                                                              Result<Option<(Hash, Hash)>, TransactionError> {
+    Result<Option<(Hash, Hash)>, TransactionError> {
         if num_walks > MAX_RANDOM_WALKS || num_walks == 0 {
             num_walks = MAX_RANDOM_WALKS;
         }
@@ -177,8 +188,6 @@ impl API {
             return Err(TransactionError::InvalidData);
         }
 
-//        let addresses: LinkedList<Address> = addrss.iter().map(|address| *address).collect::<LinkedList<Address>>();
-        let mut hashes = Vec::<Hash>::new();
         let mut balances = HashMap::<Address, i64>::new();
         let mut index;
 
@@ -247,6 +256,239 @@ impl API {
         return Ok(elements);
     }
 
+    pub fn get_new_inclusion_state_statement(pmnc: &mut PaymonCoin,
+                                             transactions: &Vec<Hash>,
+                                             tps: &Vec<Hash>) -> Result<Vec<bool>, APIError> {
+        let tips = tps.clone();
+        let number_of_non_met_transactions = transactions.len();
+        let mut inclusion_states = vec![0; number_of_non_met_transactions];
+        //Vec::<i32>::with_capacity
+        // (number_of_non_met_transactions);
+        debug!("start={:?} t={:?}", inclusion_states, transactions);
+        let mut tips_index: Vec<u32> = Vec::new();
+        if let Ok(hive) = pmnc.hive.lock() {
+            for tip in tips.iter() {
+                let tx = hive.storage_load_transaction(tip).unwrap();
+                if tx.get_type() != TransactionType::HashOnly {
+                    tips_index.push(tx.object.get_snapshot_index());
+                }
+            }
+        } else {
+            panic!("broken hive mutex");
+        }
+
+        let min_tips_index = tips_index.iter().fold(0u32, |a, b| {
+            if a < *b {
+                return a;
+            } else {
+                return *b;
+            }
+        });
+
+        if min_tips_index > 0 {
+            let max_tips_index = tips_index.iter().fold(0u32, |a, b| {
+                if a > *b {
+                    return a;
+                } else {
+                    return *b;
+                }
+            });
+
+            let mut count = 0;
+            if let Ok(hive) = pmnc.hive.lock() {
+                for hash in transactions.iter() {
+                    let transaction = hive.storage_load_transaction(hash).unwrap();
+                    if transaction.get_type() == TransactionType::HashOnly || transaction.object.get_snapshot_index() == 0 {
+                        inclusion_states[count] = -1;
+                    } else if transaction.object.get_snapshot_index() > max_tips_index {
+                        inclusion_states[count] = -1;
+                    } else if transaction.object.get_snapshot_index() < max_tips_index {
+                        inclusion_states[count] = 1;
+                    }
+                    count += 1;
+                }
+            } else {
+                panic!("broken hive mutex");
+            }
+        }
+
+        let mut analyzed_tips: HashSet<Hash> = HashSet::new();
+        let mut same_index_transaction_count: HashMap<u32, u32> = HashMap::new();
+        let mut same_index_tips: HashMap<u32, Vec<Hash>> = HashMap::new();
+        debug!("n0={:?}", inclusion_states);
+
+        if let Ok(hive) = pmnc.hive.lock() {
+            // TODO: rem
+            debug!("lock1");
+            if let Ok(m) = pmnc.milestone.lock() {
+                debug!("lock2");
+                let transaction = hive.storage_load_transaction(&m.latest_solid_subhive_milestone).unwrap();
+                debug!("lock3");
+                same_index_tips.insert(transaction.object.snapshot, vec![m.latest_solid_subhive_milestone]);
+            } else {
+                panic!()
+            }
+
+            for tip in tips.iter() {
+                let transaction = hive.storage_load_transaction(tip).unwrap();
+                if transaction.get_type() == TransactionType::HashOnly {
+                    return Err(APIError::TipAbsent);
+                }
+                let snapshot_index = transaction.object.get_snapshot_index();
+                if !same_index_tips.contains_key(&snapshot_index) {
+                    same_index_tips.insert(snapshot_index, Vec::new());
+                }
+                same_index_tips.get_mut(&snapshot_index).unwrap().push(*tip);
+            }
+
+            for i in 0..inclusion_states.len() {
+                if inclusion_states[i] == 0 {
+//                    let mut it: Hash = HASH_NULL;
+//
+//                    if transactions.len() > i {
+//                        let mut count: usize = 0;
+//                        for itr in transactions.iter() {
+//                            if count == i {
+//                                it = *itr;
+//                            } else {
+//                                count += 1;
+//                            }
+//                        }
+//                    } else {
+//                        panic!("Incorrect index");
+//                    }
+
+                    let transaction = hive.storage_load_transaction(&transactions[i]).unwrap();
+                    let snapshot_index = transaction.object.get_snapshot_index();
+
+                    if !same_index_transaction_count.contains_key(&snapshot_index) {
+                        same_index_transaction_count.insert(snapshot_index, 0);
+                    }
+                    let map = same_index_transaction_count.clone();
+                    same_index_transaction_count.insert(snapshot_index, map.get(&snapshot_index).unwrap() + 1);
+                }
+            }
+        } else {
+            panic!("broken hive mutex");
+        }
+        debug!("keys={:?}", same_index_transaction_count.keys());
+
+        for index in same_index_transaction_count.keys() {
+//            let mut same_index_tip = match same_index_tips.get(index) {
+//                Some(list) => (*list).clone(),
+//                None => {
+//                    //panic!("None returned")
+//                    return
+//                }
+//            };
+
+            if let Some(same_index_tip) = same_index_tips.get(index) {
+                debug!("n2={:?}", same_index_tip);
+                if !same_index_tip.is_empty() {
+                    //has tips in the same index level
+                    let flag = API::exhaustive_search_within_index(pmnc,
+                                                                   &mut same_index_tip.clone(),
+                                                                   &mut analyzed_tips,
+                                                                   &transactions,
+                                                                   &mut inclusion_states,
+                                                                   *same_index_transaction_count.get(index).unwrap(),
+                                                                   *index)?;
+                    if !flag {
+                        return Err(APIError::TheSubHiveIsNotSolid);
+                    }
+                }
+            }
+        }
+
+        let mut inclusion_states_boolean: Vec<bool> = vec![false; inclusion_states.len()];
+        //Vec::with_capacity(inclusion_states.len());
+
+        for i in 0..inclusion_states.len() {
+            inclusion_states_boolean[i] = inclusion_states[i] == 1;
+        }
+        debug!("final={:?}", inclusion_states_boolean);
+        Ok(inclusion_states_boolean)
+    }
+
+    fn exhaustive_search_within_index(pmnc: &mut PaymonCoin,
+                                      non_analyzed_transactions: &mut Vec<Hash>,
+                                      analyzed_tips: &mut HashSet<Hash>,
+                                      transactions: &Vec<Hash>,
+                                      inclusion_states: &mut Vec<i32>,
+                                      mut count: u32,
+                                      index: u32) -> Result<bool, APIError> {
+//        let mut pointer: Option<Hash>;
+//        pointer = non_analyzed_transactions.pop();
+        'main_loop: while let Some(pointer) = non_analyzed_transactions.pop() {
+            if analyzed_tips.insert(pointer) {
+                if let Ok(hive) = pmnc.hive.lock() {
+                    let transaction = hive.storage_load_transaction(&pointer).unwrap();
+                    debug!("n1={}=={}", transaction.object.get_snapshot_index(), index);
+
+                    if transaction.object.get_snapshot_index() == index {
+                        if transaction.get_type() == TransactionType::HashOnly {
+                            return Ok(false);
+                        } else {
+                            for i in 0..inclusion_states.len() {
+                                if inclusion_states[i] < 1 && pointer == transactions[i] {
+                                    inclusion_states[i] = 1;
+                                    count -= 1;
+                                    debug!("count={}", count);
+                                    if count <= 0 {
+                                        break 'main_loop;
+                                    }
+                                }
+                            }
+                            non_analyzed_transactions.push(transaction.get_trunk_transaction_hash());
+                            non_analyzed_transactions.push(transaction.get_branch_transaction_hash());
+                        }
+                    }
+                } else {
+                    panic!("broken hive mutex");
+                }
+            }
+        }
+//        'MAIN_LOOP: while pointer != None {
+//            let hash = pointer.unwrap();
+//            if analyzed_tips.insert(hash) {
+//                let transaction = Transaction::from_hash(hash);
+//                if transaction.object.get_snapshot_index() == index {
+//                    if transaction.get_type() == TransactionType::HashOnly {
+//                        return Ok(false);
+//                    } else {
+//                        for i in 0..inclusion_states.len() {
+//                            // LinkedList::get() impl
+//                            let mut it: Hash = HASH_NULL;
+//                            if transactions.len() > i {
+//                                let mut count: usize = 0;
+//                                for itr in transactions.iter() {
+//                                    if count == i {
+//                                        it = *itr;
+//                                    } else {
+//                                        count += 1;
+//                                    }
+//                                }
+//                            } else {
+//                                panic!("Incorrect index");
+//                            }
+//                            if inclusion_states[i] < 1 && hash == it {
+//                                inclusion_states[i] = 1;
+//                                count_clone -= 1;
+//                                if count_clone <= 0 {
+//                                    break 'MAIN_LOOP;
+//                                }
+//                            }
+//                        }
+//                        non_analyzed_transactions.push_back(transaction.get_trunk_transaction_hash());
+//                        non_analyzed_transactions.push_back(transaction.get_branch_transaction_hash());
+//                    }
+//                }
+//            }
+//            pointer = non_analyzed_transactions.pop_front();
+//        }
+        return Ok(true);
+    }
+
     fn invalid_subtangle_status(pmnc: &mut PaymonCoin) -> bool {
         if let Ok(milestone) = pmnc.milestone.lock() {
             return milestone.latest_solid_subhive_milestone_index == MILESTONE_START_INDEX;
@@ -291,7 +533,7 @@ impl API {
                     Some(method) => {
                         match method {
                             "broadcastTransaction" => {
-                                println!("broadcastTransaction");
+                                debug!("broadcastTransaction");
                                 match json::decode::<rpc::BroadcastTransaction>(&json_str) {
                                     Ok(bt) => {
                                         unsafe {
@@ -309,7 +551,7 @@ impl API {
                                 };
                             }
                             "getTransactionsToApprove" => {
-                                println!("getTransactionsToApprove");
+                                debug!("getTransactionsToApprove");
                                 match json::decode::<rpc::GetTransactionsToApprove>(&json_str) {
                                     Ok(object) => {
                                         unsafe {
@@ -346,7 +588,7 @@ impl API {
                                                         return Ok(API::format_error_response("Invalid depth input"));
                                                     }
 
-                                                    info!("num_walks={}", num_walks);
+                                                    debug!("num_walks={}", num_walks);
 
                                                     match API::get_transactions_to_approve(pmnc,
                                                                                            depth,
@@ -354,10 +596,11 @@ impl API {
                                                                                            num_walks) {
                                                         Ok(Some((trunk, branch))) => {
                                                             let result = rpc::TransactionsToApprove {
-                                                                branch, trunk
+                                                                branch,
+                                                                trunk,
                                                             };
                                                             return format_success_response!(result);
-                                                        },
+                                                        }
                                                         Ok(None) => return Ok(API::format_error_response("None")),
                                                         _ => return Ok(API::format_error_response("Internal error"))
                                                     }
@@ -370,14 +613,14 @@ impl API {
                                 };
                             }
                             "getNodeInfo" => {
-                                println!("getNodeInfo");
+                                debug!("getNodeInfo");
                                 let result = rpc::NodeInfo {
                                     name: "PMNC 0.1".to_string()
                                 };
                                 format_success_response!(result)
                             }
                             "getBalances" => {
-                                println!("getBalances");
+                                debug!("getBalances");
 
                                 match json::decode::<rpc::GetBalances>(&json_str) {
                                     Ok(object) => {
@@ -393,8 +636,13 @@ impl API {
                                                                 balances
                                                             };
                                                             return format_success_response!(result);
-                                                        },
-                                                        _ => return Ok(API::format_error_response("Internal error"))
+                                                        }
+                                                        Err(e) => {
+                                                            error!("{:?}", e);
+                                                            return Ok
+                                                                (API::format_error_response
+                                                                    ("Internal error"));
+                                                        }
                                                     }
                                                 }
                                             }
@@ -403,6 +651,34 @@ impl API {
                                     }
                                     Err(e) => return Ok(API::format_error_response("Invalid data"))
                                 };
+                            }
+                            "getInclusionStates" => {
+                                match json::decode::<rpc::GetNewInclusionStateStatement>(&json_str) {
+                                    Ok(object) => {
+                                        unsafe {
+                                            if let Some(ref mut arc) = PMNC {
+                                                if let Ok(ref mut pmnc) = arc.lock() {
+                                                    match API::get_new_inclusion_state_statement(pmnc,
+                                                                                                 &object.transactions.clone(),
+                                                                                                 &object.tips.clone()) {
+                                                        Ok(vec) => {
+                                                            let result = rpc::GetInclusionStates {
+                                                                booleans: vec
+                                                            };
+                                                            return format_success_response!(result);
+                                                        }
+                                                        _ => return Ok(API::format_error_response("Internal error"))
+                                                    }
+                                                } else {
+                                                    panic!("broken pmnc mutex");
+                                                }
+                                            } else {
+                                                panic!("None returned");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                }
                             }
                             _ => Ok(API::format_error_response("Unknown 'method' parameter"))
                         }

@@ -189,36 +189,36 @@ impl ReplicatorSourcePool {
         let event = Ready::from(event);
 
         if event.is_writable() {
-            info!("Write event for {:?}", token);
+            debug!("Write event for {:?}", token);
             assert_ne!(self.token, token, "Received writable event for Server");
 
             if let Ok(mut conn) = self.find_connection_by_token(token) {
                 if conn.is_reset() {
-                    info!("{:?} has already been reset", token);
+                    debug!("{:?} has already been reset", token);
                     return;
                 }
 
                 conn.writable().unwrap_or_else(|e| {
-                    warn!("Write event failed for {:?}, {:?}", token, e);
+                    debug!("Write event failed for {:?}, {:?}", token, e);
                     conn.mark_reset();
                 });
             }
         }
 
         if event.is_readable() {
-            info!("Read event for {:?}", token);
+            debug!("Read event for {:?}", token);
             if self.token == token {
                 self.accept();
             } else {
                 if let Ok(mut conn) = self.find_connection_by_token(token) {
                     if conn.is_reset() {
-                        info!("{:?} has already been reset", token);
+                        debug!("{:?} has already been reset", token);
                         return;
                     }
                 }
 
                 self.readable(token).unwrap_or_else(|e| {
-                    warn!("Read event failed for {:?}: {:?}", token, e);
+                    debug!("Read event failed for {:?}: {:?}", token, e);
                     if let Ok(mut conn) = self.find_connection_by_token(token) {
                         conn.mark_reset();
                     }
@@ -329,7 +329,7 @@ impl ReplicatorSourcePool {
     }
 
     pub fn shutdown(&mut self) {
-        println!("shutting down");
+        info!("shutting down");
         self.poll.deregister(&self.sock);
     }
 }

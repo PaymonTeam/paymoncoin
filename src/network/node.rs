@@ -119,14 +119,14 @@ impl Node {
                             info!("received tx: {:?}", t.get_hash());
                             let address = t.object.address.clone();
                             let validated = transaction::validate_transaction(&mut t, 7);
-                            println!("validated={}", validated);
+                            info!("validated={}", validated);
 
                             if validated {
                                 let mut stored;
                                 if let Some(arc) = hive.upgrade() {
                                     if let Ok(mut hive) = arc.lock() {
                                         stored = hive.put_transaction(&t);
-                                        println!("stored={}", stored);
+                                        info!("stored={}", stored);
                                     } else {
                                         panic!("broken hive mutex");
                                     }
