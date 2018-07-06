@@ -1,5 +1,6 @@
 use rustc_serialize::json;
 use rustc_serialize::json::Json;
+extern crate base64;
 
 use iron;
 use iron::{Iron, Request, Response, IronResult, AfterMiddleware, Chain, Listening};
@@ -19,7 +20,6 @@ use model::transaction::*;
 use model::*;
 use std::collections::{HashMap, HashSet};
 use model::transaction_validator::TransactionError;
-use std::collections::LinkedList;
 
 #[macro_export]
 macro_rules! format_success_response {
@@ -42,6 +42,8 @@ const MILESTONE_START_INDEX: u32 = 0;
 const MIN_RANDOM_WALKS: u32 = 5;
 const MAX_RANDOM_WALKS: u32 = 27;
 const MAX_DEPTH: u32 = 15;
+const MAX_FIND_TXS: usize = 100;
+const MAX_GET_TX_DATA: usize = 100;
 
 pub struct API {
     listener: Listening,
@@ -61,8 +63,9 @@ pub enum APIError{
     TheSubHiveIsNotSolid,
     InvalidData,
     InvalidRequest,
-    NoneParametr,
-    IncorrectJsonParsing
+    NoneParameter,
+    IncorrectJsonParsing,
+    Overflow
 }
 
 impl API {
@@ -204,6 +207,7 @@ impl API {
             let mut value;
             if let Ok(mls) = pmnc.milestone.lock() {
                 value = mls.latest_snapshot.get_balance(address).unwrap_or(0);
+                debug!("val {} for {:?}", value, address);
             } else {
                 panic!("broken milestone mutex");
             }
@@ -262,8 +266,6 @@ impl API {
         let tips = tps.clone();
         let number_of_non_met_transactions = transactions.len();
         let mut inclusion_states = vec![0; number_of_non_met_transactions];
-        //Vec::<i32>::with_capacity
-        // (number_of_non_met_transactions);
         debug!("start={:?} t={:?}", inclusion_states, transactions);
         let mut tips_index: Vec<u32> = Vec::new();
         if let Ok(hive) = pmnc.hive.lock() {
@@ -315,15 +317,11 @@ impl API {
         let mut analyzed_tips: HashSet<Hash> = HashSet::new();
         let mut same_index_transaction_count: HashMap<u32, u32> = HashMap::new();
         let mut same_index_tips: HashMap<u32, Vec<Hash>> = HashMap::new();
-        debug!("n0={:?}", inclusion_states);
 
         if let Ok(hive) = pmnc.hive.lock() {
             // TODO: rem
-            debug!("lock1");
             if let Ok(m) = pmnc.milestone.lock() {
-                debug!("lock2");
                 let transaction = hive.storage_load_transaction(&m.latest_solid_subhive_milestone).unwrap();
-                debug!("lock3");
                 same_index_tips.insert(transaction.object.snapshot, vec![m.latest_solid_subhive_milestone]);
             } else {
                 panic!()
@@ -343,21 +341,6 @@ impl API {
 
             for i in 0..inclusion_states.len() {
                 if inclusion_states[i] == 0 {
-//                    let mut it: Hash = HASH_NULL;
-//
-//                    if transactions.len() > i {
-//                        let mut count: usize = 0;
-//                        for itr in transactions.iter() {
-//                            if count == i {
-//                                it = *itr;
-//                            } else {
-//                                count += 1;
-//                            }
-//                        }
-//                    } else {
-//                        panic!("Incorrect index");
-//                    }
-
                     let transaction = hive.storage_load_transaction(&transactions[i]).unwrap();
                     let snapshot_index = transaction.object.get_snapshot_index();
 
@@ -371,19 +354,9 @@ impl API {
         } else {
             panic!("broken hive mutex");
         }
-        debug!("keys={:?}", same_index_transaction_count.keys());
 
         for index in same_index_transaction_count.keys() {
-//            let mut same_index_tip = match same_index_tips.get(index) {
-//                Some(list) => (*list).clone(),
-//                None => {
-//                    //panic!("None returned")
-//                    return
-//                }
-//            };
-
             if let Some(same_index_tip) = same_index_tips.get(index) {
-                debug!("n2={:?}", same_index_tip);
                 if !same_index_tip.is_empty() {
                     //has tips in the same index level
                     let flag = API::exhaustive_search_within_index(pmnc,
@@ -401,12 +374,10 @@ impl API {
         }
 
         let mut inclusion_states_boolean: Vec<bool> = vec![false; inclusion_states.len()];
-        //Vec::with_capacity(inclusion_states.len());
 
         for i in 0..inclusion_states.len() {
             inclusion_states_boolean[i] = inclusion_states[i] == 1;
         }
-        debug!("final={:?}", inclusion_states_boolean);
         Ok(inclusion_states_boolean)
     }
 
@@ -417,13 +388,10 @@ impl API {
                                       inclusion_states: &mut Vec<i32>,
                                       mut count: u32,
                                       index: u32) -> Result<bool, APIError> {
-//        let mut pointer: Option<Hash>;
-//        pointer = non_analyzed_transactions.pop();
         'main_loop: while let Some(pointer) = non_analyzed_transactions.pop() {
             if analyzed_tips.insert(pointer) {
                 if let Ok(hive) = pmnc.hive.lock() {
                     let transaction = hive.storage_load_transaction(&pointer).unwrap();
-                    debug!("n1={}=={}", transaction.object.get_snapshot_index(), index);
 
                     if transaction.object.get_snapshot_index() == index {
                         if transaction.get_type() == TransactionType::HashOnly {
@@ -448,44 +416,7 @@ impl API {
                 }
             }
         }
-//        'MAIN_LOOP: while pointer != None {
-//            let hash = pointer.unwrap();
-//            if analyzed_tips.insert(hash) {
-//                let transaction = Transaction::from_hash(hash);
-//                if transaction.object.get_snapshot_index() == index {
-//                    if transaction.get_type() == TransactionType::HashOnly {
-//                        return Ok(false);
-//                    } else {
-//                        for i in 0..inclusion_states.len() {
-//                            // LinkedList::get() impl
-//                            let mut it: Hash = HASH_NULL;
-//                            if transactions.len() > i {
-//                                let mut count: usize = 0;
-//                                for itr in transactions.iter() {
-//                                    if count == i {
-//                                        it = *itr;
-//                                    } else {
-//                                        count += 1;
-//                                    }
-//                                }
-//                            } else {
-//                                panic!("Incorrect index");
-//                            }
-//                            if inclusion_states[i] < 1 && hash == it {
-//                                inclusion_states[i] = 1;
-//                                count_clone -= 1;
-//                                if count_clone <= 0 {
-//                                    break 'MAIN_LOOP;
-//                                }
-//                            }
-//                        }
-//                        non_analyzed_transactions.push_back(transaction.get_trunk_transaction_hash());
-//                        non_analyzed_transactions.push_back(transaction.get_branch_transaction_hash());
-//                    }
-//                }
-//            }
-//            pointer = non_analyzed_transactions.pop_front();
-//        }
+
         return Ok(true);
     }
 
@@ -495,6 +426,87 @@ impl API {
         } else {
             return false;
         }
+    }
+
+    pub fn get_tips(pmnc: &mut PaymonCoin) -> Result<Vec<Hash>, APIError> {
+        if let Ok(tips_vm) = pmnc.tips_vm.lock() {
+            return Ok(tips_vm.get_tips().iter().map(|x| *x).collect::<Vec<Hash>>());
+        } else {
+            panic!("broken tips_view_model mutex")
+        }
+    }
+
+    pub fn get_transactions_data(pmnc: &mut PaymonCoin, hashes: &Vec<Hash>) -> Result<Vec<String>, APIError> {
+        use network::packet::SerializedBuffer;
+        let mut elements = Vec::<String>::new();
+
+        if let Ok(hive) = pmnc.hive.lock() {
+            for hash in hashes {
+                let mut tx = hive.storage_load_transaction(hash).unwrap();
+                let string = tx.get_base64_data();
+                elements.push(string);
+            }
+        } else {
+            panic!("broken hive mutex")
+        }
+
+        if elements.len() > MAX_GET_TX_DATA {
+            return Err(APIError::Overflow);
+        }
+
+        Ok(elements)
+    }
+
+    pub fn find_transactions(pmnc: &mut PaymonCoin,
+                             addresses: &Vec<Address>,
+                             tags: &Vec<Hash>,
+                             approvees: &Vec<Hash>) -> Result<Vec<Hash>, APIError> {
+        let mut found_transactions = HashSet::<Hash>::new();
+        let mut contains_key = false;
+
+        if addresses.is_empty() && tags.is_empty() && approvees.is_empty() {
+            return Err(APIError::InvalidRequest);
+        }
+
+        let mut addresses_transactions = HashSet::<Hash>::new();
+        if let Ok(hive) = pmnc.hive.lock() {
+            for addr in addresses {
+                if let Some(hashes) = hive.load_address_transactions(addr) {
+                    for hash in hashes {
+                        addresses_transactions.insert(hash);
+                        found_transactions.insert(hash);
+                    }
+                }
+            }
+        }
+
+        // TODO: make search for a Tag
+
+        let mut approvee_transactions = HashSet::<Hash>::new();
+        if let Ok(hive) = pmnc.hive.lock() {
+            for approvee in approvees {
+                if let Some(hashes) = hive.storage_load_approvee(approvee) {
+                    for hash in hashes {
+                        approvee_transactions.insert(hash);
+                        found_transactions.insert(hash);
+                    }
+                }
+            }
+        }
+
+        if !addresses_transactions.is_empty() {
+            found_transactions.retain(|e| addresses_transactions.contains(e));
+        }
+
+        if !approvee_transactions.is_empty() {
+            found_transactions.retain(|e| approvee_transactions.contains(e));
+        }
+
+        if found_transactions.len() > MAX_FIND_TXS {
+            return Err(APIError::Overflow);
+        }
+
+        Ok(found_transactions.into_iter().collect::<Vec<Hash>>())
     }
 
     fn api(req: &mut Request) -> IronResult<Response> {
@@ -540,6 +552,7 @@ impl API {
                                             if let Some(ref arc) = PMNC {
                                                 if let Ok(pmnc) = arc.lock() {
                                                     if let Ok(mut node) = pmnc.node.lock() {
+                                                        debug!("rcvd tx");
                                                         node.on_api_broadcast_transaction_received(bt);
                                                     }
                                                 }
@@ -547,7 +560,9 @@ impl API {
                                         }
                                         return Ok(Response::with((iron::status::Ok, "{}")));
                                     }
-                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                    Err(e) => return Ok(API::format_error_response
+                                                            (&format!("Invalid data \
+                                    {:?}", e)))
                                 };
                             }
                             "getTransactionsToApprove" => {
@@ -653,7 +668,7 @@ impl API {
                                 };
                             }
                             "getInclusionStates" => {
-                                match json::decode::<rpc::GetNewInclusionStateStatement>(&json_str) {
+                                match json::decode::<rpc::GetInclusionStates>(&json_str) {
                                     Ok(object) => {
                                         unsafe {
                                             if let Some(ref mut arc) = PMNC {
@@ -662,8 +677,86 @@ impl API {
                                                                                                  &object.transactions.clone(),
                                                                                                  &object.tips.clone()) {
                                                         Ok(vec) => {
-                                                            let result = rpc::GetInclusionStates {
+                                                            let result = rpc::InclusionStates {
                                                                 booleans: vec
+                                                            };
+                                                            return format_success_response!(result);
+                                                        }
+                                                        _ => return Ok(API::format_error_response("Internal error"))
+                                                    }
+                                                } else {
+                                                    panic!("broken pmnc mutex");
+                                                }
+                                            } else {
+                                                panic!("None returned");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                }
+                            }
+                            "findTransactions" => {
+                                match json::decode::<rpc::FindTransactions>(&json_str) {
+                                    Ok(object) => {
+                                        unsafe {
+                                            if let Some(ref mut arc) = PMNC {
+                                                if let Ok(ref mut pmnc) = arc.lock() {
+                                                    match API::find_transactions(pmnc, &object.addresses, &object.tags, &object.approvees) {
+                                                        Ok(vec) => {
+                                                            let result = rpc::FoundedTransactions {
+                                                                hashes: vec
+                                                            };
+                                                            return format_success_response!(result);
+                                                        }
+                                                        _ => return Ok(API::format_error_response("Internal error"))
+                                                    }
+                                                } else {
+                                                    panic!("broken pmnc mutex");
+                                                }
+                                            } else {
+                                                panic!("None returned");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                }
+                            }
+                            "getTips" => {
+                                match json::decode::<rpc::GetTips>(&json_str) {
+                                    Ok(object) => {
+                                        unsafe {
+                                            if let Some(ref mut arc) = PMNC {
+                                                if let Ok(ref mut pmnc) = arc.lock() {
+                                                    match API::get_tips(pmnc) {
+                                                        Ok(vec) => {
+                                                            let result = rpc::Tips {
+                                                                hashes: vec
+                                                            };
+                                                            return format_success_response!(result);
+                                                        }
+                                                        _ => return Ok(API::format_error_response("Internal error"))
+                                                    }
+                                                } else {
+                                                    panic!("broken pmnc mutex");
+                                                }
+                                            } else {
+                                                panic!("None returned");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                }
+                            }
+                            "getTransactionsData" => {
+                                match json::decode::<rpc::GetTransactionsData>(&json_str) {
+                                    Ok(object) => {
+                                        unsafe {
+                                            if let Some(ref mut arc) = PMNC {
+                                                if let Ok(ref mut pmnc) = arc.lock() {
+                                                    match API::get_transactions_data(pmnc, &object.hashes) {
+                                                        Ok(vec) => {
+                                                            let result = rpc::TransactionsData {
+                                                                transactions: vec
                                                             };
                                                             return format_success_response!(result);
                                                         }

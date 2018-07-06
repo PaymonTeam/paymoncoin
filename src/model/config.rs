@@ -1,5 +1,9 @@
 use std::collections::HashMap;
 
+use std::fs::File;
+use std::io::prelude::*;
+use std::io::{BufRead, BufReader};
+
 // TODO: remove
 pub const PORT: u16 = 44832;
 
@@ -16,6 +20,7 @@ pub enum ConfigurationValue {
     Bool(bool),
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum ConfigurationSettings {
     Config,
     Port,
@@ -126,6 +131,15 @@ impl Configuration {
             params : HashMap::<u8, ConfigurationValue>::new()
         };
 
+        let mut params_map = HashMap::<String, ConfigurationSettings>::new();
+        params_map.insert("port".to_string(), ConfigurationSettings::Port);
+        params_map.insert("api_host".to_string(), ConfigurationSettings::ApiHost);
+        params_map.insert("udp_port".to_string(), ConfigurationSettings::UdpReceiverPort);
+        params_map.insert("tcp_port".to_string(), ConfigurationSettings::TcpReceiverPort);
+        params_map.insert("debug".to_string(), ConfigurationSettings::Debug);
+        params_map.insert("neighbors".to_string(), ConfigurationSettings::Neighbors);
+        params_map.insert("max_peers".to_string(), ConfigurationSettings::MaxPeers);
+
         config.set_int(ConfigurationSettings::Port, 44832);
         config.set_string(ConfigurationSettings::ApiHost, "localhost");
         config.set_int(ConfigurationSettings::UdpReceiverPort, 14600);
@@ -137,7 +151,7 @@ impl Configuration {
         config.set_string(ConfigurationSettings::Neighbors, "");
         config.set_string(ConfigurationSettings::DBPath, "data");
         config.set_int(ConfigurationSettings::DBCacheSize, 100000); //KB
-        config.set_string(ConfigurationSettings::Config, "hive.ini");
+        config.set_string(ConfigurationSettings::Config, "config.ini");
         config.set_float(ConfigurationSettings::PRemoveRequest, 0.01);
         config.set_float(ConfigurationSettings::PDropTransaction, 0.0);
         config.set_float(ConfigurationSettings::PSelectMilestoneChild, 0.7);
@@ -165,6 +179,32 @@ impl Configuration {
         config.set_int(ConfigurationSettings::QSizeNode, 1000);
         config.set_float(ConfigurationSettings::PDropCacheEntry, 0.02);
         config.set_int(ConfigurationSettings::CacheSizeBytes, 15000);
+
+        let mut f = File::open(config.get_string(ConfigurationSettings::Config).unwrap()).expect
+        ("config file \
+        not found");
+        let file = BufReader::new(&f);
+        for line in file.lines() {
+            if let Ok(l) = line {
+                let param = l.splitn(2, '=').collect::<Vec<&str>>();
+                if param.len() == 2 {
+                    if let Some(cs) = params_map.get(param[0]) {
+                        let key = param[0];
+                        let value = String::from(String::from(param[1]).trim());
+                        match config.params.get(&(cs.clone() as u8)) {
+                            Some(ConfigurationValue::String(_)) => config.set_string(*cs, &value),
+                            Some(ConfigurationValue::Int(_)) => config.set_int(*cs, value
+                                .parse::<i32>().expect(&format!("Invalid param {:?}", cs))),
+                            Some(ConfigurationValue::Float(_)) => config.set_float(*cs, value
+                                .parse::<f32>().expect(&format!("Invalid param {:?}", cs))),
+                            Some(ConfigurationValue::Bool(_)) => config.set_bool(*cs, value
+                                .parse::<bool>().expect(&format!("Invalid param {:?}", cs))),
+                            _ => panic!("Invalid param {}", key)
+                        }
+                    }
+                }
+            }
+        }
 
         config
     }

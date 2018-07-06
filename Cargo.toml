@@ -23,6 +23,7 @@ rlibc = "1.0.0"
 lazy_static = "1.0"
 iron = "*"
 linked_hash_set = "0.1.2"
+base64 = "0.9.2"
 
 [target.'cfg(windows)'.dependencies]
 native-windows-gui = "0.2.0"

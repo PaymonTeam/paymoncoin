@@ -58,69 +58,53 @@ fn main() {
 
     let mut jhs = VecDeque::new();
 
-    let ports = [70].iter();
-    for port in ports {
-        let port = *port;
-        let mut neighbors = String::new();
-        if port != 0 {
-            let ports2 = [69].iter();
-            let v: Vec<String> = ports2.filter(|p| **p != port).map(|p| format!("127.0.0.1:{}",
-                                                                                p)).collect();
-            neighbors = v.join(" ");
-        }
-//        println!("{}", neighbors);
+    let jh = Builder::new().name(format!("pmnc")).spawn(move || {
+        let mut config = Configuration::new();
+        let port = config.get_int(ConfigurationSettings::Port).unwrap();
 
-        let jh = Builder::new().name(format!("pmnc {}", port)).spawn(move || {
-            let mut config = Configuration::new();
-            if port != 0 {
-                config.set_string(ConfigurationSettings::Neighbors, &neighbors);
-                config.set_int(ConfigurationSettings::Port, port);
-            }
+        let pmnc = Arc::new(Mutex::new(PaymonCoin::new(config)));
 
-            let pmnc = Arc::new(Mutex::new(PaymonCoin::new(config)));
+        let node_arc = pmnc.lock().unwrap().run();
 
-            let node_arc = pmnc.lock().unwrap().run();
-
-            let pmnc_clone = pmnc.clone();
+        let pmnc_clone = pmnc.clone();
 //            let mut api_running = Arc::new(AtomicBool::from(true));
 //            let api_running_clone = api_running.clone();
-            let api_running = Arc::new((Mutex::new(true), Condvar::new()));
-            let api_running_clone = api_running.clone();
+        let api_running = Arc::new((Mutex::new(true), Condvar::new()));
+        let api_running_clone = api_running.clone();
 
-            let api_jh = thread::spawn(move || {
-                let mut api = API::new(pmnc_clone, (port + 10) as u16, api_running_clone);
-                api.run();
-                drop(api);
-            });
+        let api_jh = thread::spawn(move || {
+            let mut api = API::new(pmnc_clone, (port + 10) as u16, api_running_clone);
+            api.run();
+            drop(api);
+        });
 
-            thread::sleep(Duration::from_secs(10));
+        thread::sleep(Duration::from_secs(10));
 //            if let Ok(n) = node_arc.lock() {
 //                n.neighbors.lock().pu
 //            }
-            thread::sleep(Duration::from_secs(10000));
+        thread::sleep(Duration::from_secs(10000));
 
-            {
-                //            api_running.store(false, Ordering::SeqCst);
-                let &(ref lock, ref cvar) = &*api_running;
-                let mut is_running = lock.lock().unwrap();
-                *is_running = false;
-                cvar.notify_one();
-            }
+        {
+            //            api_running.store(false, Ordering::SeqCst);
+            let &(ref lock, ref cvar) = &*api_running;
+            let mut is_running = lock.lock().unwrap();
+            *is_running = false;
+            cvar.notify_one();
+        }
 
-            api_jh.join();
-            {
+        api_jh.join();
+        {
 //                if let Ok(mut p) = pmnc.lock() {
-                pmnc.lock().and_then(|mut p| {
-                    p.shutdown();
-                    Ok(p)
-                });
+            pmnc.lock().and_then(|mut p| {
+                p.shutdown();
+                Ok(p)
+            });
 //                    p.shutdown();
 //                }
-            }
-        }).unwrap();
+        }
+    }).unwrap();
 
-        jhs.push_back(jh);
-    }
+    jhs.push_back(jh);
 
     while let Some(jh) = jhs.pop_front() {
         jh.join();

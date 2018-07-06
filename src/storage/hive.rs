@@ -59,11 +59,6 @@ impl Hive {
         }
     }
 
-//    pub fn load_approvee(hash: &Hash) -> Approvee {
-//        //TODO load
-//        unimplemented!()
-//    }
-
     pub fn init(&mut self) {
         use self::rustc_serialize::hex::FromHex;
         let mwm = 3;

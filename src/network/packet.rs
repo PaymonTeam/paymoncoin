@@ -233,7 +233,7 @@ impl SerializedBuffer {
 //                if error != nullptr {
 //                    *error = true;
 //                }
-                panic!("write byte error");
+                error!("write byte error");
                 return;
             }
             self.buffer[self.position] = i as u8;
@@ -249,7 +249,7 @@ impl SerializedBuffer {
 //                if error != nullptr {
 //                    *error = true;
 //                }
-                panic!("write i32 error");
+                error!("write i32 error");
                 return;
             }
             self.buffer[self.position] = i as u8;
@@ -271,7 +271,7 @@ impl SerializedBuffer {
 //                if error != nullptr {
 //                    *error = true;
 //                }
-                panic!("write i64 error");
+                error!("write i64 error");
                 return;
             }
             self.buffer[self.position] = i as u8;
@@ -306,9 +306,9 @@ impl SerializedBuffer {
     pub fn write_bool(&mut self, val: bool) {
         if !self.calculated_size_only {
             if val {
-                self.write_i32(0x6e4a64b31);
+                self.write_i32(0x6e4a64b3);
             } else {
-                self.write_i32(0x3f5d29c38);
+                self.write_i32(0x3f5d29c3);
             }
         } else {
             self.capacity += 4;
@@ -334,7 +334,7 @@ impl SerializedBuffer {
         let length = b.len();
         if !self.calculated_size_only {
             if self.position + length > self.limit {
-                panic!("write bytes error");
+                error!("write bytes error");
                 return;
             }
             self.write_bytes_internal(b, length);
@@ -346,7 +346,7 @@ impl SerializedBuffer {
     pub fn write_bytes_offset(&mut self, b:&[u8], length:usize) {
         if !self.calculated_size_only {
             if self.position + length > self.limit {
-                panic!("write bytes error");
+                error!("write bytes error");
                 return;
             }
             self.write_bytes_internal(b, length);
@@ -362,7 +362,7 @@ impl SerializedBuffer {
         }
         if !self.calculated_size_only {
             if self.position + length > self.limit {
-                panic!("write bytes error");
+                error!("write bytes error");
                 return;
             }
             self.write_bytes_internal(&b.buffer[b.position()..], length);
@@ -457,7 +457,7 @@ impl SerializedBuffer {
 
     pub fn read_i32(&mut self) -> i32 {
         if self.position + 4 > self.limit {
-            panic!("read i32 error");
+            error!("read i32 error");
         }
         let result =
             ((self.buffer[self.position] as i32 & 0xff) |
@@ -470,7 +470,7 @@ impl SerializedBuffer {
 
     pub fn read_i64(&mut self) -> i64 {
         if self.position + 8 > self.limit {
-            panic!("read i64 error");
+            error!("read i64 error");
         }
 
         let result =
@@ -504,7 +504,7 @@ impl SerializedBuffer {
 
     pub fn read_byte(&mut self) -> u8 {
         if self.position + 1 > self.limit {
-            panic!("read u8 error");
+            error!("read u8 error");
         }
         let result = self.buffer[self.position];
         self.position += 1;
@@ -514,9 +514,9 @@ impl SerializedBuffer {
     pub fn read_bool(&mut self) -> bool {
         let i = self.read_u32();
 
-        if i == 0x6e4a64b31 {
+        if i == 0x6e4a64b3 {
             return true;
-        } else if i == 0x3f5d29c38 {
+        } else if i == 0x3f5d29c3 {
             return false;
         }
 

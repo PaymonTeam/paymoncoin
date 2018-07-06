@@ -103,7 +103,7 @@ static mut LAST_TX: Option<Hash> = None;
 static mut APP: Option<Ui<AppId>> = None;
 
 fn check_inclusion_state(hash: Hash) -> bool {
-    let mut st = json::encode(&rpc::GetNewInclusionStateStatement {
+    let mut st = json::encode(&rpc::GetInclusionStates {
         transactions: vec![hash],
         tips: vec![],
     }).unwrap();
@@ -379,7 +379,6 @@ fn send_request(request: Json, addr: SocketAddr) -> Option<Json> {
                 }
             } else {
                 resp = "".to_string();
-                break;
             }
             resp = "".to_string();
         }

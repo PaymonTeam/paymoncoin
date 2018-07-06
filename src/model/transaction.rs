@@ -1,6 +1,7 @@
 extern crate rustc_serialize;
 extern crate crypto;
 extern crate ntrumls;
+extern crate base64;
 
 use model::approvee::*;
 use network::packet::{Serializable, SerializedBuffer};
@@ -17,7 +18,6 @@ use self::rustc_serialize::{
     hex::{FromHex, ToHex},
     Encodable, Decodable, Encoder, Decoder
 };
-
 pub const HASH_SIZE: usize = 20;
 pub const ADDRESS_SIZE: usize = 21;
 pub const TRANSACTION_SIZE: usize = 173 + 4; // HASH_SIZE + 1 (checksum byte)
@@ -295,7 +295,7 @@ pub struct TransactionObject {
     pub nonce: u64,
     pub tag: Hash,
     pub timestamp: u64,
-    pub value: u32,
+    pub value: u32, // TODO: change to u64?
     pub data_type: TransactionType,
     pub signature: Signature,
     pub signature_pubkey: PublicKey,
@@ -313,7 +313,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn get_type(&self) -> TransactionType{
+    pub fn get_type(&self) -> TransactionType {
         self.object.data_type.clone()
     }
 
@@ -376,7 +376,7 @@ impl Transaction {
     pub fn from_bytes(mut bytes: SerializedBuffer) -> Self {
         let mut transaction = TransactionObject::new();
         transaction.read_params(&mut bytes);
-        transaction.data_type = TransactionType::Full;
+//        transaction.data_type = TransactionType::Full;
 
         Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
@@ -490,6 +490,15 @@ impl Transaction {
         }
 
         false
+    }
+
+    /* Converts transaction data to Base64 */
+    pub fn get_base64_data(&mut self) -> String {
+        if self.bytes.position() == 0 {
+            self.object.serialize_to_stream(&mut self.bytes);
+        }
+        debug!("bytes={:?}", &self.bytes.buffer[0..self.bytes.limit()]);
+        return base64::encode(&self.bytes.buffer[0..self.bytes.limit()]);
     }
 }
 
@@ -617,8 +626,8 @@ impl Serializable for TransactionObject {
             1 => TransactionType::Full,
             _ => TransactionType::HashOnly
         };
-        self.signature = Signature(stream.read_byte_array().unwrap());
-        self.signature_pubkey = PublicKey(stream.read_byte_array().unwrap());
+        self.signature = Signature(stream.read_byte_array().unwrap_or(vec![]));
+        self.signature_pubkey = PublicKey(stream.read_byte_array().unwrap_or(vec![]));
         self.snapshot = stream.read_u32();
         self.solid = stream.read_bool();
         self.height = stream.read_u64();

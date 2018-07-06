@@ -355,10 +355,10 @@ impl Milestone {
                             if let Ok(mut l_v) = arc.lock() {
                                 update_snapshot_is_ok = l_v.update_snapshot(&milestone_obj, &mut self.latest_snapshot)?;
                             } else {
-                                panic!();
+                                panic!("broken ledger validator mutex");
                             }
                         } else {
-                            panic!();
+                            panic!("ledger validator is None");
                         }
                         if update_snapshot_is_ok {
                             self.latest_solid_subhive_milestone = milestone_obj.get_hash();
