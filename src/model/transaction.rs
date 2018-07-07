@@ -497,7 +497,6 @@ impl Transaction {
         if self.bytes.position() == 0 {
             self.object.serialize_to_stream(&mut self.bytes);
         }
-        debug!("bytes={:?}", &self.bytes.buffer[0..self.bytes.limit()]);
         return base64::encode(&self.bytes.buffer[0..self.bytes.limit()]);
     }
 }

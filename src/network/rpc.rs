@@ -155,6 +155,28 @@ impl Serializable for TransactionsToApprove {
 }
 
 /**
+    RequestTransaction
+*/
+#[derive(RustcDecodable, RustcEncodable)]
+pub struct RequestTransaction {
+    pub hash: Hash,
+}
+
+impl RequestTransaction { pub const SVUID : i32 = 17; }
+
+impl Serializable for RequestTransaction {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
+        self.hash.serialize_to_stream(stream);
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        let _ = stream.read_i32();
+        self.hash.read_params(stream);
+    }
+}
+
+/**
     GetBalances
 */
 #[derive(RustcDecodable, RustcEncodable)]

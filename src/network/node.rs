@@ -17,8 +17,8 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 use model::transaction;
-//#[macro_use]
-//use utils;
+use model::transaction::{Hash, HASH_NULL};
+use rand::{Rng, thread_rng};
 use utils::{AM, AWM};
 use network::rpc;
 use model::*;
@@ -26,6 +26,11 @@ use model::*;
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
     panic!();
+}
+
+struct Pair<U, V> {
+    pub low: U,
+    pub hi: V,
 }
 
 pub struct Node {
@@ -36,6 +41,7 @@ pub struct Node {
     pmnc_rx: Receiver<()>,
     pub broadcast_queue: AM<VecDeque<Transaction>>,
     receive_queue: AM<VecDeque<Transaction>>,
+    reply_queue: AM<VecDeque<(Hash, AM<Neighbor>)>>,
     running: Arc<AtomicBool>,
     thread_join_handles: VecDeque<JoinHandle<()>>,
     transaction_validator: AM<TransactionValidator>,
@@ -58,6 +64,7 @@ impl Node {
             pmnc_rx,
             broadcast_queue: make_am!(VecDeque::new()),
             receive_queue: make_am!(VecDeque::new()),
+            reply_queue: make_am!(VecDeque::new()),
             thread_join_handles: VecDeque::new(),
             transaction_requester,
             transaction_validator,
@@ -91,7 +98,9 @@ impl Node {
         let running_weak = Arc::downgrade(&self.running.clone());
         let broadcast_queue_weak = Arc::downgrade(&self.broadcast_queue.clone());
         let neighbors_weak = Arc::downgrade(&self.neighbors.clone());
-        let jh = thread::spawn(|| Node::broadcast_thread(running_weak, broadcast_queue_weak, neighbors_weak));
+        let tr_weak = Arc::downgrade(&self.transaction_requester.clone());
+        let jh = thread::spawn(|| Node::broadcast_thread(running_weak, broadcast_queue_weak, neighbors_weak,
+                                                         tr_weak));
         self.thread_join_handles.push_back(jh);
 
         let running_weak = Arc::downgrade(&self.running.clone());
@@ -103,11 +112,104 @@ impl Node {
                                                        broadcast_queue_weak, hive_weak, tv_weak));
         self.thread_join_handles.push_back(jh);
 
+        let running_weak = Arc::downgrade(&self.running.clone());
+        let reply_queue_weak = Arc::downgrade(&self.reply_queue.clone());
+        let hive_weak = self.hive.clone();
+        let tr_weak = Arc::downgrade(&self.transaction_requester.clone());
+        let ms_weak = Arc::downgrade(&self.milestone.clone());
+        let tvm_weak = Arc::downgrade(&self.tips_vm.clone());
+        let jh = thread::spawn(|| Node::reply_thread(running_weak, reply_queue_weak, hive_weak,
+                                                     tr_weak, ms_weak, tvm_weak));
+        self.thread_join_handles.push_back(jh);
+
         self.thread_join_handles.push_back(replicator_jh);
     }
 
+    fn reply_thread(running: Weak<AtomicBool>, reply_queue: AWM<VecDeque<(Hash, AM<Neighbor>)>>,
+                    hive: AWM<Hive>, tr: AWM<TransactionRequester>, milestone: AWM<Milestone>,
+                    tvm: AWM<TipsViewModel>) {
+        loop {
+            if let Some(arc) = running.upgrade() {
+                let b = arc.load(Ordering::SeqCst);
+                if !b { break; }
+
+                if let Some(arc) = reply_queue.upgrade() {
+                    if let Ok(mut queue) = arc.lock() {
+                        if let Some((hash, neighbor_am)) = queue.pop_front() {
+                            let transaction;
+
+                            if hash == HASH_NULL {
+                                if let Some(arc) = tr.upgrade() {
+                                    if let Ok(mut transaction_requester) = arc.lock() {
+                                        // TODO: make P independent var
+                                        if transaction_requester.num_transactions_to_request() >
+                                            0 && thread_rng().gen::<f64>() < 0.66 {
+                                            let tip;
+                                            if thread_rng().gen::<f64>() < 0.02 {
+                                                if let Some(arc) = milestone.upgrade() {
+                                                    if let Ok(mut ms) = arc.lock() {
+                                                        tip = ms.latest_milestone;
+                                                    } else { panic!("broken milestone mutex"); }
+                                                } else { continue; }
+                                            } else {
+                                                if let Some(arc) = tvm.upgrade() {
+                                                    if let Ok(mut tvm) = arc.lock() {
+                                                        tip = tvm.get_random_solid_tip().unwrap_or(HASH_NULL);
+                                                    } else { panic!("broken tvm mutex"); }
+                                                } else { continue; }
+                                            };
+                                            if let Some(arc) = hive.upgrade() {
+                                                if let Ok(mut hive) = arc.lock() {
+                                                    transaction = hive.storage_load_transaction(&tip).unwrap();
+                                                } else {
+                                                    panic!("broken hive mutex");
+                                                }
+                                            } else {
+                                                continue;
+                                            }
+                                        } else {
+                                            continue;
+                                        }
+                                    } else { panic!("broken transaction requester mutex"); }
+                                } else { continue; }
+                            } else {
+                                if let Some(arc) = hive.upgrade() {
+                                    if let Ok(mut hive) = arc.lock() {
+                                        transaction = hive.storage_load_transaction(&hash).unwrap();
+                                    } else {
+                                        panic!("broken hive mutex");
+                                    }
+                                } else {
+                                    continue;
+                                }
+                            }
+
+                            if transaction.get_type() == TransactionType::Full {
+                                if let Ok(mut n) = neighbor_am.lock() {
+                                    n.send_packet(transaction);
+                                }
+                            } else {
+                                // TODO: make P independent var
+                                if hash != HASH_NULL && thread_rng().gen::<f64>() < 0.01 {
+                                    if let Some(arc) = tr.upgrade() {
+                                        if let Ok(mut transaction_requester) = arc.lock() {
+                                            transaction_requester.request_transaction(hash, false);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                thread::sleep(Duration::from_secs(1));
+            }
+        }
+    }
+
     fn receive_thread(running: Weak<AtomicBool>, receive_queue: AWM<VecDeque<Transaction>>,
-                      broadcast_queue: AWM<VecDeque<Transaction>>, hive: AWM<Hive>, tv: AWM<TransactionValidator>) {
+                      broadcast_queue: AWM<VecDeque<Transaction>>, hive: AWM<Hive>, tv:
+                      AWM<TransactionValidator>) {
         loop {
             if let Some(arc) = running.upgrade() {
                 let b = arc.load(Ordering::SeqCst);
@@ -159,7 +261,7 @@ impl Node {
         }
     }
 
-    fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>) {
+    fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>, tr: AWM<TransactionRequester>) {
         loop {
             if let Some(arc) = running.upgrade() {
                 let b = arc.load(Ordering::SeqCst);
@@ -172,9 +274,25 @@ impl Node {
                                 if let Ok(neighbors) = arc.lock() {
                                     for n in neighbors.iter() {
                                         if let Ok(mut n) = n.lock() {
+                                            // TODO: make delay and clone neighbors list
                                             info!("sending to {:?}", n.addr);
                                             let transaction = t.object.clone();
                                             n.send_packet(transaction);
+                                            if let Some(arc) = tr.upgrade() {
+                                                if let Ok(mut tr) = arc.lock() {
+                                                    // TODO: get probability from var
+                                                    if let Some(hash) = tr
+                                                        .poll_transaction_to_request(thread_rng().gen::<f64>() < 0.7) {
+                                                        n.send_packet(rpc::RequestTransaction {
+                                                            hash
+                                                        });
+                                                    } else {
+                                                        n.send_packet(rpc::RequestTransaction {
+                                                            hash: HASH_NULL
+                                                        });
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -201,23 +319,26 @@ impl Node {
     }
 
     pub fn on_connection_data_received(&mut self, mut data: SerializedBuffer, addr: SocketAddr) {
+        let mut neighbor;
         if let Ok(mut neighbors) = self.neighbors.lock() {
-            let neighbor = match neighbors.iter().find(
+            neighbor = match neighbors.iter().find(
                 |arc| {
                     if let Ok(n) = arc.lock() { return n.addr.ip() == addr.ip() }
                     false
                 }) {
-                Some(arc) => arc,
+                Some(arc) => arc.clone(),
                 None => {
                     info!("Received data from unknown neighbor {:?}", addr);
                     return;
                 }
             };
+        } else {
+            panic!("broken neighbors mutex");
         }
         let length = data.limit();
 
 //        if length == 4 {
-//            connection.mark_reset();
+//            connection.close();
 //            return;
 //        }
 
@@ -254,22 +375,25 @@ impl Node {
                     queue.push_back(transaction);
                 }
             }
+            rpc::RequestTransaction::SVUID => {
+                let mut tx_request = rpc::RequestTransaction { hash: HASH_NULL };
+                tx_request.read_params(&mut data);
+
+                let mut hash = tx_request.hash;
+                if let Ok(mut queue) = self.reply_queue.lock() {
+                    queue.push_back((hash, neighbor.clone()));
+                }
+            }
             _ => {
                 warn!("Unknown SVUID {}", svuid);
             }
         }
+    }
 
-//        let mut funcs = HashMap::<i32, fn(n: TS<Neighbor>)->()>::new();
-//
-//        funcs.insert(TransactionObject::SVUID, |n: TS<Neighbor>| {
-//
-////            let keep_alive = rpc::KeepAlive{};
-////            conn.send_packet(keep_alive, 1);
-//        });
-//
-//        if let Some(f) = funcs.get(&svuid) {
-//            f(connection);
-//        }
+    pub fn broadcast(&mut self, transaction: Transaction) {
+        if let Ok(ref mut queue) = self.broadcast_queue.lock() {
+            queue.push_back(transaction);
+        }
     }
 
     pub fn shutdown(&mut self) {
