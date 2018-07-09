@@ -165,8 +165,8 @@ impl Configuration {
         config.set_bool(ConfigurationSettings::DNSResolutionEnabled, true);
         config.set_bool(ConfigurationSettings::Revalidate, false);
         config.set_bool(ConfigurationSettings::RescanDB, false);
-        config.set_int(ConfigurationSettings::MainNetMWM, 14);
-        config.set_int(ConfigurationSettings::TestNetMWM, 13);
+        config.set_int(ConfigurationSettings::MainNetMWM, 8);
+        config.set_int(ConfigurationSettings::TestNetMWM, 7);
 
         config.set_int(ConfigurationSettings::MinRandomWalks, 5);
         config.set_int(ConfigurationSettings::MaxRandomWalks, 27);

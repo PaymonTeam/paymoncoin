@@ -7,9 +7,9 @@ use std::{
     thread::{Builder, JoinHandle},
     time::Duration,
 };
+
 use storage::Hive;
 use network::node::*;
-//use network::replicator_pool::ReplicatorSourcePool;
 use network::replicator_new::ReplicatorNew;
 use model::config::{PORT, Configuration, ConfigurationSettings};
 use model::config;
@@ -88,25 +88,23 @@ impl PaymonCoin {
     }
 
     pub fn run(&mut self) -> AM<Node> {
-        // println!("hive lock 6");
-//        if let Ok(mut hive) = self.hive.lock() {
-//            hive.init();
-//        }
-        // println!("hive unlock 6");
         Milestone::init(self.milestone.clone(), self.ledger_validator.clone());
         if let Ok(mut tv) = self.transaction_validator.lock() {
-            tv.init(true, 9);
+            let test_net = self.config.get_bool(ConfigurationSettings::TestNet).unwrap_or(false);
+            let wmw = if test_net {
+                self.config.get_int(ConfigurationSettings::MainNetMWM).unwrap_or(9)
+            } else {
+                self.config.get_int(ConfigurationSettings::TestNetMWM).unwrap_or(8)
+            };
+            tv.init(test_net, wmw);
         }
         TipsManager::init(self.tips_manager.clone());
 
         let node_copy = self.node.clone();
         let config_copy = self.config.clone();
         let replicator_rx = self.replicator_rx.take().unwrap();
-//        let (tx, replicator_rx) = channel::<()>();
 
         let replicator_jh = thread::spawn(move || {
-//            let mut replicator_pool = ReplicatorSourcePool::new(&config_copy, Arc::downgrade(&node_copy),
-//                                                                replicator_rx);
             let mut replicator_pool = ReplicatorNew::new(&config_copy, Arc::downgrade(&node_copy));
             replicator_pool.run();
         });
@@ -114,7 +112,6 @@ impl PaymonCoin {
         {
             let mut guard = self.node.lock().unwrap();
             guard.init(replicator_jh);
-//            guard.run().expect("Failed to run server");
         }
 
         self.node.clone()

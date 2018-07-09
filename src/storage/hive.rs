@@ -61,7 +61,7 @@ impl Hive {
 
     pub fn init(&mut self) {
         use self::rustc_serialize::hex::FromHex;
-        let mwm = 3;
+        let mwm = 9;
         let coordinator = Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap();
         let mut th1 = HASH_NULL; // coordinator: 8000 -> Acc1
         let mut th2 = HASH_NULL; // coordinator: 2000 -> Acc2, trunk: th1, branch: th1
@@ -69,12 +69,12 @@ impl Hive {
         let mut th3 = HASH_NULL; // Acc1: 5 -> Acc2, trunk: th1, branch: th2
         let mut th4 = HASH_NULL; // Acc2: 5 -> Acc1, trunk: th3, branch: mh1
         let mut mh2 = HASH_NULL; // coordiator: milestone: 2, trunk: mh1, branch: th4
-
         {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
             let mut genesis = TransactionObject {
                 address: Address::from_str("PC19C342BA1A051A3BA7AF1DBBAA5E72469C94CC554").unwrap(),
-                attachment_timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 2,
+                attachment_timestamp: 1531147330u64 + 2, //time::SystemTime::now().elapsed()
+                // .unwrap().as_secs() + 2,
                 attachment_timestamp_lower_bound: 0u64,
                 attachment_timestamp_upper_bound: 0u64,
                 branch_transaction: HASH_NULL,
@@ -82,7 +82,7 @@ impl Hive {
                 hash: HASH_NULL,
                 nonce: 0,
                 tag: HASH_NULL,
-                timestamp: time::SystemTime::now().elapsed().unwrap().as_secs(),
+                timestamp: 1531147330u64,
                 value: 8000,
                 data_type: TransactionType::Full,
                 signature: Signature(vec![]),
@@ -92,7 +92,8 @@ impl Hive {
                 height: 1,
             };
             let mut genesis = Transaction::from_object(genesis);
-            genesis.object.nonce = genesis.find_nonce(mwm);
+            genesis.object.nonce = 518;
+            println!("{}={}", line!(), genesis.object.nonce);
             genesis.object.hash = genesis.calculate_hash();
             th1 = genesis.object.hash.clone();
 
@@ -111,7 +112,7 @@ impl Hive {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
             let mut genesis = TransactionObject {
                 address: Address::from_str("PE138221B1A9CBEFCEAF03E17934A7373D6289F0536").unwrap(),
-                attachment_timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 3,
+                attachment_timestamp: 1531147330u64 + 3,
                 attachment_timestamp_lower_bound: 0u64,
                 attachment_timestamp_upper_bound: 0u64,
                 branch_transaction: th1.clone(),
@@ -119,7 +120,7 @@ impl Hive {
                 hash: HASH_NULL,
                 nonce: 0,
                 tag: HASH_NULL,
-                timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 1,
+                timestamp: 1531147330u64 + 1,
                 value: 2000,
                 data_type: TransactionType::Full,
                 signature: Signature(vec![]),
@@ -129,7 +130,8 @@ impl Hive {
                 height: 1,
             };
             let mut genesis = Transaction::from_object(genesis);
-            genesis.object.nonce = genesis.find_nonce(mwm);
+            genesis.object.nonce = 456;
+            println!("{}={}", line!(), genesis.object.nonce);
             genesis.object.hash = genesis.calculate_hash();
             th2 = genesis.object.hash.clone();
 
@@ -149,7 +151,7 @@ impl Hive {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
             let mut ms = TransactionObject {
                 address: ADDRESS_NULL,
-                attachment_timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 4,
+                attachment_timestamp: 1531147330u64 + 4,
                 attachment_timestamp_lower_bound: 0u64,
                 attachment_timestamp_upper_bound: 0u64,
                 branch_transaction: th1.clone(),
@@ -157,7 +159,7 @@ impl Hive {
                 hash: HASH_NULL,
                 nonce: 0,
                 tag: Hash([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1u8]),
-                timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 2,
+                timestamp: 1531147330u64 + 2,
                 value: 0,
                 data_type: TransactionType::Full,
                 signature: Signature(vec![]),
@@ -167,7 +169,8 @@ impl Hive {
                 height: 1,
             };
             let mut ms = Transaction::from_object(ms);
-            ms.object.nonce = ms.find_nonce(mwm);
+            ms.object.nonce = 46;
+            println!("{}={}", line!(), ms.object.nonce);
             ms.object.hash = ms.calculate_hash();
             mh1 = ms.object.hash.clone();
 
@@ -191,7 +194,7 @@ impl Hive {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
             let mut genesis = TransactionObject {
                 address: Address::from_str("PE138221B1A9CBEFCEAF03E17934A7373D6289F0536").unwrap(),
-                attachment_timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 4,
+                attachment_timestamp: 1531147330u64 + 4,
                 attachment_timestamp_lower_bound: 0u64,
                 attachment_timestamp_upper_bound: 0u64,
                 branch_transaction: th1.clone(),
@@ -199,7 +202,7 @@ impl Hive {
                 hash: HASH_NULL,
                 nonce: 0,
                 tag: HASH_NULL,
-                timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 5,
+                timestamp: 1531147330u64 + 5,
                 value: 5,
                 data_type: TransactionType::Full,
                 signature: Signature(vec![]),
@@ -209,7 +212,8 @@ impl Hive {
                 height: 2,
             };
             let mut genesis = Transaction::from_object(genesis);
-            genesis.object.nonce = genesis.find_nonce(mwm);
+            genesis.object.nonce = 46;
+            println!("{}={}", line!(), genesis.object.nonce);
             genesis.object.hash = genesis.calculate_hash();
             th3 = genesis.object.hash.clone();
 
@@ -228,7 +232,7 @@ impl Hive {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
             let mut genesis = TransactionObject {
                 address: Address::from_str("PC19C342BA1A051A3BA7AF1DBBAA5E72469C94CC554").unwrap(),
-                attachment_timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 5,
+                attachment_timestamp: 1531147330u64 + 5,
                 attachment_timestamp_lower_bound: 0u64,
                 attachment_timestamp_upper_bound: 0u64,
                 branch_transaction: th3.clone(),
@@ -236,7 +240,7 @@ impl Hive {
                 hash: HASH_NULL,
                 nonce: 0,
                 tag: HASH_NULL,
-                timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 6,
+                timestamp: 1531147330u64 + 6,
                 value: 5,
                 data_type: TransactionType::Full,
                 signature: Signature(vec![]),
@@ -246,7 +250,8 @@ impl Hive {
                 height: 3,
             };
             let mut genesis = Transaction::from_object(genesis);
-            genesis.object.nonce = genesis.find_nonce(mwm);
+            genesis.object.nonce = 134;
+            println!("{}={}", line!(), genesis.object.nonce);
             genesis.object.hash = genesis.calculate_hash();
             th4 = genesis.object.hash.clone();
 
@@ -266,7 +271,7 @@ impl Hive {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
             let mut ms = TransactionObject {
                 address: ADDRESS_NULL,
-                attachment_timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 9,
+                attachment_timestamp: 1531147330u64 + 9,
                 attachment_timestamp_lower_bound: 0u64,
                 attachment_timestamp_upper_bound: 0u64,
                 trunk_transaction: mh1.clone(),
@@ -274,7 +279,7 @@ impl Hive {
                 hash: HASH_NULL,
                 nonce: 0,
                 tag: Hash([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2u8]),
-                timestamp: time::SystemTime::now().elapsed().unwrap().as_secs() + 10,
+                timestamp: 1531147330u64 + 10,
                 value: 0,
                 data_type: TransactionType::Full,
                 signature: Signature(vec![]),
@@ -284,7 +289,8 @@ impl Hive {
                 height: 4,
             };
             let mut ms = Transaction::from_object(ms);
-            ms.object.nonce = ms.find_nonce(mwm);
+            ms.object.nonce =152;
+            println!("{}={}", line!(), ms.object.nonce);
             ms.object.hash = ms.calculate_hash();
             mh2 = ms.object.hash.clone();
 
@@ -306,7 +312,7 @@ impl Hive {
 
         {
             let mut state = HashMap::new();
-    //        state.insert(Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap(), -8000);
+            //        state.insert(Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap(), -8000);
             state.insert(Address::from_str("PC19C342BA1A051A3BA7AF1DBBAA5E72469C94CC554").unwrap(), 8000);
             state.insert(coordinator.clone(), -10000);
             state.insert(Address::from_str("PE138221B1A9CBEFCEAF03E17934A7373D6289F0536").unwrap(), 2000);
@@ -369,7 +375,7 @@ impl Hive {
 
     pub fn storage_latest_milestone(&self) -> Option<MilestoneObject> {
         let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
-                                          .unwrap(), IteratorMode::End).unwrap();
+                                             .unwrap(), IteratorMode::End).unwrap();
         match it.next() {
             Some((key, bytes)) => {
                 let mut index = 0u32;

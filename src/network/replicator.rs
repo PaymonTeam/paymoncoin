@@ -135,7 +135,7 @@ impl ReplicatorSource {
         }
     }
 
-    pub fn send_packet<T>(&mut self, packet: T, message_id : i64) where T: Serializable {
+    pub fn send_packet<T>(&mut self, packet: T, message_id: i64) where T: Serializable {
         let message_length = calculate_object_size(&packet);
         let size = match message_length % 4 == 0 {
             true => 8 + 4 + message_length as usize,

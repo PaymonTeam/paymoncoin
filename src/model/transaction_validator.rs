@@ -118,8 +118,8 @@ impl TransactionValidator {
     pub fn init(&mut self, testnet: bool, mwm: u32) {
         self.min_weight_magnitude = mwm;
 
-        if !testnet && self.min_weight_magnitude < 18 {
-            self.min_weight_magnitude = 18;
+        if !testnet && self.min_weight_magnitude < 9 {
+            self.min_weight_magnitude = 9;
         }
     }
 

@@ -24,16 +24,13 @@ use std::time::{Instant, Duration};
 use std::thread;
 use network::Node;
 use model::config::{Configuration, ConfigurationSettings, PORT};
-use self::futures::sync::mpsc::Sender;
+use self::futures::sync::mpsc::{Sender, UnboundedSender};
 
 use utils::AM;
 use network::Neighbor;
+use network::packet::SerializedBuffer;
 
 pub enum ReadState<A> {
-//    ReadingLen {
-//        buf: Vec<u8>,
-//        a: A
-//    },
     ReadingData {
         len: u32,
         current_read: u32,
@@ -78,42 +75,8 @@ impl<A> Future for ReadPacket<A>
         let mut f_byte_buf = [0u8; 1];
 
         match self.state {
-//            ReadState::ReadingLen { ref mut a, ref mut buf } => {
-                // If we get `Ok(n)`, then we know the stream hit EOF or the delimiter.
-                // and just return it, as we are finished.
-                // If we hit "would block" then all the read data so far
-                // is in our buffer, and otherwise we propagate errors.
-//                try_nb!(a.read_until(byte, buf));
-
-//                if self.a.peek(&mut f_byte_buf).is_ok() {
-//                    let f_byte = f_byte_buf[0];
-//                    if f_byte != 0x7f {
-//                        self.sock.read(&mut f_byte_buf).expect("Failed to read f_byte");
-//                        let i = (f_byte_buf[0] as u32) * 4;
-//                        return Ok(Some(i));
-//                    } else {
-//                        let mut buf = [0u8; 4];
-//                        self.sock.read(&mut buf).expect("Failed to read 4-byte buf");
-//                        let msg_len = NativeEndian::read_u32(buf.as_ref());
-//                        return Ok(Some((msg_len >> 8) * 4));
-//                    }
-//                } else {
-//                    return Ok(None);
-//                }
-//                try_nb!(a.read_exact(&mut f_byte_buf));
-//                match a.read_exact(&mut f_byte_buf) {
-//                    Ok(t) => t,
-//                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-//                        return Ok(futures::Async::NotReady)
-//                    }
-//                    Err(e) => return Err(e.into()),
-//                };
-//                debug!("read={:?}", f_byte_buf);
-//                (1, a, buf)
-//            },
             ReadState::ReadingData {ref mut a, ref mut buf, ref mut len, ref mut current_read,
                 ref mut f_b, ref mut len_read} => {
-//                debug!("reading data with len {}", len);
                 if *current_read == 0 && !*len_read {
                     match a.read_exact(&mut f_byte_buf) {
                         Ok(t) => t,
@@ -127,7 +90,6 @@ impl<A> Future for ReadPacket<A>
                         return Ok(futures::Async::NotReady);
                     }
 
-                    debug!("read1={:?}", f_byte_buf);
                     *current_read = 1;
 
                     let f_byte = f_byte_buf[0];
@@ -136,7 +98,6 @@ impl<A> Future for ReadPacket<A>
                     if f_byte != 0x7f {
                         *len = (f_byte_buf[0] as u32) * 4;
                         *len_read = true;
-//                        return Ok(futures::Async::NotReady);
                     } else {
                         let mut buf = [0u8; 4];
                         buf[0] = f_byte;
@@ -152,8 +113,6 @@ impl<A> Future for ReadPacket<A>
                         *current_read = 4;
                         *len_read = true;
                     }
-
-//                    return Ok(futures::Async::NotReady);
                 }
 
                 if *current_read == 1 && !*len_read {
@@ -173,7 +132,7 @@ impl<A> Future for ReadPacket<A>
                 }
 
                 if *len_read {
-                    println!("read len={}", *len);
+                    debug!("read len={}", *len);
                     let mut nbuf = vec![0u8; *len as usize];
                     match a.read_exact(&mut nbuf) {
                         Ok(t) => t,
@@ -190,21 +149,7 @@ impl<A> Future for ReadPacket<A>
             ReadState::Empty => panic!("poll ReadPacket after it's done"),
         };
 
-//        match mem::replace(&mut self.state, ReadState::ReadingData {
-//            a: a.clone(),
-//            buf: buf.clone(),
-//            len,
-//            current_read: 0 } ) {
-//            ReadState::ReadingLen { a, buf } => { return Ok(futures::Async::NotReady); },
-//            ReadState::ReadingData { a, buf, len, current_read } => { debug!("1"); },
-//            ReadState::Empty => unreachable!(),
-//        };
-
         match mem::replace(&mut self.state, ReadState::Empty) {
-//            ReadState::ReadingLen { a, buf } => {
-//                warn!("read len after data");
-//                Ok(futures::Async::NotReady)
-//            },
             ReadState::ReadingData { a, buf, .. } => Ok((a, buf).into()),
             ReadState::Empty => unreachable!(),
         }
@@ -213,7 +158,7 @@ impl<A> Future for ReadPacket<A>
 
 pub struct ReplicatorSink {
 //    sock: TcpStream,
-    tx: Sender<Vec<u8>>
+    pub tx: UnboundedSender<Vec<u8>>
 }
 
 pub struct ReplicatorSource {
@@ -245,11 +190,12 @@ impl ReplicatorNew {
 
         let worker = stream::iter_ok::<_, io::Error>(iter::repeat(())).take(1).for_each(move |j| {
             let socket = TcpListener::bind(&addr).unwrap();
-            println!("Listening on: {}", addr);
+            info!("Listening on: {}", addr);
 
             let connections = Arc::new(Mutex::new(HashMap::new()));
 
             let neighbors;
+            let node_c2 = node.clone();
 
             if let Some(arc) = node.upgrade() {
                 if let Ok(node) = arc.try_lock() {
@@ -270,11 +216,9 @@ impl ReplicatorNew {
                     let mut neighbor_cc = n.clone();
                     let mut neighbor = n.lock().unwrap();
                     if neighbor.sink.is_none() && !neighbor.connecting {
-//                    neighbor.sink = Some(ReplicatorSink {});
                         neighbor.connecting = true;
 
-                        let (stdin_tx, stdin_rx) = futures::sync::mpsc::channel(0);
-//                    thread::spawn(|| read_stdin(stdin_tx));
+                        let (stdin_tx, stdin_rx) = futures::sync::mpsc::unbounded();
 
                         let stdin_rx = stdin_rx.map_err(|_| panic!()); // errors not possible on rx
                         let stdout = tcp::connect(&neighbor.addr,
@@ -284,8 +228,6 @@ impl ReplicatorNew {
 
                         tokio::spawn({
                             stdout.for_each(move |chunk| {
-//                                out.write_all(&chunk)
-//                                println!("{:?}", chunk);
                                 Ok(())
                             })
                                 .map_err(move |e| {
@@ -293,24 +235,23 @@ impl ReplicatorNew {
                                     neighbor.sink = None;
                                     neighbor.source = None;
                                     neighbor.connecting = false;
-                                    println!("error reading stdout; error = {:?}", e)
+                                    error!("error reading stdout; error = {:?}", e)
                                 })
                         });
-
-//                        thread::spawn(move || {
-//                            stdin_tx.send(b"Hello!".to_vec()).wait().unwrap().flush().wait().unwrap();
-//                        });
                     }
                 }
 
                 Ok(())
-            }).map_err(|e| panic!("interval eerror reading stdoutrrored; err={:?}", e));
+            }).map_err(|e| panic!("interval error reading stdoutrrored; err={:?}", e));
 
             let srv = socket.incoming()
-                .map_err(|e| println!("failed to accept socket; error = {:?}", e))
+                .map_err(|e| error!("failed to accept socket; error = {:?}", e))
                 .for_each(move |stream| {
+                    let node_c3 = node_c2.clone();
+
                     let addr = stream.peer_addr().unwrap();
-                    println!("New Connection: {}", addr);
+                    let addr_c = addr.clone();
+                    info!("New Connection: {}", addr);
 
                     let (reader, writer) = stream.split();
 
@@ -342,9 +283,7 @@ impl ReplicatorNew {
                             }
                         } else {
                             debug!("Unknown neighbor connected");
-//                            if let Some(replicator_weak) = self.add_replicator(sock) {
                             neighbors.push(Arc::new(Mutex::new(Neighbor::from_replicator_source(ReplicatorSource {}, addr.clone()))))
-//                            }
                         }
                     }
 
@@ -352,12 +291,9 @@ impl ReplicatorNew {
                     let reader = BufReader::new(reader);
 
                     let iter = stream::iter_ok::<_, io::Error>(iter::repeat(()));
-                    let mut read_continuation: Option<u32> = None;
 
                     let socket_reader = iter.fold(reader, move |reader, _| {
-//                        let line = io::read_until(reader, b'\n', Vec::new());
                         let line = read_packet(reader, Vec::new());
-//                        let line = io::read_exact(reader, [0u8, 4]);
                         let line = line.and_then(|(reader, vec)| {
                             if vec.len() == 0 {
                                 Err(io::Error::new(io::ErrorKind::BrokenPipe, "broken pipe"))
@@ -366,31 +302,13 @@ impl ReplicatorNew {
                             }
                         });
 
-//                        let line = line.map(|(reader, vec)| {
-//                            (reader, String::from_utf8(vec.to_vec()))
-//                        });
-
-//                        let connections = connections_inner.clone();
-
-//                        line.map(move |(reader, message)| {
-//                            println!("{}: {:?}", addr, message);
-//                            let mut conns = connections.lock().unwrap();
-//
-//                            if let Ok(msg) = message {
-//                                let iter = conns.iter_mut()
-//                                    .filter(|&(&k, _)| k != addr)
-//                                    .map(|(_, v)| v);
-//                                for tx in iter {
-//                                    tx.unbounded_send(format!("{}: {}", addr, msg)).unwrap();
-//                                }
-//                            } else {
-//                                let tx = conns.get_mut(&addr).unwrap();
-//                                tx.unbounded_send("You didn't send valid UTF-8.".to_string()).unwrap();
-//                            }
-//
-//                            reader
-//                        })
-                        line.map(move |(reader, _)| {
+                        let node_c = node_c3.clone();
+                        line.map(move |(reader, vec)| {
+                            if let Some(arc) = node_c.upgrade() {
+                                if let Ok(mut node) = arc.try_lock() {
+                                    node.on_connection_data_received(SerializedBuffer::from_slice(&vec), addr_c);
+                                }
+                            }
                             reader
                         })
                     });
@@ -407,7 +325,7 @@ impl ReplicatorNew {
 
                     tokio::spawn(connection.then(move |_| {
                         connections.lock().unwrap().remove(&addr);
-                        println!("Connection {} closed.", addr);
+                        info!("Connection {} closed.", addr);
                         Ok(())
                     }));
 
@@ -442,18 +360,18 @@ mod tcp {
     use std::sync::{Mutex, Arc};
     use super::{ReplicatorSink};
     use network::Neighbor;
-    use super::futures::sync::mpsc::Sender;
+    use super::futures::sync::mpsc::{Sender, UnboundedSender};
 
     pub fn connect(addr: &SocketAddr,
                    stdin: Box<Stream<Item = Vec<u8>, Error = io::Error> + Send>,
                    neighbor: Arc<Mutex<Neighbor>>,
-                   tx: Sender<Vec<u8>>)
+                   tx: UnboundedSender<Vec<u8>>)
                    -> Box<Stream<Item = BytesMut, Error = io::Error> + Send>
     {
         let tcp = TcpStream::connect(addr);
 
         Box::new(tcp.map(move |stream| {
-            println!("connected");
+            info!("Connected");
             {
                 let mut neighbor = neighbor.lock().unwrap();
                 neighbor.sink = Some(ReplicatorSink {
@@ -558,7 +476,6 @@ mod codec {
         type Error = io::Error;
 
         fn decode(&mut self, buf: &mut BytesMut) -> io::Result<Option<BytesMut>> {
-//            println!("dec");
             if buf.len() > 0 {
                 let len = buf.len();
                 Ok(Some(buf.split_to(len)))

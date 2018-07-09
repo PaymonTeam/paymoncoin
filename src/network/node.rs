@@ -220,7 +220,7 @@ impl Node {
                         if let Some(mut t) = queue.pop_front() {
                             info!("received tx: {:?}", t.get_hash());
                             let address = t.object.address.clone();
-                            let validated = transaction::validate_transaction(&mut t, 7);
+                            let validated = transaction::validate_transaction(&mut t, 3);
                             info!("validated={}", validated);
 
                             if validated {
