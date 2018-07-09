@@ -9,7 +9,8 @@ use std::{
 };
 use storage::Hive;
 use network::node::*;
-use network::replicator_pool::ReplicatorSourcePool;
+//use network::replicator_pool::ReplicatorSourcePool;
+use network::replicator_new::ReplicatorNew;
 use model::config::{PORT, Configuration, ConfigurationSettings};
 use model::config;
 use model::TipsViewModel;
@@ -104,8 +105,9 @@ impl PaymonCoin {
 //        let (tx, replicator_rx) = channel::<()>();
 
         let replicator_jh = thread::spawn(move || {
-            let mut replicator_pool = ReplicatorSourcePool::new(&config_copy, Arc::downgrade(&node_copy),
-                                                                replicator_rx);
+//            let mut replicator_pool = ReplicatorSourcePool::new(&config_copy, Arc::downgrade(&node_copy),
+//                                                                replicator_rx);
+            let mut replicator_pool = ReplicatorNew::new(&config_copy, Arc::downgrade(&node_copy));
             replicator_pool.run();
         });
 

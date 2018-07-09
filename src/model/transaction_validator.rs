@@ -408,6 +408,7 @@ impl TransactionValidator {
     }
 
     fn check_approvee(&mut self, approvee: &Transaction) -> bool {
+        debug!("check {:?} type {:?}", approvee.get_hash(), approvee.get_type());
         if approvee.get_type() == TransactionType::HashOnly {
             if let Ok(mut tr) = self.transaction_requester.lock() {
                 tr.request_transaction(approvee.get_hash(), false);

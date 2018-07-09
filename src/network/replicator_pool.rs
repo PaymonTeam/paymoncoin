@@ -16,6 +16,9 @@ use network::node::Node;
 use std::sync::mpsc::{Sender, Receiver};
 use std::sync::{LockResult, MutexGuard};
 use network::Neighbor;
+use utils::AM;
+use std::thread;
+use std::time::Duration;
 
 type Slab<T> = slab::Slab<T, Token>;
 
@@ -65,7 +68,11 @@ impl ReplicatorSourcePool {
             }
 
             let cnt = self.poll.poll(&mut self.events, Some(Duration::from_secs(1)))?;
-
+            if self.conns.len() > 0 {
+                if let Ok(c) = self.find_connection_by_token(Token(0)) {
+                    debug!("events count {} {} {:?}", cnt, self.conns.len(), c.interest);
+                }
+            }
             if cnt > 0 {
                 let mut lst = vec![];
 
@@ -76,9 +83,9 @@ impl ReplicatorSourcePool {
                 for event in lst {
                     self.ready(event.token(), event.readiness());
                 }
-
-                self.tick();
             }
+
+            self.tick();
 
             if let Some(arc) = self.node.upgrade() {
                 if let Ok(node) = arc.try_lock() {
@@ -86,12 +93,15 @@ impl ReplicatorSourcePool {
                         for arc2 in neighbors.iter() {
                             let mut f = false;
                             if let Ok(mut n) = arc2.lock() {
-                                if n.replicator_source.is_none() {
+                                if n.replicator_sink.is_none() {
                                     use std::net;
-                                    match net::TcpStream::connect_timeout(&n.addr, Duration::from_secs(3)) {
+//                                    match net::TcpStream::connect_timeout(&n.addr, Duration::from_secs(30)) {
+                                    match net::TcpStream::connect(&n.addr) {
                                         Ok(stream) => {
                                             if let Ok(stream) = TcpStream::from_stream(stream) {
-                                                n.replicator_source = self.add_replicator(stream);
+                                                debug!("Connected to neighbor");
+//                                                if stream.on_connection_end()
+                                                n.replicator_sink = self.add_replicator(stream);
                                             }
                                         }
                                         Err(e) => {
@@ -99,7 +109,7 @@ impl ReplicatorSourcePool {
                                         }
                                     }
                                 } else {
-                                    if let Some(ref weak) = n.replicator_source {
+                                    if let Some(ref weak) = n.replicator_sink {
                                         if let Some(arc) = weak.upgrade() {
                                             if let Ok(ref mut replicator) = arc.lock() {
                                                 if !replicator.send_queue.is_empty() {
@@ -209,6 +219,7 @@ impl ReplicatorSourcePool {
             debug!("Read event for {:?}", token);
             if self.token == token {
                 self.accept();
+//                self.poll.reregister(&sock, token, Ready::readable(), PollOpt::edge());
             } else {
                 if let Ok(mut conn) = self.find_connection_by_token(token) {
                     if conn.is_reset() {
@@ -233,7 +244,7 @@ impl ReplicatorSourcePool {
         }
     }
 
-    fn accept(&mut self) {
+    fn accept(&mut self) /*-> bool */{
         debug!("server accepting new socket");
 
         loop {
@@ -245,29 +256,36 @@ impl ReplicatorSourcePool {
                     } else {
                         error!("Failed to accept new socket, {:?}", e);
                     }
+                    thread::sleep(Duration::from_secs(1));
+//                    continue;
                     return;
                 }
             };
 
             if let Ok(addr) = sock.peer_addr() {
-                if let Some(replicator_weak) = self.add_replicator(sock) {
-                    if let Some(arc) = self.node.upgrade() {
-                        if let Ok(mut node) = arc.lock() {
-                            let mut neighbor_exsists = false;
+                if let Some(arc) = self.node.upgrade() {
+                    if let Ok(mut node) = arc.lock() {
+                        let mut founded_neighbor: Option<AM<Neighbor>> = None;
 
-                            if let Ok(mut neighbors) = node.neighbors.lock() {
-                                for neighbor_arc in neighbors.iter() {
-                                    if let Ok(neighbor) = neighbor_arc.lock() {
-                                        if addr.ip() == neighbor.addr.ip() {
-                                            neighbor_exsists = true;
-                                            break;
-                                        }
+                        if let Ok(mut neighbors) = node.neighbors.lock() {
+                            for neighbor_arc in neighbors.iter() {
+                                if let Ok(neighbor) = neighbor_arc.lock() {
+                                    if addr.ip() == neighbor.addr.ip() {
+                                        founded_neighbor = Some(neighbor_arc.clone());
+                                        break;
                                     }
                                 }
                             }
 
-                            if !neighbor_exsists {
-                                if let Ok(mut neighbors) = node.neighbors.lock() {
+                            if let Some(n) = founded_neighbor {
+                                if let Ok(ref mut neighbor) = n.lock() {
+                                    if neighbor.replicator_source.is_none() {
+                                        neighbor.replicator_source = self.add_replicator(sock);
+                                    }
+                                }
+                            } else {
+                                debug!("Unknown neighbor connected");
+                                if let Some(replicator_weak) = self.add_replicator(sock) {
                                     neighbors.push(Arc::new(Mutex::new(Neighbor::from_replicator_source(replicator_weak, addr.clone()))))
                                 }
                             }
@@ -284,9 +302,10 @@ impl ReplicatorSourcePool {
                 debug!("registering {:?} with poller", entry.index());
                 let mut replicator = ReplicatorSource::new(sock, entry.index());
                 if let Err(e) = replicator.register(&self.poll) {
-                    error!("Failed to register  connection with poller, {:?}", e);
+                    error!("Failed to register connection with poller, {:?}", e);
                     return None;
                 }
+                replicator.mark_idle();
                 let c = Arc::new(Mutex::new(replicator));
                 let weak = Arc::downgrade(&c.clone());
                 entry.insert(c);

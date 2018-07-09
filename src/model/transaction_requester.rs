@@ -50,7 +50,7 @@ impl TransactionRequester {
     }
 
     pub fn request_transaction(&mut self, hash: Hash, milestone: bool) {
-        // println!("hive lock 22");
+        debug!("Added tx to request {:?}", hash);
         if let Ok(hive) = self.hive.lock() {
             if hash != HASH_NULL && !hive.exists_transaction(hash.clone()) {
                 if milestone {
@@ -64,7 +64,6 @@ impl TransactionRequester {
                 }
             }
         }
-        // println!("hive unlock 22");
     }
 
     pub fn transactions_to_request_is_full(&self) -> bool {

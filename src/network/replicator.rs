@@ -12,7 +12,6 @@ use network::packet::{SerializedBuffer, Serializable, calculate_object_size};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 
-
 #[cfg(any(target_os = "dragonfly",
 target_os = "freebsd", target_os = "ios", target_os = "macos",target_os="linux"))]
 use mio::unix::UnixReady;
@@ -71,8 +70,8 @@ impl ReplicatorSource {
     pub fn readable(&mut self) -> io::Result<Option<SerializedBuffer>> {
         let msg_len = match self.read_message_length()? {
             None => {
-//                return Err(Error::new(ErrorKind::ConnectionReset, "Read 0 bytes"));
-                return Ok(None);
+                return Err(Error::new(ErrorKind::ConnectionReset, "Read None bytes"));
+//                return Ok(None);
             },
             Some(n) => n,
         };
@@ -285,7 +284,7 @@ impl ReplicatorSource {
     }
 
     pub fn register(&mut self, poll: &Poll) -> io::Result<()> {
-        trace!("connection register; token={:?}", self.token);
+        debug!("connection register; token={:?}", self.token);
 
         self.interest.insert(Ready::readable());
 
@@ -295,7 +294,7 @@ impl ReplicatorSource {
             self.interest,
             PollOpt::edge() | PollOpt::oneshot()
         ).and_then(|(),| {
-            self.is_idle = false;
+            self.is_idle = true;
             Ok(())
         }).or_else(|e| {
             error!("Failed to reregister {:?}, {:?}", self.token, e);
@@ -311,7 +310,7 @@ impl ReplicatorSource {
             self.interest, //Ready::readable(), //Ready::empty(),
             PollOpt::edge() | PollOpt::oneshot()
         ).and_then(|(),| {
-            self.is_idle = false;
+            self.is_idle = true;
             Ok(())
         }).or_else(|e| {
             error!("Failed to reregister {:?}, {:?}", self.token, e);
@@ -320,7 +319,7 @@ impl ReplicatorSource {
     }
 
     pub fn mark_reset(&mut self) {
-        trace!("connection mark_reset; token={:?}", self.token);
+        debug!("connection mark_reset; token={:?}", self.token);
 
         self.is_reset = true;
     }
@@ -331,7 +330,7 @@ impl ReplicatorSource {
     }
 
     pub fn mark_idle(&mut self) {
-        trace!("connection mark_idle; token={:?}", self.token);
+        debug!("connection mark_idle; token={:?}", self.token);
 
         self.is_idle = true;
     }

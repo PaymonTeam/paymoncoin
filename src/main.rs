@@ -12,6 +12,9 @@ extern crate crypto;
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
 
+#[macro_use]
+extern crate tokio_io;
+
 #[macro_use] pub mod utils;
 pub mod network;
 pub mod model;
@@ -31,7 +34,7 @@ use mio::Poll;
 use mio::net::TcpListener;
 
 use network::node::*;
-use network::replicator_pool::ReplicatorSourcePool;
+//use network::replicator_pool::ReplicatorSourcePool;
 use model::config::{PORT, Configuration, ConfigurationSettings};
 use model::config;
 use network::paymoncoin::PaymonCoin;
