@@ -492,6 +492,7 @@ impl Hive {
 
         let address = Address::from_public_key(&t.object.signature_pubkey);
         self.put_address_transaction(address, hash);
+        self.put_address_transaction(t.object.address.clone(), hash);
         self.put_approvee(t.get_branch_transaction_hash(), hash);
         self.put_approvee(t.get_trunk_transaction_hash(), hash);
         self.storage_put(CFType::Transaction, &t.object.hash, &t.object)

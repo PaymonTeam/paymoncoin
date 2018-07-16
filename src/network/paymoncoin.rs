@@ -95,7 +95,7 @@ impl PaymonCoin {
                 self.config.get_int(ConfigurationSettings::MainNetMWM).unwrap_or(9)
             } else {
                 self.config.get_int(ConfigurationSettings::TestNetMWM).unwrap_or(8)
-            };
+            } as u32;
             tv.init(test_net, wmw);
         }
         TipsManager::init(self.tips_manager.clone());

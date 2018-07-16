@@ -50,8 +50,13 @@ fn main() {
     };
 
     let mut builder = LogBuilder::new();
-
-    builder.format(format).filter(None, LogLevelFilter::Info);
+    builder.format(format)
+        .filter(None, LogLevelFilter::Info)
+        .filter(Some("futures"), LogLevelFilter::Error)
+        .filter(Some("tokio"), LogLevelFilter::Error)
+        .filter(Some("tokio-io"), LogLevelFilter::Error)
+        .filter(Some("hyper"), LogLevelFilter::Error)
+        .filter(Some("iron"), LogLevelFilter::Error);
 
     if env::var("RUST_LOG").is_ok() {
         builder.parse(&env::var("RUST_LOG").unwrap());
