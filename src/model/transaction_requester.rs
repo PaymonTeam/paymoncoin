@@ -12,7 +12,7 @@ const MAX_TX_REQ_QUEUE_SIZE: usize = 10000usize;
 
 pub struct TransactionRequester {
     milestone_transactions_to_request: LinkedHashSet<Hash>,
-    transactions_to_request: LinkedHashSet<Hash>,
+    pub transactions_to_request: LinkedHashSet<Hash>,
     last_time: SystemTime,
     p_remove_request: f64,
     hive: AM<Hive>,

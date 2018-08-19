@@ -629,10 +629,36 @@ impl API {
                             }
                             "getNodeInfo" => {
                                 debug!("getNodeInfo");
-                                let result = rpc::NodeInfo {
-                                    name: "PMNC 0.1".to_string()
-                                };
-                                format_success_response!(result)
+                                unsafe {
+                                    if let Some(ref arc) = PMNC {
+                                        if let Ok(pmnc) = arc.lock() {
+                                            if let Ok(mut milestone) = pmnc.milestone.lock() {
+                                                if let Ok(mut node) = pmnc.node.lock() {
+                                                    let neighbors = node.neighbors.lock();
+                                                    let result = rpc::NodeInfo {
+                                                        appName: "PMNC".to_string(),
+                                                        appVersion: "0.1".to_string(),
+                                                        latestMilestone: milestone.latest_milestone,
+                                                        latestMilestoneIndex: milestone.latest_milestone_index,
+                                                        latestSolidSubhiveMilestone: milestone.latest_solid_subhive_milestone,
+                                                        latestSolidSubhiveMilestoneIndex: milestone.latest_solid_subhive_milestone_index,
+                                                        neighbors: (neighbors.unwrap().len()) as i32,
+                                                        tips: (node.tips_vm.lock().unwrap().tips.len()) as i32,
+                                                        transactionsToRequest: ( node.transaction_requester.lock().unwrap().transactions_to_request.len() as i32),
+                                                    };
+                                                    return format_success_response!(result);
+                                                } else {
+                                                    panic!("NODE broken mutex")
+                                                }
+                                            } else {
+                                                panic!("broken milestone mutex")
+                                            }
+                                        }else {
+                                            panic!("broken paymoncoin mutex")
+                                        }
+                                    } else {
+                                        panic!("None returned")                                        }
+                                }
                             }
                             "getBalances" => {
                                 debug!("getBalances");

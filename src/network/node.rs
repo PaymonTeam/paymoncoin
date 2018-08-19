@@ -45,8 +45,8 @@ pub struct Node {
     running: Arc<AtomicBool>,
     thread_join_handles: VecDeque<JoinHandle<()>>,
     transaction_validator: AM<TransactionValidator>,
-    transaction_requester: AM<TransactionRequester>,
-    tips_vm: AM<TipsViewModel>,
+    pub transaction_requester: AM<TransactionRequester>,
+    pub tips_vm: AM<TipsViewModel>,
     milestone: AM<Milestone>
 }
 

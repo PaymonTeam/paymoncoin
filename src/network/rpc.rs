@@ -28,7 +28,15 @@ impl Serializable for GetNodeInfo {
 */
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct NodeInfo {
-    pub name: String,
+    pub appName: String,
+    pub appVersion: String,
+    pub latestMilestone: Hash,
+    pub latestMilestoneIndex: u32,
+    pub latestSolidSubhiveMilestone: Hash,
+    pub latestSolidSubhiveMilestoneIndex: u32,
+    pub neighbors: i32,
+    pub tips: i32,
+    pub transactionsToRequest: i32
 }
 
 impl NodeInfo {
@@ -38,11 +46,29 @@ impl NodeInfo {
 impl Serializable for NodeInfo {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
         stream.write_i32(Self::SVUID);
-        stream.write_string(self.name.clone());
+        stream.write_string(self.appName.clone());
+        stream.write_string(self.appVersion.clone());
+        self.latestMilestone.serialize_to_stream(stream);
+        stream.write_u32(self.latestMilestoneIndex);
+        self.latestSolidSubhiveMilestone.serialize_to_stream(stream);
+        stream.write_u32(self.latestSolidSubhiveMilestoneIndex);
+        stream.write_i32(self.neighbors);
+        stream.write_i32(self.tips);
+        stream.write_i32(self.transactionsToRequest);
     }
 
     fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        self.name = stream.read_string();
+        self.appName = stream.read_string();
+        self.appVersion = stream.read_string();
+        let _ = stream.read_i32();
+        self.latestMilestone.read_params(stream);
+        self.latestMilestoneIndex = stream.read_u32();
+        let _ = stream.read_i32();
+        self.latestSolidSubhiveMilestone.read_params(stream);
+        self.latestSolidSubhiveMilestoneIndex = stream.read_u32();
+        self.neighbors = stream.read_i32();
+        self.tips = stream.read_i32();
+        self.transactionsToRequest = stream.read_i32();
     }
 }
 
