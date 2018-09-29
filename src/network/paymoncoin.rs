@@ -37,6 +37,7 @@ pub struct PaymonCoin {
 
 impl PaymonCoin {
     pub fn new(config: Configuration) -> Self {
+
         let snapshot_timestamp = 1526912331;
         let coordinator = Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap();
         let num_keys_milestone = 22;

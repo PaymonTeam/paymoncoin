@@ -30,6 +30,7 @@ tokio-io = "0.1"
 tokio-timer = "0.1"
 tokio-codec = "0.1"
 futures = "0.1"
+#futures-preview = { git="https://github.com/rust-lang-nursery/futures-rs.git", branch="0.2" }
 bytes = "0.4"
 
 [target.'cfg(windows)'.dependencies]
@@ -42,7 +43,7 @@ doc = false
 debug = true
 
 [[bin]]
-name = "paymoncoin_client"
-path = "src/client.rs"
+name = "paymoncoin-pos"
+path = "src/pos.rs"
 doc = false
 debug = true

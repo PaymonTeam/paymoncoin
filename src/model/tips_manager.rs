@@ -187,6 +187,7 @@ impl TipsManager {
     fn entry_point(&self, reference: Option<Hash>, extra_tip: Option<Hash>, depth: u32) -> Hash {
         if extra_tip.is_none() {
             //trunk
+
             if let Some(r) = reference {
                 return r;
             } else {

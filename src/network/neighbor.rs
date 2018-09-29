@@ -111,7 +111,6 @@ impl Neighbor {
             buffer.rewind();
             buff.rewind();
 
-
             o.tx.clone()
                 .send((&buffer).to_vec()).wait().unwrap()
                 .send((&buff).to_vec()).wait().unwrap()

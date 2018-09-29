@@ -1,5 +1,6 @@
 extern crate nix;
 extern crate ntrumls;
+extern crate futures;
 
 use std::io::Error;
 use model::config::{Configuration, ConfigurationSettings};
@@ -20,8 +21,10 @@ use model::transaction;
 use model::transaction::{Hash, HASH_NULL};
 use rand::{Rng, thread_rng};
 use utils::{AM, AWM};
-use network::rpc;
+use network::{rpc, packet::Serializable};
 use model::*;
+use self::futures::{Stream, Async};
+use self::futures::prelude::*;
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
@@ -47,14 +50,52 @@ pub struct Node {
     transaction_validator: AM<TransactionValidator>,
     transaction_requester: AM<TransactionRequester>,
     tips_vm: AM<TipsViewModel>,
-    milestone: AM<Milestone>
+    milestone: AM<Milestone>,
+    to_send: OutputStream,
 }
+
+pub type PacketData = Pair<Neighbor, Box<dyn Serializable>>;
+
+#[derive(Clone)]
+pub struct OutputStream {
+    queue: AM<Vec<PacketData>>,
+
+}
+//unsafe impl Send for OutputStream {}
+
+impl OutputStream {
+    fn new() -> Self {
+        OutputStream {
+            queue: make_am!(Vec::new()),
+        }
+    }
+
+    pub fn send_packet(&mut self, packet: PacketData) {
+        let mut q = self.queue.lock().unwrap();
+        q.push(packet);
+    }
+}
+
+//impl Future for OutputStream {
+//    type Item = PacketData;
+//    type Error = Error;
+//
+//    fn poll(&mut self) -> Result<Async<<Self as Future>::Item>, <Self as Future>::Error> {
+//        let mut q = self.queue.lock().unwrap();
+//        match q.pop() {
+//            Some(v) => Ok(Async::Ready(v)),
+//            None => Ok(Async::NotReady)
+//        }
+//    }
+//}
 
 impl Node {
     pub fn new(hive: Weak<Mutex<Hive>>, config: &Configuration, node_tx: Sender<()>, pmnc_rx:
-    Receiver<()>, transaction_validator: AM<TransactionValidator>, transaction_requester:
-    AM<TransactionRequester>, tips_vm: AM<TipsViewModel>, milestone: AM<Milestone>)
+        Receiver<()>, transaction_validator: AM<TransactionValidator>, transaction_requester:
+        AM<TransactionRequester>, tips_vm: AM<TipsViewModel>, milestone: AM<Milestone>)
         -> Node {
+        let to_send = OutputStream::new();
+
         Node {
             hive,
             running: Arc::new(AtomicBool::new(true)),
@@ -69,7 +110,8 @@ impl Node {
             transaction_requester,
             transaction_validator,
             tips_vm,
-            milestone
+            milestone,
+            to_send
         }
     }
 
