@@ -25,13 +25,14 @@ use network::{rpc, packet::Serializable};
 use model::*;
 use self::futures::{Stream, Async};
 use self::futures::prelude::*;
+use self::futures::executor::Executor;
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
     panic!();
 }
 
-struct Pair<U, V> {
+pub struct Pair<U, V> {
     pub low: U,
     pub hi: V,
 }
@@ -54,14 +55,13 @@ pub struct Node {
     to_send: OutputStream,
 }
 
-pub type PacketData = Pair<Neighbor, Box<dyn Serializable>>;
+pub type PacketData = Pair<Neighbor, Box<dyn Serializable + Send>>;
 
 #[derive(Clone)]
 pub struct OutputStream {
     queue: AM<Vec<PacketData>>,
 
 }
-//unsafe impl Send for OutputStream {}
 
 impl OutputStream {
     fn new() -> Self {
@@ -76,18 +76,18 @@ impl OutputStream {
     }
 }
 
-//impl Future for OutputStream {
-//    type Item = PacketData;
-//    type Error = Error;
-//
-//    fn poll(&mut self) -> Result<Async<<Self as Future>::Item>, <Self as Future>::Error> {
-//        let mut q = self.queue.lock().unwrap();
-//        match q.pop() {
-//            Some(v) => Ok(Async::Ready(v)),
-//            None => Ok(Async::NotReady)
-//        }
-//    }
-//}
+impl Future for OutputStream {
+    type Item = PacketData;
+    type Error = Error;
+
+    fn poll(&mut self) -> Result<Async<<Self as Future>::Item>, <Self as Future>::Error> {
+        let mut q = self.queue.lock().unwrap();
+        match q.pop() {
+            Some(v) => Ok(Async::Ready(v)),
+            None => Ok(Async::NotReady)
+        }
+    }
+}
 
 impl Node {
     pub fn new(hive: Weak<Mutex<Hive>>, config: &Configuration, node_tx: Sender<()>, pmnc_rx:

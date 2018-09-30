@@ -13,6 +13,8 @@ use std::{
 };
 use futures::executor::{Run, Spawn};
 use futures::prelude::*;
+use futures::task::Task;
+use self::futures::executor::Executor;
 
 #[derive(Debug)]
 enum BFTError {
@@ -48,6 +50,38 @@ struct ValidatorManager<T> {
     validators: Vec<Validator<T>>,
 }
 
+pub struct ConsensusValueFuture<T> {
+    value: T
+}
+
+impl<T> ConsensusValueFuture<T> {
+    fn new(value: T) -> Self {
+        ConsensusValueFuture::<T> {
+            value
+        }
+    }
+}
+
+impl<T> Future for ConsensusValueFuture<T> {
+    type Item = T;
+    type Error = BFTError;
+
+    fn poll(&mut self) -> Poll<<Self as Future>::Item, <Self as Future>::Error> {
+//        type ValidatorFuture<V> = Box<dyn Future<V, BFTError>>;
+
+        fn send_value<T>() -> impl Future<Item=T, Error=BFTError> {
+            futures::failed(BFTError::ConsensusWasNotAchieved)
+        }
+
+//        fn retrieve_values() -> ValidatorFuture<bool> {
+//
+//        }
+        let t = futures::task::current();
+
+        Ok(Async::Ready(self.value))
+    }
+}
+
 impl<T> Validator<T> where T: Clone {
     fn new(index: u32, loyal: bool) -> Self {
         Validator {
@@ -59,7 +93,7 @@ impl<T> Validator<T> where T: Clone {
     }
 
     fn set_value(&mut self, value: T) {
-            self.data = ValidatorData::Value(value);
+        self.data = ValidatorData::Value(value);
     }
 
     fn send_value(&mut self, validator: &mut Validator<T>) {
@@ -109,25 +143,14 @@ impl<T> Validator<T> where T: Clone {
 //        ).collect());
 
     }
-}
 
-//impl<T> Future for ValidatorManager<T> {
-//    type Item = T;
-//    type Error = BFTError;
-//
-//    fn poll(&mut self) -> Result<Async<<Self as Future>::Item>, <Self as Future>::Error> {
-//        type ValidatorFuture<V> = Box<dyn Future<V, BFTError>>;
-//
-//        fn send_value() {
-//            self.validators_num = 2;
-//
-//        }
-//
-//        fn retrieve_values() -> ValidatorFuture<bool> {
-//
-//        }
-//    }
-//}
+    fn obtain_value(&mut self) -> Option<ConsensusValueFuture<T>> {
+        if let ValidatorData::Value(v) = self.data {
+            return Some(ConsensusValueFuture::new(v));
+        }
+        None
+    }
+}
 
 impl<T> ValidatorManager<T> where T: Clone {
     fn new(validators_num: usize) -> Self {
@@ -331,3 +354,4 @@ fn main() {
     thread::sleep(Duration::from_secs(1));
     init();
 }
+

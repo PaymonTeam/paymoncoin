@@ -8,6 +8,7 @@ extern crate iron;
 extern crate ntrumls;
 extern crate linked_hash_set;
 extern crate crypto;
+extern crate futures;
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
@@ -215,4 +216,9 @@ fn hive_transaction_test() {
 //    println!("sk={}", sk_data.to_hex().to_uppercase());
 //    println!("address={:?}", addr);
 //    println!("address={:?} balance={}", addr, balance);
+}
+
+#[test]
+fn pos_test() {
+
 }
