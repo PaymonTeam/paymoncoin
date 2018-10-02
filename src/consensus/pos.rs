@@ -1,7 +1,3 @@
-extern crate env_logger;
-extern crate futures;
-
-#[macro_use] extern crate log;
 use env_logger::LogBuilder;
 use log::{LogRecord, LogLevelFilter};
 use std::{
@@ -11,13 +7,38 @@ use std::{
     thread,
     time::Duration,
 };
+use futures;
 use futures::executor::{Run, Spawn};
 use futures::prelude::*;
 use futures::task::Task;
-use self::futures::executor::Executor;
+use tokio;
+use network::node::{OutputStream, InputStream, PacketData, Pair};
+use network::rpc::ConsensusValue;
+use network::packet::Serializable;
+use network::Neighbor;
+use utils::AM;
+use std::net::SocketAddr;
+
+#[test]
+pub fn pos_test() {
+    let mut input = InputStream { queue: vec![] };
+    let mut output = OutputStream { queue: vec![] };
+//    Neighbor::from_address("")
+//    let neighbors = make_am!(vec![
+//
+//    ]);
+
+    let consensus_value_future = ConsensusValueRetriever::retrieve(input, output, 1).map(|f| {
+        info!(":)");
+    }).map_err(|e| {
+        error!("{:?}", e);
+    });
+
+    tokio::spawn(consensus_value_future);
+}
 
 #[derive(Debug)]
-enum BFTError {
+pub enum BFTError {
     NotAllValidatorsHaveValue,
     NotAllValidatorsHaveResultVector,
     InvalidNumberOfValidators,
@@ -41,6 +62,7 @@ enum ValidatorData<T> {
 struct Validator<T> {
     index: ValidatorIndex,
     loyal: bool,
+//    node: Neighbor,
     data: ValidatorData<T>,
     result: Option<T>,
 }
@@ -50,35 +72,83 @@ struct ValidatorManager<T> {
     validators: Vec<Validator<T>>,
 }
 
-pub struct ConsensusValueFuture<T> {
-    value: T
+pub struct ConsensusValueRetriever {
+    input: InputStream,
+    output: OutputStream,
+//    validators_indices: Vec<ValidatorIndex>,
+//    value: T,
 }
 
-impl<T> ConsensusValueFuture<T> {
+impl ConsensusValueRetriever {
+    pub fn retrieve<T>(mut input: InputStream, mut output: OutputStream, value: T/*, validators: AM<Neighbor>*/) -> impl Future<Item=T, Error=BFTError> { //BFTFuture<T> {
+        let send_value = SendValueAndRetrieveVectorFuture { value };
+
+        send_value.and_then(|vector| {
+            let send_vector = SendVectorAndRetrieveMatrixFuture { value: vector };
+            send_vector.and_then(|matrix| {
+                let packet = Box::new(ConsensusValue { value: 2 });
+                let data = Pair::<Neighbor, Box<Serializable + Send>>::new(Neighbor::from_address("127.0.0.1".parse::<SocketAddr>().unwrap()), packet);
+                input.send_packet(data);
+                return BFTFuture::<T> {
+                    matrix
+                };
+            })
+        })
+    }
+}
+
+pub struct BFTFuture<T> {
+    matrix: <SendVectorAndRetrieveMatrixFuture<T> as Future>::Item
+}
+
+impl<T> Future for BFTFuture<T> {
+    type Item = T;
+    type Error = BFTError;
+
+    fn poll(&mut self) -> Poll<<Self as Future>::Item, <Self as Future>::Error> {
+
+    }
+}
+
+pub struct SendValueAndRetrieveVectorFuture<T> {
+    value: T,
+}
+
+impl<T> SendValueAndRetrieveVectorFuture<T> {
     fn new(value: T) -> Self {
-        ConsensusValueFuture::<T> {
+        SendValueAndRetrieveVectorFuture::<T> {
             value
         }
     }
 }
 
-impl<T> Future for ConsensusValueFuture<T> {
-    type Item = T;
+impl<T> Future for SendValueAndRetrieveVectorFuture<T> {
+    type Item = HashMap<ValidatorIndex, T>;
     type Error = BFTError;
 
     fn poll(&mut self) -> Poll<<Self as Future>::Item, <Self as Future>::Error> {
-//        type ValidatorFuture<V> = Box<dyn Future<V, BFTError>>;
 
-        fn send_value<T>() -> impl Future<Item=T, Error=BFTError> {
-            futures::failed(BFTError::ConsensusWasNotAchieved)
+    }
+}
+
+pub struct SendVectorAndRetrieveMatrixFuture<T> {
+    value: HashMap<ValidatorIndex, T>,
+}
+
+impl<T> SendVectorAndRetrieveMatrixFuture<T> {
+    fn new(value: T) -> Self {
+        SendVectorAndRetrieveMatrixFuture::<T> {
+            value
         }
+    }
+}
 
-//        fn retrieve_values() -> ValidatorFuture<bool> {
-//
-//        }
-        let t = futures::task::current();
+impl<T> Future for SendVectorAndRetrieveMatrixFuture<T> {
+    type Item = HashMap<ValidatorIndex, HashMap<ValidatorIndex, T>>;
+    type Error = BFTError;
 
-        Ok(Async::Ready(self.value))
+    fn poll(&mut self) -> Poll<<Self as Future>::Item, <Self as Future>::Error> {
+
     }
 }
 
@@ -144,9 +214,9 @@ impl<T> Validator<T> where T: Clone {
 
     }
 
-    fn obtain_value(&mut self) -> Option<ConsensusValueFuture<T>> {
+    fn obtain_value(&mut self) -> Option<SendValueAndRetrieveVectorFuture<T>> {
         if let ValidatorData::Value(v) = self.data {
-            return Some(ConsensusValueFuture::new(v));
+            return Some(SendValueAndRetrieveVectorFuture::new(v));
         }
         None
     }

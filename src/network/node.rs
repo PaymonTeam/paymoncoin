@@ -1,7 +1,3 @@
-extern crate nix;
-extern crate ntrumls;
-extern crate futures;
-
 use std::io::Error;
 use model::config::{Configuration, ConfigurationSettings};
 use network::packet::{SerializedBuffer};
@@ -11,7 +7,7 @@ use std::net::{TcpStream, SocketAddr, IpAddr};
 use std::sync::mpsc::{Sender, Receiver};
 use std::collections::VecDeque;
 use model::{TransactionObject, Transaction, TransactionType};
-use self::ntrumls::{NTRUMLS, PQParamSetID, PublicKey, PrivateKey};
+use ntrumls::{NTRUMLS, PQParamSetID, PublicKey, PrivateKey};
 use storage::Hive;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -23,9 +19,9 @@ use rand::{Rng, thread_rng};
 use utils::{AM, AWM};
 use network::{rpc, packet::Serializable};
 use model::*;
-use self::futures::{Stream, Async};
-use self::futures::prelude::*;
-use self::futures::executor::Executor;
+use futures::{Stream, Async};
+use futures::prelude::*;
+use futures::executor::Executor;
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
@@ -35,6 +31,15 @@ extern fn handle_sigint(_:i32) {
 pub struct Pair<U, V> {
     pub low: U,
     pub hi: V,
+}
+
+impl<U, V> Pair<U, V> {
+    pub fn new(low: U, hi: V) -> Self {
+        Pair {
+            low,
+            hi
+        }
+    }
 }
 
 pub struct Node {
@@ -53,6 +58,7 @@ pub struct Node {
     tips_vm: AM<TipsViewModel>,
     milestone: AM<Milestone>,
     to_send: OutputStream,
+    received_consensus_values: InputStream,
 }
 
 pub type PacketData = Pair<Neighbor, Box<dyn Serializable + Send>>;
@@ -60,7 +66,6 @@ pub type PacketData = Pair<Neighbor, Box<dyn Serializable + Send>>;
 #[derive(Clone)]
 pub struct OutputStream {
     queue: AM<Vec<PacketData>>,
-
 }
 
 impl OutputStream {
@@ -89,12 +94,42 @@ impl Future for OutputStream {
     }
 }
 
+#[derive(Clone)]
+pub struct InputStream {
+    queue: AM<Vec<PacketData>>,
+}
+
+impl InputStream {
+    fn new() -> Self {
+        InputStream {
+            queue: make_am!(Vec::new()),
+        }
+    }
+
+    pub fn send_packet(&mut self, packet: PacketData) {
+        let mut q = self.queue.lock().unwrap();
+        q.push(packet);
+    }
+}
+
+impl Stream for InputStream {
+    type Item = PacketData;
+    type Error = Error;
+
+    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
+        let mut q = self.queue.lock().unwrap();
+        Ok(Async::Ready(q.pop()))
+//        Ok(Async::NotReady)
+    }
+}
+
 impl Node {
     pub fn new(hive: Weak<Mutex<Hive>>, config: &Configuration, node_tx: Sender<()>, pmnc_rx:
         Receiver<()>, transaction_validator: AM<TransactionValidator>, transaction_requester:
         AM<TransactionRequester>, tips_vm: AM<TipsViewModel>, milestone: AM<Milestone>)
         -> Node {
         let to_send = OutputStream::new();
+        let received_consensus_values = InputStream::new();
 
         Node {
             hive,
@@ -111,7 +146,8 @@ impl Node {
             transaction_validator,
             tips_vm,
             milestone,
-            to_send
+            to_send,
+            received_consensus_values,
         }
     }
 

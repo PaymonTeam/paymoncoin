@@ -1,3 +1,3 @@
 pub mod pos;
 
-pub use self::pos::ConsensusValueFuture;
+pub use self::pos::SendValueAndRetrieveVectorFuture;

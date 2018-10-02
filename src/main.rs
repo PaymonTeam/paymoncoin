@@ -15,8 +15,10 @@ extern crate futures;
 
 #[macro_use]
 extern crate tokio_io;
+extern crate tokio;
 
 #[macro_use] pub mod utils;
+pub mod consensus;
 pub mod network;
 pub mod model;
 pub mod storage;

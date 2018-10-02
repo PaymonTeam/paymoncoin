@@ -508,3 +508,23 @@ impl Serializable for TransactionsData {
         }
     }
 }
+
+//#[derive(RustcDecodable, RustcEncodable)]
+pub struct ConsensusValue {
+    pub value: u32,
+}
+
+impl ConsensusValue { pub const SVUID : i32 = 167; }
+
+impl Serializable for ConsensusValue {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+        stream.write_i32(Self::SVUID);
+        stream.write_u32(self.value);
+    }
+
+    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+        self.value = stream.read_u32();
+    }
+}
+
+unsafe impl Send for ConsensusValue {}
