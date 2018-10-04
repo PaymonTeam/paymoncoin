@@ -11,6 +11,8 @@ use network::packet::{SerializedBuffer, Serializable};
 use std::net::{SocketAddr, IpAddr};
 //use network::replicator::*;
 use network::replicator_new::*;
+use std::fmt::{Debug, Formatter};
+use std::fmt;
 
 pub struct Neighbor {
     pub addr: SocketAddr,
@@ -19,6 +21,12 @@ pub struct Neighbor {
     pub sink: Option<ReplicatorSink>,
     pub source: Option<ReplicatorSource>,
     pub connecting: bool,
+}
+
+impl Debug for Neighbor {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "Host: {:?}", self.addr)
+    }
 }
 
 impl Neighbor {

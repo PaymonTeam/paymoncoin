@@ -20,9 +20,9 @@ use model::*;
 use std::time;
 use std::str::FromStr;
 
-pub struct PaymonCoin {
+pub struct PaymonCoin<'a> {
     pub hive: AM<Hive>,
-    pub node: AM<Node>,
+    pub node: AM<Node<'a>>,
     pub config: Configuration,
     pmnc_tx: Sender<()>,
     replicator_rx: Option<Receiver<()>>,
@@ -35,7 +35,7 @@ pub struct PaymonCoin {
     pub tips_manager: AM<TipsManager>
 }
 
-impl PaymonCoin {
+impl<'a> PaymonCoin<'a> {
     pub fn new(config: Configuration) -> Self {
 
         let snapshot_timestamp = 1526912331;

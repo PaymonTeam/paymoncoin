@@ -6,8 +6,11 @@ use std::{
     fmt::{Debug, Formatter, Error},
     thread,
     time::Duration,
+    sync::{Arc, Mutex}
 };
 use futures;
+use futures::oneshot;
+use futures::{AndThen};
 use futures::executor::{Run, Spawn};
 use futures::prelude::*;
 use futures::task::Task;
@@ -18,17 +21,25 @@ use network::packet::Serializable;
 use network::Neighbor;
 use utils::AM;
 use std::net::SocketAddr;
+use std::hash::Hash;
+use std::marker::PhantomData;
 
 #[test]
 pub fn pos_test() {
-    let mut input = InputStream { queue: vec![] };
-    let mut output = OutputStream { queue: vec![] };
+    let mut input = InputStream { queue: make_am!(vec![]) };
+    let mut output = OutputStream { queue: make_am!(vec![]) };
 //    Neighbor::from_address("")
 //    let neighbors = make_am!(vec![
 //
 //    ]);
 
-    let consensus_value_future = ConsensusValueRetriever::retrieve(input, output, 1).map(|f| {
+    let validators = make_am!(Vec::new());
+//    let mut r = ConsensusValueRetriever {
+//        input, output,
+//        _pd: PhantomData {},
+//    };
+//    let (primed_tx, primed_rx) = oneshot();
+    let consensus_value_future = ConsensusValueRetriever::retrieve::<i32>(input, output, 1i32, validators).map(|f| {
         info!(":)");
     }).map_err(|e| {
         error!("{:?}", e);
@@ -50,100 +61,248 @@ type ValidatorDataType = u32;
 const N: usize = 4;
 const M: usize = 2;
 
-#[derive(Debug, Clone)]
-enum ValidatorData<T> {
-    None,
-    Value(T),
-    Vector(HashMap<ValidatorIndex, Option<T>>),
-    ConsensusValue(T),
-}
+//#[derive(Debug, Clone)]
+//enum ValidatorData<T> {
+//    None,
+//    Value(T),
+//    Vector(HashMap<ValidatorIndex, T>),
+//    ConsensusValue(T),
+//}
 
-#[derive(Debug, Clone)]
-struct Validator<T> {
+#[derive(Debug)]
+pub struct Validator {
     index: ValidatorIndex,
     loyal: bool,
-//    node: Neighbor,
-    data: ValidatorData<T>,
-    result: Option<T>,
+    node: Neighbor,
+//    data: ValidatorData<T>,
+//    result: T,
 }
 
-struct ValidatorManager<T> {
-    validators_num: usize,
-    validators: Vec<Validator<T>>,
+impl Validator {
+    pub fn from_index(index: ValidatorIndex, loyal: bool) -> Self {
+        Validator {
+            index,
+            loyal,
+            node: Neighbor::from_address("127.0.0.1".parse::<SocketAddr>().unwrap()),
+        }
+    }
 }
+//struct ValidatorManager<T> {
+//    validators_num: usize,
+//    validators: Vec<Validator<T>>,
+//}
 
 pub struct ConsensusValueRetriever {
-    input: InputStream,
-    output: OutputStream,
+//    input: InputStream
+//    output: OutputStream<'a>,
+//    _pd: PhantomData<&'b T>,
 //    validators_indices: Vec<ValidatorIndex>,
 //    value: T,
 }
 
 impl ConsensusValueRetriever {
-    pub fn retrieve<T>(mut input: InputStream, mut output: OutputStream, value: T/*, validators: AM<Neighbor>*/) -> impl Future<Item=T, Error=BFTError> { //BFTFuture<T> {
-        let send_value = SendValueAndRetrieveVectorFuture { value };
+     pub fn retrieve<'a, T>(mut input: InputStream<'a>, mut output: OutputStream<'a>, value: T, validators: AM<Vec<Validator>>) -> impl Future<Item=T, Error=BFTError> + 'a where
+         T: Eq + Hash + Serializable + Send + Clone + Copy + 'a { //BFTFuture<T> {
+//        let mut send_value = SendValueAndRetrieveVectorFuture::new(value, input, output, validators);
+//
+//        send_value.and_then(|vector| {
+//            let send_vector = SendVectorAndRetrieveMatrixFuture::new(vector, input, output, validators);
+//            send_vector.and_then(|matrix| {
+//                let packet = Box::new(ConsensusValue { value: 2 });
+//                let data = Pair::<Validator, Box<Serializable + Send>>::new(Validator::from_index(0u32, true), packet);
+//                input.send_packet(data);
+//                return BFTFuture::<T> {
+//                    matrix,
+//                    input,
+//                    output,
+//                    validators,
+//                };
+//            })
+//        })
 
-        send_value.and_then(|vector| {
-            let send_vector = SendVectorAndRetrieveMatrixFuture { value: vector };
-            send_vector.and_then(|matrix| {
-                let packet = Box::new(ConsensusValue { value: 2 });
-                let data = Pair::<Neighbor, Box<Serializable + Send>>::new(Neighbor::from_address("127.0.0.1".parse::<SocketAddr>().unwrap()), packet);
-                input.send_packet(data);
-                return BFTFuture::<T> {
-                    matrix
-                };
-            })
-        })
+
+//        let input = input.clone() as InputStream<'b>;
+//        let output = output.clone() as OutputStream<'b>;
+//        return BFTFuture::<'b, U> {
+//            matrix: HashMap::new(),
+//            input,
+//            output,
+//            validators,
+//        };
+//         let mut send_value = SendValueAndRetrieveVectorFuture::<'b, U>::new(value, input, output, validators);
+//         send_value
+         S {
+             value,
+             _pd: PhantomData {}
+         }
     }
 }
 
-pub struct BFTFuture<T> {
-    matrix: <SendVectorAndRetrieveMatrixFuture<T> as Future>::Item
+pub struct S<'a, T> where T: Eq + Serializable + 'a {
+    value: T,
+    _pd: PhantomData<&'a T>
 }
 
-impl<T> Future for BFTFuture<T> {
+impl<'a, T> Future for S<'a, T> where T: Eq + Serializable + 'a {
     type Item = T;
     type Error = BFTError;
 
     fn poll(&mut self) -> Poll<<Self as Future>::Item, <Self as Future>::Error> {
-
+        Ok(Async::Ready(self.value))
     }
 }
 
-pub struct SendValueAndRetrieveVectorFuture<T> {
+
+pub struct SendValueAndRetrieveVectorFuture<'a, T> where T: Eq + Hash + Serializable + Send + Clone + Copy + 'a {
     value: T,
+    vector: HashMap<ValidatorIndex, T>,
+    input: InputStream<'a>,
+    output: OutputStream<'a>,
+    validators: AM<Vec<Validator>>,
 }
 
-impl<T> SendValueAndRetrieveVectorFuture<T> {
-    fn new(value: T) -> Self {
+impl<'a, T> SendValueAndRetrieveVectorFuture<'a, T> where T: Eq + Hash + Serializable + Send + Clone + Copy + 'a {
+    fn new(value: T, input: InputStream<'a>, output: OutputStream<'a>, validators: AM<Vec<Validator>>) -> Self {
         SendValueAndRetrieveVectorFuture::<T> {
-            value
+            value, input, output, validators,
+            vector: HashMap::new()
         }
     }
 }
 
-impl<T> Future for SendValueAndRetrieveVectorFuture<T> {
+impl<'a, T> Future for SendValueAndRetrieveVectorFuture<'a, T> where T: Eq + Hash + Serializable + Send + Clone + Copy + 'a {
     type Item = HashMap<ValidatorIndex, T>;
     type Error = BFTError;
 
     fn poll(&mut self) -> Poll<<Self as Future>::Item, <Self as Future>::Error> {
-
+        let validators = self.validators.lock().unwrap();
+        let c = self.value.clone();
+//        self.output.send_packet(Pair::<_, Box<dyn Serializable + Send>>::new(validators[0], Box::new(c)));
+        self.output.send_packet2(Arc::new(c.clone()));
+        // TODO: create timeout
+//        self.input.for_each(|p| {
+//            let value = p.hi as T;
+//            self.vector.insert(p.low.index, value);
+//        });
+        Ok(Async::Ready(self.vector))
     }
 }
 
-pub struct SendVectorAndRetrieveMatrixFuture<T> {
-    value: HashMap<ValidatorIndex, T>,
+pub struct BFTFuture<'a, T> {
+    matrix: HashMap<ValidatorIndex, HashMap<ValidatorIndex, T>>, //<SendVectorAndRetrieveMatrixFuture<T> as Future>::Item,
+    input: InputStream<'a>,
+    output: OutputStream<'a>,
+    validators: AM<Vec<Validator>>,
 }
 
-impl<T> SendVectorAndRetrieveMatrixFuture<T> {
-    fn new(value: T) -> Self {
+impl<'a, T> Future for BFTFuture<'a, T> where T: Eq + Hash + Serializable {
+    type Item = T;
+    type Error = BFTError;
+
+    fn poll(&mut self) -> Poll<<Self as Future>::Item, <Self as Future>::Error> {
+        let validators_num = self.matrix.len();
+//        if self.validators.len() != self.validators_num {
+//            return Err(BFTError::InvalidNumberOfValidators);
+//        }
+
+//        for validator_vec in self.validators.iter() {
+//            if validator_vec.value.is_none() {
+//                return Err(BFTError::NotAllValidatorsHaveValue);
+//            }
+//            if validator_vec.result_vec.iter().any(|(_, v)| v.is_none()) {
+//                return Err(BFTError::NotAllValidatorsHaveResultVector);
+//            }
+//        }
+
+        let majority = validators_num * 2/3;
+        debug!("majority: {}", majority + 1);
+
+        let validator_vec = &mut self.matrix.get(self.matrix.keys().nth(0).unwrap()).unwrap(); {
+
+            let indices = validator_vec.keys().cloned().collect::<Vec<u32>>();
+
+            'v_loop: for i in &indices {
+//                if *i == validator_vec.index {
+//                    continue;
+//                }
+
+                let mut results = HashMap::<T, u32>::new(); // <value, score>
+
+                for j in &indices {
+                    if *i != *j {
+                        let vec = self.matrix.get(j).unwrap_or(&HashMap::new());
+                        match vec.get(i) {
+                            Some(v) => {
+                                if let Some(score) = results.get(v).cloned() {
+                                    let new_score = score + 1;
+//                                    debug!("score {}:{}", v, new_score);
+                                    if new_score > majority as u32 {
+                                        info!("consensus {}:{}", i, j);
+//                                        info!("consensus {} {}:{}", validator_vec.index, i, v);
+//                                        validator_vec.consensus_vec.insert(*i, Some(*v));
+                                        results.clear();
+                                        continue 'v_loop;
+                                    }
+                                    results.insert(*v, new_score);
+                                } else {
+                                    results.insert(*v, 1);
+                                }
+                            },
+                            None => {}
+                        }
+                    }
+                }
+
+                let mut max_score = 0;
+                let mut final_result = None;
+                let mut consensus_failed = false;
+
+                for (result, score) in &results {
+                    let score = *score;
+                    if score > max_score {
+                        max_score = score;
+                        final_result = Some(*result);
+                    }
+                }
+
+
+                // TODO: check for double max_score
+//                validator_vec.consensus_vec.insert(*i, final_result);
+                if let Some(result) = final_result {
+                    return Ok(Async::Ready(result));
+                } else {
+                    return Err(BFTError::ConsensusWasNotAchieved);
+                }
+            }
+//            for (vec_from_v_index, vec_from_v) in &validator_vec.result_vec_vec {
+//                 if self
+//                if *vec_from_v_index == validator_vec.index {
+//                    validator_vec.consensus_vec.insert(validator_vec.index, )
+//                    continue;
+//                }
+//                results.insert()
+//            }
+        }
+        Err(BFTError::ConsensusWasNotAchieved)
+    }
+}
+
+pub struct SendVectorAndRetrieveMatrixFuture<'a, T> {
+    value: HashMap<ValidatorIndex, T>,
+    input: InputStream<'a>,
+    output: OutputStream<'a>,
+    validators: AM<Vec<Validator>>,
+}
+
+impl<'a, T> SendVectorAndRetrieveMatrixFuture<'a, T> {
+    fn new(value: HashMap<ValidatorIndex, T>, input: InputStream<'a>, output: OutputStream<'a>, validators: AM<Vec<Validator>>) -> Self {
         SendVectorAndRetrieveMatrixFuture::<T> {
-            value
+            value, input, output, validators
         }
     }
 }
 
-impl<T> Future for SendVectorAndRetrieveMatrixFuture<T> {
+impl<'a, T> Future for SendVectorAndRetrieveMatrixFuture<'a, T> where T: Eq + Hash + Serializable + 'a {
     type Item = HashMap<ValidatorIndex, HashMap<ValidatorIndex, T>>;
     type Error = BFTError;
 
@@ -151,277 +310,3 @@ impl<T> Future for SendVectorAndRetrieveMatrixFuture<T> {
 
     }
 }
-
-impl<T> Validator<T> where T: Clone {
-    fn new(index: u32, loyal: bool) -> Self {
-        Validator {
-            data: ValidatorData::None,
-            result: None,
-            index,
-            loyal,
-        }
-    }
-
-    fn set_value(&mut self, value: T) {
-        self.data = ValidatorData::Value(value);
-    }
-
-    fn send_value(&mut self, validator: &mut Validator<T>) {
-        match self.data {
-            ValidatorData::Value(ref value) => {
-                validator.receive_value(self.index, value.clone());
-            }
-            _ => {}
-            // TODO: other variants
-        }
-    }
-
-    fn receive_value(&mut self, from: ValidatorIndex, value: T) {
-        match self.data {
-            ValidatorData::Vector(ref mut vec) => {
-                vec.insert(from, Some(value));
-                return;
-            },
-            ValidatorData::Value(_) => {
-                // continue
-            },
-            _ => {
-                return;
-            }
-        }
-
-        match self.data.clone() {
-            ValidatorData::Value(v) => {
-                let mut vector = HashMap::<ValidatorIndex, _>::new();
-                vector.insert(self.index, Some(v));
-                vector.insert(from, Some(value));
-                self.data = ValidatorData::Vector(vector);
-            },
-            _ => {}
-        }
-    }
-
-    fn send_vector(&self, validator: &mut Validator<T>) {
-//        if self.result_vec.iter().any(|(_, v)| v.is_none()) {
-//            // ret err
-//            error!("Couldn't send vec from {}", self.index);
-//            return;
-//        }
-//
-//        validator.result_vec_vec.insert(self.index, self.result_vec.iter().map(|(k, v)|
-//            (*k, if self.loyal { *v } else { Some(self.index + self.result_vec.capacity() as u32 * 2) } )
-//        ).collect());
-
-    }
-
-    fn obtain_value(&mut self) -> Option<SendValueAndRetrieveVectorFuture<T>> {
-        if let ValidatorData::Value(v) = self.data {
-            return Some(SendValueAndRetrieveVectorFuture::new(v));
-        }
-        None
-    }
-}
-
-impl<T> ValidatorManager<T> where T: Clone {
-    fn new(validators_num: usize) -> Self {
-        ValidatorManager {
-            validators_num,
-            validators: Vec::new()
-        }
-    }
-
-    fn process(&mut self) {
-        if self.validators.len() != self.validators_num {
-            warn!("Validators set isn't consistent")
-        }
-
-//        // obtaining value
-//        for v in &mut self.validators {
-//            v.process_value();
-//            v.result_vec.insert(v.index, v.value);
-//        }
-//
-//        // sending value to all validators (obtaining vector)
-//        for mut v in self.validators.clone() {
-//            for v_to in &mut self.validators {
-//                if v.index != v_to.index {
-//                    v.send_value(v_to);
-//                }
-//            }
-//        }
-//
-//        // obtaining vector
-//        for v in &mut self.validators {
-//            v.result_vec_vec.insert(v.index, v.result_vec.clone());
-//        }
-//
-//        // sending obtained vector to all validators12
-//        for mut v in self.validators.clone() {
-//            for v_to in &mut self.validators {
-//                if v.index != v_to.index {
-//                    v.send_vector(v_to);
-//                }
-//            }
-//        }
-    }
-
-    fn add_validator(&mut self, index: ValidatorIndex, loyal: bool) -> bool {
-        // check for duplicate
-        if self.validators.iter().any(|v| v.index == index) {
-            return false;
-        }
-
-        // 'sending' validator to others
-//        for validator in &mut self.validators {
-//            validator.result_vec.insert(index, None);
-//        }
-
-//        // adding validator to other ones
-        let mut validator = Validator::new(index, loyal);
-//        for v in &mut self.validators {
-//            validator.result_vec.insert(v.index, None);
-//        }
-        self.validators.push(validator);
-//        for h in self.validators.iter() {
-//
-//        }
-        true
-    }
-
-    fn bft_check(&mut self) -> Result<Vec<u32>, BFTError> {
-//        if self.validators.len() != self.validators_num {
-//            return Err(BFTError::InvalidNumberOfValidators);
-//        }
-//
-//        for validator in self.validators.iter() {
-//            if validator.value.is_none() {
-//                return Err(BFTError::NotAllValidatorsHaveValue);
-//            }
-//            if validator.result_vec.iter().any(|(_, v)| v.is_none()) {
-//                return Err(BFTError::NotAllValidatorsHaveResultVector);
-//            }
-//        }
-//
-//        let majority = self.validators_num * 2/3;
-//        debug!("majority: {}", majority + 1);
-//
-//
-////        for validator in &mut self.validators {
-//        let validator = &mut self.validators[0]; {
-//
-//            let indices = validator.result_vec.keys().cloned().collect::<Vec<u32>>();
-//
-//            'v_loop: for i in &indices {
-////                if *i == validator.index {
-////                    continue;
-////                }
-//
-//                let mut results = HashMap::<u32, u32>::new(); // <value, score>
-//
-//                for j in &indices {
-//                    if *i != *j {
-//                        match validator.result_vec_vec.get(j) {
-//                            Some(vec) => {
-//                                match vec.get(i) {
-//                                    Some(Some(v)) => {
-//                                        if let Some(score) = results.get(v).cloned() {
-//                                            let new_score = score + 1;
-//                                            debug!("score {}:{}", v, new_score);
-//                                            if new_score > majority as u32 {
-//                                                info!("consensus {} {}:{}", validator.index, i, v);
-//                                                validator.consensus_vec.insert(*i, Some(*v));
-//                                                results.clear();
-//                                                continue 'v_loop;
-//                                            }
-//                                            results.insert(*v, new_score);
-//                                        } else {
-//                                            results.insert(*v, 1);
-//                                        }
-//                                    },
-//                                    Some(&None) => {}
-//                                    None => {}
-//                                }
-//                            },
-//                            None => {}
-//                        }
-//                    }
-//                }
-//
-//                let mut max_score = 0;
-//                let mut final_result = None;
-//                let mut consensus_failed = false;
-//
-//                for (result, score) in &results {
-//                    let score = *score;
-//                    if score > max_score {
-//                        max_score = score;
-//                        final_result = Some(*result);
-//                    }
-//                }
-//
-//
-//                // TODO: check for double max_score
-//
-//
-//                validator.consensus_vec.insert(*i, final_result);
-//            }
-////            for (vec_from_v_index, vec_from_v) in &validator.result_vec_vec {
-////                 if self
-////                if *vec_from_v_index == validator.index {
-////                    validator.consensus_vec.insert(validator.index, )
-////                    continue;
-////                }
-////                results.insert()
-////            }
-//        }
-        Ok(vec![])
-    }
-}
-
-impl<T> Debug for ValidatorManager<T> where T: Debug {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        write!(f, "validators: {}/{}\n", self.validators.len(), self.validators_num);
-        for v in &self.validators {
-            write!(f, "  [{}]: {:?}\n", v.index, v.data);
-        }
-        Ok(())
-    }
-}
-
-fn init() {
-    let mut vm = ValidatorManager::<ValidatorDataType>::new(N);
-    for i in 0..N {
-        vm.add_validator(i as u32, i >= M);
-    }
-
-    vm.process();
-    info!("{:?}", vm);
-    info!("{:?}", vm.bft_check());
-    info!("{:?}", vm);
-}
-
-fn main() {
-    let format = |record: &LogRecord| {
-        format!("[{}]: {}", record.level(), record.args())
-//        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
-    };
-
-    let mut builder = LogBuilder::new();
-    builder.format(format)
-        .filter(None, LogLevelFilter::Info)
-        .filter(Some("futures"), LogLevelFilter::Error)
-        .filter(Some("tokio"), LogLevelFilter::Error)
-        .filter(Some("tokio-io"), LogLevelFilter::Error)
-        .filter(Some("hyper"), LogLevelFilter::Error)
-        .filter(Some("iron"), LogLevelFilter::Error);
-
-    if env::var("RUST_LOG").is_ok() {
-        builder.parse(&env::var("RUST_LOG").unwrap());
-    }
-
-    builder.init().unwrap();
-
-    thread::sleep(Duration::from_secs(1));
-    init();
-}
-

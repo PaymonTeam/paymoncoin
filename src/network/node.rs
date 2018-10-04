@@ -22,6 +22,7 @@ use model::*;
 use futures::{Stream, Async};
 use futures::prelude::*;
 use futures::executor::Executor;
+use consensus::Validator;
 
 extern fn handle_sigint(_:i32) {
     println!("Interrupted!");
@@ -42,7 +43,7 @@ impl<U, V> Pair<U, V> {
     }
 }
 
-pub struct Node {
+pub struct Node<'a> {
     hive: AWM<Hive>,
     pub neighbors: AM<Vec<AM<Neighbor>>>,
     config: Configuration,
@@ -57,49 +58,50 @@ pub struct Node {
     transaction_requester: AM<TransactionRequester>,
     tips_vm: AM<TipsViewModel>,
     milestone: AM<Milestone>,
-    to_send: OutputStream,
-    received_consensus_values: InputStream,
+    to_send: OutputStream<'a>,
+    received_consensus_values: InputStream<'a>,
 }
 
-pub type PacketData = Pair<Neighbor, Box<dyn Serializable + Send>>;
+pub type PacketData<'a> = Pair<Validator, Box<dyn Serializable + Send + 'a>>;
 
 #[derive(Clone)]
-pub struct OutputStream {
-    queue: AM<Vec<PacketData>>,
+pub struct OutputStream<'a> {
+    queue: AM<Vec<PacketData<'a>>>,
 }
 
-impl OutputStream {
+impl<'a> OutputStream<'a> {
     fn new() -> Self {
         OutputStream {
             queue: make_am!(Vec::new()),
         }
     }
 
-    pub fn send_packet(&mut self, packet: PacketData) {
+    pub fn send_packet(&mut self, packet: PacketData<'a>) {
         let mut q = self.queue.lock().unwrap();
         q.push(packet);
     }
+
+    pub fn send_packet2(&mut self, b: Arc<dyn Serializable + 'a>) {
+        drop(b);
+    }
 }
 
-impl Future for OutputStream {
-    type Item = PacketData;
+impl<'a> Stream for OutputStream<'a> {
+    type Item = PacketData<'a>;
     type Error = Error;
 
-    fn poll(&mut self) -> Result<Async<<Self as Future>::Item>, <Self as Future>::Error> {
+    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
         let mut q = self.queue.lock().unwrap();
-        match q.pop() {
-            Some(v) => Ok(Async::Ready(v)),
-            None => Ok(Async::NotReady)
-        }
+        Ok(Async::Ready(q.pop()))
     }
 }
 
 #[derive(Clone)]
-pub struct InputStream {
-    queue: AM<Vec<PacketData>>,
+pub struct InputStream<'a> {
+    queue: AM<Vec<PacketData<'a>>>,
 }
 
-impl InputStream {
+impl<'a> InputStream<'a> {
     fn new() -> Self {
         InputStream {
             queue: make_am!(Vec::new()),
@@ -112,8 +114,8 @@ impl InputStream {
     }
 }
 
-impl Stream for InputStream {
-    type Item = PacketData;
+impl<'a> Stream for InputStream<'a> {
+    type Item = PacketData<'a>;
     type Error = Error;
 
     fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
@@ -123,7 +125,7 @@ impl Stream for InputStream {
     }
 }
 
-impl Node {
+impl<'a> Node<'a> {
     pub fn new(hive: Weak<Mutex<Hive>>, config: &Configuration, node_tx: Sender<()>, pmnc_rx:
         Receiver<()>, transaction_validator: AM<TransactionValidator>, transaction_requester:
         AM<TransactionRequester>, tips_vm: AM<TipsViewModel>, milestone: AM<Milestone>)
