@@ -54,6 +54,7 @@ pub struct Node<'a> {
     reply_queue: AM<VecDeque<(Hash, AM<Neighbor>)>>,
     running: Arc<AtomicBool>,
     thread_join_handles: VecDeque<JoinHandle<()>>,
+    scoped_thread_join_handles: VecDeque<()>,
     transaction_validator: AM<TransactionValidator>,
     transaction_requester: AM<TransactionRequester>,
     tips_vm: AM<TipsViewModel>,
@@ -66,7 +67,7 @@ pub type PacketData<'a> = Pair<Validator, Box<dyn Serializable + Send + 'a>>;
 
 #[derive(Clone)]
 pub struct OutputStream<'a> {
-    queue: AM<Vec<PacketData<'a>>>,
+    pub queue: AM<Vec<PacketData<'a>>>,
 }
 
 impl<'a> OutputStream<'a> {
@@ -98,7 +99,7 @@ impl<'a> Stream for OutputStream<'a> {
 
 #[derive(Clone)]
 pub struct InputStream<'a> {
-    queue: AM<Vec<PacketData<'a>>>,
+    pub queue: AM<Vec<PacketData<'a>>>,
 }
 
 impl<'a> InputStream<'a> {
@@ -108,7 +109,7 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    pub fn send_packet(&mut self, packet: PacketData) {
+    pub fn send_packet(&mut self, packet: PacketData<'a>) {
         let mut q = self.queue.lock().unwrap();
         q.push(packet);
     }
@@ -144,6 +145,7 @@ impl<'a> Node<'a> {
             receive_queue: make_am!(VecDeque::new()),
             reply_queue: make_am!(VecDeque::new()),
             thread_join_handles: VecDeque::new(),
+            scoped_thread_join_handles: VecDeque::new(),
             transaction_requester,
             transaction_validator,
             tips_vm,
@@ -153,7 +155,7 @@ impl<'a> Node<'a> {
         }
     }
 
-    pub fn init(&mut self, replicator_jh: JoinHandle<()>) {
+    pub fn init(&mut self, replicator_jh: ()) {//replicator_jh: JoinHandle<()>) {
         if let Some(s) = self.config.get_string(ConfigurationSettings::Neighbors) {
             if s.len() > 0 {
                 for addr in s.split(" ") {
@@ -202,7 +204,7 @@ impl<'a> Node<'a> {
                                                      tr_weak, ms_weak, tvm_weak));
         self.thread_join_handles.push_back(jh);
 
-        self.thread_join_handles.push_back(replicator_jh);
+        self.scoped_thread_join_handles.push_back(replicator_jh);
     }
 
     fn reply_thread(running: Weak<AtomicBool>, reply_queue: AWM<VecDeque<(Hash, AM<Neighbor>)>>,
@@ -485,5 +487,7 @@ impl<'a> Node<'a> {
         while let Some(th) = self.thread_join_handles.pop_front() {
             th.join();
         }
+
+        while let Some(th) = self.scoped_thread_join_handles.pop_front() {}
     }
 }

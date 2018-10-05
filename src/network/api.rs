@@ -57,7 +57,7 @@ pub struct APIRequest<T: Serializable> {
 }
 
 #[derive(Debug)]
-pub enum APIError{
+pub enum APIError {
     InvalidStringParametr,
     TipAbsent,
     TheSubHiveIsNotSolid,

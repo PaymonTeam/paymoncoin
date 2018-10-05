@@ -9,6 +9,7 @@ extern crate ntrumls;
 extern crate linked_hash_set;
 extern crate crypto;
 extern crate futures;
+extern crate crossbeam;
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;

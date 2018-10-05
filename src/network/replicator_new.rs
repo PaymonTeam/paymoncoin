@@ -1,7 +1,6 @@
 //#![deny(warnings)]
 
 extern crate tokio;
-extern crate futures;
 extern crate bytes;
 extern crate tokio_codec;
 
@@ -24,7 +23,9 @@ use std::time::{Instant, Duration};
 use std::thread;
 use network::Node;
 use model::config::{Configuration, ConfigurationSettings, PORT};
-use self::futures::sync::mpsc::{Sender, UnboundedSender};
+use futures::sync::mpsc;
+use futures::sync::mpsc::{Sender, UnboundedSender};
+use crossbeam::scope;
 
 use utils::AM;
 use network::Neighbor;
@@ -71,6 +72,7 @@ impl<A> Future for ReadPacket<A>
         use std::io::ErrorKind;
         use self::tokio::io::ReadHalf;
         use byteorder::{ByteOrder, NativeEndian, BigEndian, LittleEndian};
+        use futures::prelude::*;
 
         let mut f_byte_buf = [0u8; 1];
 
@@ -81,13 +83,13 @@ impl<A> Future for ReadPacket<A>
                     match a.read_exact(&mut f_byte_buf) {
                         Ok(t) => t,
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                            return Ok(futures::Async::NotReady);
+                            return Ok(Async::NotReady);
                         }
                         Err(e) => return Err(e.into()),
                     };
 
                     if f_byte_buf.len() == 0 {
-                        return Ok(futures::Async::NotReady);
+                        return Ok(Async::NotReady);
                     }
 
                     *current_read = 1;
@@ -104,7 +106,7 @@ impl<A> Future for ReadPacket<A>
                         match a.read_exact(&mut buf[1..]) {
                             Ok(t) => t,
                             Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                                return Ok(futures::Async::NotReady);
+                                return Ok(Async::NotReady);
                             }
                             Err(e) => return Err(e.into()),
                         };
@@ -121,7 +123,7 @@ impl<A> Future for ReadPacket<A>
                     match a.read_exact(&mut buf[1..]) {
                         Ok(t) => t,
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                            return Ok(futures::Async::NotReady);
+                            return Ok(Async::NotReady);
                         }
                         Err(e) => return Err(e.into()),
                     };
@@ -137,13 +139,13 @@ impl<A> Future for ReadPacket<A>
                     match a.read_exact(&mut nbuf) {
                         Ok(t) => t,
                         Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                            return Ok(futures::Async::NotReady);
+                            return Ok(Async::NotReady);
                         }
                         Err(e) => return Err(e.into()),
                     };
                     *buf = nbuf;
                 } else {
-                    return Ok(futures::Async::NotReady);
+                    return Ok(Async::NotReady);
                 }
             }
             ReadState::Empty => panic!("poll ReadPacket after it's done"),
@@ -165,15 +167,15 @@ pub struct ReplicatorSource {
 //    sock: TcpStream,
 }
 
-pub struct ReplicatorNew<'a> {
-    node: Weak<Mutex<Node<'a>>>,
+pub struct ReplicatorNew {
+    node: Weak<Mutex<Node<'static>>>,
 //    node_rx: Receiver<()>,
     addr: SocketAddr,
 
 }
 
-impl<'a> ReplicatorNew<'a> {
-    pub fn new(config: &Configuration, node: Weak<Mutex<Node>>) -> Self {
+impl ReplicatorNew {
+    pub fn new(config: &Configuration, node: Weak<Mutex<Node<'static>>>) -> Self {
         let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
         let port = config.get_int(ConfigurationSettings::Port).unwrap_or(PORT as i32) as u16;
         let addr = SocketAddr::new(host, port);
@@ -218,7 +220,7 @@ impl<'a> ReplicatorNew<'a> {
                     if neighbor.sink.is_none() && !neighbor.connecting {
                         neighbor.connecting = true;
 
-                        let (stdin_tx, stdin_rx) = futures::sync::mpsc::unbounded();
+                        let (stdin_tx, stdin_rx) = mpsc::unbounded();
 
                         let stdin_rx = stdin_rx.map_err(|_| panic!()); // errors not possible on rx
                         let stdout = tcp::connect(&neighbor.addr,
@@ -255,7 +257,7 @@ impl<'a> ReplicatorNew<'a> {
 
                     let (reader, writer) = stream.split();
 
-                    let (tx, rx) = futures::sync::mpsc::unbounded::<Vec<u8>>();
+                    let (tx, rx) = mpsc::unbounded::<Vec<u8>>();
                     connections.lock().unwrap().insert(addr, tx);
 
                     let mut founded_neighbor: Option<AM<Neighbor>> = None;
@@ -323,11 +325,13 @@ impl<'a> ReplicatorNew<'a> {
                     let socket_reader = socket_reader.map_err(|_| ());
                     let connection = socket_reader.map(|_| ()).select(socket_writer.map(|_| ()));
 
-                    tokio::spawn(connection.then(move |_| {
-                        connections.lock().unwrap().remove(&addr);
-                        info!("Connection {} closed.", addr);
-                        Ok(())
-                    }));
+//                    let connection_jh = scope(|scope| {
+                        tokio::spawn(connection.then(move |_| {
+                            connections.lock().unwrap().remove(&addr);
+                            info!("Connection {} closed.", addr);
+                            Ok(())
+                        }));
+//                    });
 
                     Ok(())
                 })
@@ -343,8 +347,6 @@ impl<'a> ReplicatorNew<'a> {
     }
 }
 
-fn main() {
-}
 
 mod tcp {
     use super::tokio;
@@ -360,7 +362,7 @@ mod tcp {
     use std::sync::{Mutex, Arc};
     use super::{ReplicatorSink};
     use network::Neighbor;
-    use super::futures::sync::mpsc::{Sender, UnboundedSender};
+    use futures::sync::mpsc::UnboundedSender;
 
     pub fn connect(addr: &SocketAddr,
                    stdin: Box<Stream<Item = Vec<u8>, Error = io::Error> + Send>,
@@ -498,7 +500,7 @@ mod codec {
 
 // Our helper method which will read data from stdin and send it along the
 // sender provided.
-fn read_stdin(mut tx: futures::sync::mpsc::Sender<Vec<u8>>) {
+fn read_stdin(mut tx: mpsc::Sender<Vec<u8>>) {
     let mut stdin = io::stdin();
     loop {
         let mut buf = vec![0; 1024];

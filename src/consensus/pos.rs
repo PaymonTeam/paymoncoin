@@ -143,12 +143,12 @@ pub struct S<'a, T> where T: Eq + Serializable + 'a {
     _pd: PhantomData<&'a T>
 }
 
-impl<'a, T> Future for S<'a, T> where T: Eq + Serializable + 'a {
+impl<'a, T> Future for S<'a, T> where T: Eq + Serializable + Clone + 'a {
     type Item = T;
     type Error = BFTError;
 
     fn poll(&mut self) -> Poll<<Self as Future>::Item, <Self as Future>::Error> {
-        Ok(Async::Ready(self.value))
+        Ok(Async::Ready(self.value.clone()))
     }
 }
 
@@ -307,6 +307,6 @@ impl<'a, T> Future for SendVectorAndRetrieveMatrixFuture<'a, T> where T: Eq + Ha
     type Error = BFTError;
 
     fn poll(&mut self) -> Poll<<Self as Future>::Item, <Self as Future>::Error> {
-
+        Ok(Async::Ready(HashMap::new()))
     }
 }

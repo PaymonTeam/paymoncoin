@@ -19,10 +19,11 @@ use utils::{AM, AWM};
 use model::*;
 use std::time;
 use std::str::FromStr;
+use crossbeam::scope;
 
-pub struct PaymonCoin<'a> {
+pub struct PaymonCoin {
     pub hive: AM<Hive>,
-    pub node: AM<Node<'a>>,
+    pub node: AM<Node<'static>>,
     pub config: Configuration,
     pmnc_tx: Sender<()>,
     replicator_rx: Option<Receiver<()>>,
@@ -35,7 +36,7 @@ pub struct PaymonCoin<'a> {
     pub tips_manager: AM<TipsManager>
 }
 
-impl<'a> PaymonCoin<'a> {
+impl PaymonCoin {
     pub fn new(config: Configuration) -> Self {
 
         let snapshot_timestamp = 1526912331;
@@ -88,7 +89,7 @@ impl<'a> PaymonCoin<'a> {
         }
     }
 
-    pub fn run(&mut self) -> AM<Node> {
+    pub fn run(&mut self) -> AM<Node<'static>> {
         Milestone::init(self.milestone.clone(), self.ledger_validator.clone());
         if let Ok(mut tv) = self.transaction_validator.lock() {
             let test_net = self.config.get_bool(ConfigurationSettings::TestNet).unwrap_or(false);
@@ -105,14 +106,21 @@ impl<'a> PaymonCoin<'a> {
         let config_copy = self.config.clone();
         let replicator_rx = self.replicator_rx.take().unwrap();
 
-        let replicator_jh = thread::spawn(move || {
-            let mut replicator_pool = ReplicatorNew::new(&config_copy, Arc::downgrade(&node_copy));
-            replicator_pool.run();
+        let replicator_jh = scope(|scope| {
+            scope.spawn(|| {
+                let mut replicator_pool = ReplicatorNew::new(&config_copy, Arc::downgrade(&node_copy));
+                replicator_pool.run();
+            });
         });
 
+//        let replicator_jh = thread::spawn(move || {
+//            let mut replicator_pool = ReplicatorNew::new(&config_copy, Arc::downgrade(&node_copy));
+//            replicator_pool.run();
+//        });
+
         {
-            let mut guard = self.node.lock().unwrap();
-            guard.init(replicator_jh);
+            let mut node = self.node.lock().unwrap();
+            node.init(replicator_jh);
         }
 
         self.node.clone()
