@@ -23,7 +23,7 @@ use crossbeam::scope;
 
 pub struct PaymonCoin {
     pub hive: AM<Hive>,
-    pub node: AM<Node<'static>>,
+    pub node: AM<Node>,
     pub config: Configuration,
     pmnc_tx: Sender<()>,
     replicator_rx: Option<Receiver<()>>,
@@ -62,11 +62,12 @@ impl PaymonCoin {
                                            transaction_validator.clone(), true,
                                            num_keys_milestone, milestone_start_index, true);
 
-        let mut node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), &config,
+        let mut node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), config.clone(),
                                                      replicator_tx, pmnc_rx,
                                                      transaction_validator.clone(),
-                                                     transaction_requester.clone(), tips_vm
-                                                         .clone(), milestone.clone())));
+                                                     transaction_requester.clone(),
+                                                     tips_vm.clone(),
+                                                     milestone.clone())));
         let mut ledger_validator: AM<LedgerValidator> = make_am!(LedgerValidator::new(hive.clone(),
                                                                               milestone.clone(),
                                                         transaction_requester.clone()));
@@ -89,7 +90,7 @@ impl PaymonCoin {
         }
     }
 
-    pub fn run(&mut self) -> AM<Node<'static>> {
+    pub fn run(&mut self) -> AM<Node> {
         Milestone::init(self.milestone.clone(), self.ledger_validator.clone());
         if let Ok(mut tv) = self.transaction_validator.lock() {
             let test_net = self.config.get_bool(ConfigurationSettings::TestNet).unwrap_or(false);

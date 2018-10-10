@@ -43,7 +43,7 @@ impl<U, V> Pair<U, V> {
     }
 }
 
-pub struct Node<'a> {
+pub struct Node {
     hive: AWM<Hive>,
     pub neighbors: AM<Vec<AM<Neighbor>>>,
     config: Configuration,
@@ -59,80 +59,83 @@ pub struct Node<'a> {
     transaction_requester: AM<TransactionRequester>,
     tips_vm: AM<TipsViewModel>,
     milestone: AM<Milestone>,
-    to_send: OutputStream<'a>,
-    received_consensus_values: InputStream<'a>,
+//    to_send: OutputStream<'a>,
+//    received_consensus_values: InputStream<'a>,
 }
 
-pub type PacketData<'a> = Pair<Validator, Box<dyn Serializable + Send + 'a>>;
-
-#[derive(Clone)]
-pub struct OutputStream<'a> {
-    pub queue: AM<Vec<PacketData<'a>>>,
+pub struct PacketData<T> {
+    validator: Validator,
+    data: T,
 }
 
-impl<'a> OutputStream<'a> {
-    fn new() -> Self {
-        OutputStream {
-            queue: make_am!(Vec::new()),
-        }
-    }
+//#[derive(Clone)]
+//pub struct OutputStream<'a> {
+//    pub queue: AM<Vec<PacketData<'a>>>,
+//}
+//
+//impl<'a> OutputStream<'a> {
+//    fn new() -> Self {
+//        OutputStream {
+//            queue: make_am!(Vec::new()),
+//        }
+//    }
+//
+//    pub fn send_packet(&mut self, packet: PacketData<'a>) {
+//        let mut q = self.queue.lock().unwrap();
+//        q.push(packet);
+//    }
+//
+//    pub fn send_packet2(&mut self, b: Arc<dyn Serializable + 'a>) {
+//        drop(b);
+//    }
+//}
+//
+//impl<'a> Stream for OutputStream<'a> {
+//    type Item = PacketData<'a>;
+//    type Error = Error;
+//
+//    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
+//        let mut q = self.queue.lock().unwrap();
+//        Ok(Async::Ready(q.pop()))
+//    }
+//}
+//
+//#[derive(Clone)]
+//pub struct InputStream<'a> {
+//    pub queue: AM<Vec<PacketData<'a>>>,
+//}
+//
+//impl<'a> InputStream<'a> {
+//    fn new() -> Self {
+//        InputStream {
+//            queue: make_am!(Vec::new()),
+//        }
+//    }
+//
+//    pub fn send_packet(&mut self, packet: PacketData<'a>) {
+//        let mut q = self.queue.lock().unwrap();
+//        q.push(packet);
+//    }
+//}
+//
+//impl<'a> Stream for InputStream<'a> {
+//    type Item = PacketData<'a>;
+//    type Error = Error;
+//
+//    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
+//        let mut q = self.queue.lock().unwrap();
+//        Ok(Async::Ready(q.pop()))
+////        Ok(Async::NotReady)
+//    }
+//}
 
-    pub fn send_packet(&mut self, packet: PacketData<'a>) {
-        let mut q = self.queue.lock().unwrap();
-        q.push(packet);
-    }
-
-    pub fn send_packet2(&mut self, b: Arc<dyn Serializable + 'a>) {
-        drop(b);
-    }
-}
-
-impl<'a> Stream for OutputStream<'a> {
-    type Item = PacketData<'a>;
-    type Error = Error;
-
-    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
-        let mut q = self.queue.lock().unwrap();
-        Ok(Async::Ready(q.pop()))
-    }
-}
-
-#[derive(Clone)]
-pub struct InputStream<'a> {
-    pub queue: AM<Vec<PacketData<'a>>>,
-}
-
-impl<'a> InputStream<'a> {
-    fn new() -> Self {
-        InputStream {
-            queue: make_am!(Vec::new()),
-        }
-    }
-
-    pub fn send_packet(&mut self, packet: PacketData<'a>) {
-        let mut q = self.queue.lock().unwrap();
-        q.push(packet);
-    }
-}
-
-impl<'a> Stream for InputStream<'a> {
-    type Item = PacketData<'a>;
-    type Error = Error;
-
-    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
-        let mut q = self.queue.lock().unwrap();
-        Ok(Async::Ready(q.pop()))
-//        Ok(Async::NotReady)
-    }
-}
-
-impl<'a> Node<'a> {
-    pub fn new(hive: Weak<Mutex<Hive>>, config: &Configuration, node_tx: Sender<()>, pmnc_rx:
+impl Node {
+    pub fn new(hive: Weak<Mutex<Hive>>, config: Configuration, node_tx: Sender<()>, pmnc_rx:
         Receiver<()>, transaction_validator: AM<TransactionValidator>, transaction_requester:
         AM<TransactionRequester>, tips_vm: AM<TipsViewModel>, milestone: AM<Milestone>)
         -> Node {
-        let to_send = OutputStream::new();
-        let received_consensus_values = InputStream::new();
+//        let to_send = OutputStream::new();
+//        let received_consensus_values = InputStream::new();
 
         Node {
             hive,
@@ -150,8 +153,8 @@ impl<'a> Node<'a> {
             transaction_validator,
             tips_vm,
             milestone,
-            to_send,
-            received_consensus_values,
+//            to_send,
+//            received_consensus_values,
         }
     }
 

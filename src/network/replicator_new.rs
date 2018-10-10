@@ -168,14 +168,14 @@ pub struct ReplicatorSource {
 }
 
 pub struct ReplicatorNew {
-    node: Weak<Mutex<Node<'static>>>,
+    node: Weak<Mutex<Node>>,
 //    node_rx: Receiver<()>,
     addr: SocketAddr,
 
 }
 
 impl ReplicatorNew {
-    pub fn new(config: &Configuration, node: Weak<Mutex<Node<'static>>>) -> Self {
+    pub fn new(config: &Configuration, node: Weak<Mutex<Node>>) -> Self {
         let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
         let port = config.get_int(ConfigurationSettings::Port).unwrap_or(PORT as i32) as u16;
         let addr = SocketAddr::new(host, port);
