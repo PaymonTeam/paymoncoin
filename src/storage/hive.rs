@@ -1,6 +1,5 @@
 extern crate rand;
 extern crate crypto;
-extern crate rustc_serialize;
 extern crate rocksdb;
 extern crate log;
 extern crate ntrumls;
@@ -22,6 +21,7 @@ use model::{StateDiffObject, StateDiff};
 use network::packet::{SerializedBuffer, Serializable, get_serialized_object};
 use std::time;
 use std::str::FromStr;
+use hex;
 
 static CF_NAMES: [&str; 7] = ["transaction", "transaction-metadata", "address",
     "address_transactions", "approvee", "milestone", "state_diff"];
@@ -60,7 +60,6 @@ impl Hive {
     }
 
     pub fn init(&mut self) {
-        use self::rustc_serialize::hex::FromHex;
         let mwm = 9;
         let coordinator = Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap();
         let mut th1 = HASH_NULL; // coordinator: 8000 -> Acc1
@@ -100,7 +99,7 @@ impl Hive {
             let sk =
                 "8003FFFFF6A92AB90DD741AD2DBDB33D4AF90007BF75B80E61064FA6D59131875BC637A929E350ED11B004DECF4129732E1EB247571A6C5C54CC50692B6D31067E3814E7BEA3D974B23CEF8A974299CB07A5AA98B0679C83A60E445427F1054134033D4A2A51D6D8F706B3329A6BA28244ADBB8E2A5CA78A9580C7FC79AE4C962CB357579D1E854FECD60CA3765A326A1B93B528393C1830EABDDE7C72D9294B7EDC2378B1ADDA0F8F18894303910773BF2F48A1BF1F5B64D22F4E65838A7C00235592AB05CD68C48E19D8AC37EC46F14A750B614200B57398792616242321A381CAC49289B1A0AE6B6DB7207E4D83742381602A9C2E99AF52024F65082C30A8D51755B8BF3BE57354E878395E2652BC6B572794109F18D0D3CB4E869C043A7EB4DA6B50DCAFC6039D1CA8D87C611253D5E83EB1576D54D0043B3AD271D481DCBF9B7B29B84B07D594097163D4CF08C51E3E4EF026A9BAF08C6A51";
             let (sk, pk) = mls.generate_keypair_from_fg(&mls.unpack_fg_from_private_key
-            (&PrivateKey(sk.from_hex().unwrap())).unwrap()).unwrap();
+            (&PrivateKey(hex::decode(sk).unwrap())).unwrap()).unwrap();
             genesis.object.signature = genesis.calculate_signature(&sk, &pk).expect("failed to \
             calculate signature");
             genesis.object.signature_pubkey = pk.clone();
@@ -138,7 +137,7 @@ impl Hive {
             let sk =
                 "8003FFFFF6A92AB90DD741AD2DBDB33D4AF90007BF75B80E61064FA6D59131875BC637A929E350ED11B004DECF4129732E1EB247571A6C5C54CC50692B6D31067E3814E7BEA3D974B23CEF8A974299CB07A5AA98B0679C83A60E445427F1054134033D4A2A51D6D8F706B3329A6BA28244ADBB8E2A5CA78A9580C7FC79AE4C962CB357579D1E854FECD60CA3765A326A1B93B528393C1830EABDDE7C72D9294B7EDC2378B1ADDA0F8F18894303910773BF2F48A1BF1F5B64D22F4E65838A7C00235592AB05CD68C48E19D8AC37EC46F14A750B614200B57398792616242321A381CAC49289B1A0AE6B6DB7207E4D83742381602A9C2E99AF52024F65082C30A8D51755B8BF3BE57354E878395E2652BC6B572794109F18D0D3CB4E869C043A7EB4DA6B50DCAFC6039D1CA8D87C611253D5E83EB1576D54D0043B3AD271D481DCBF9B7B29B84B07D594097163D4CF08C51E3E4EF026A9BAF08C6A51";
             let (sk, pk) = mls.generate_keypair_from_fg(&mls.unpack_fg_from_private_key
-            (&PrivateKey(sk.from_hex().unwrap())).unwrap()).unwrap();
+            (&PrivateKey(hex::decode(sk).unwrap())).unwrap()).unwrap();
             genesis.object.signature = genesis.calculate_signature(&sk, &pk).expect("failed to \
             calculate signature");
             genesis.object.signature_pubkey = pk.clone();
@@ -177,7 +176,7 @@ impl Hive {
             let sk =
                 "8003FFFFF6A92AB90DD741AD2DBDB33D4AF90007BF75B80E61064FA6D59131875BC637A929E350ED11B004DECF4129732E1EB247571A6C5C54CC50692B6D31067E3814E7BEA3D974B23CEF8A974299CB07A5AA98B0679C83A60E445427F1054134033D4A2A51D6D8F706B3329A6BA28244ADBB8E2A5CA78A9580C7FC79AE4C962CB357579D1E854FECD60CA3765A326A1B93B528393C1830EABDDE7C72D9294B7EDC2378B1ADDA0F8F18894303910773BF2F48A1BF1F5B64D22F4E65838A7C00235592AB05CD68C48E19D8AC37EC46F14A750B614200B57398792616242321A381CAC49289B1A0AE6B6DB7207E4D83742381602A9C2E99AF52024F65082C30A8D51755B8BF3BE57354E878395E2652BC6B572794109F18D0D3CB4E869C043A7EB4DA6B50DCAFC6039D1CA8D87C611253D5E83EB1576D54D0043B3AD271D481DCBF9B7B29B84B07D594097163D4CF08C51E3E4EF026A9BAF08C6A51";
             let (sk, pk) = mls.generate_keypair_from_fg(&mls.unpack_fg_from_private_key
-            (&PrivateKey(sk.from_hex().unwrap())).unwrap()).unwrap();
+            (&PrivateKey(hex::decode(sk).unwrap())).unwrap()).unwrap();
             ms.object.signature = ms.calculate_signature(&sk, &pk).expect("failed to \
             calculate signature");
             ms.object.signature_pubkey = pk.clone();
@@ -220,7 +219,7 @@ impl Hive {
             let sk =
                 "8003FFFFF6882320DEEE46AC97069EC8C56928643907230EA3A80BA656312A5351768E1525CDDC40D661C4E6646FB5C0A9D52DB66A74C86F1ADD764AC3CF7BD66D16E9D619EF4090E996C350B75BA5CE856285775792700AF58203B65198012953514B5B0F1F86D8DDC8D6BB9ADF0A9665B6CADA1C6D166B93E704BDB063ACEAF6A519D6A58F88836E6B4AD431A576B13DBE59D4A603D833DAAD7EAF4AC5B48015522E1C3163A751EEAF34D8EE692806C88ABE6CB151DA79BE48C13CA894AC1DD3D4361B7F5574D1BC28754916B04849A066A8659CEEE9C334CEA0C327B99D458CC64257EC37C9B4216C9CE3469FD5B23DBC964488780E282790198443EA7A1F1FC824C51FDB7D18B5A6C188A2907446224B6C6FDCD264095E0BE053D293B544E22875470B55D58F5707EFD58E8DC5DDB475F25C5A660E63B202669524F02D4F973B5D4C2D52AC2C62BFCD5B54614F92F22B4B94E51E43AD0BEED8";
             let (sk, pk) = mls.generate_keypair_from_fg(&mls.unpack_fg_from_private_key
-            (&PrivateKey(sk.from_hex().unwrap())).unwrap()).unwrap();
+            (&PrivateKey(hex::decode(sk).unwrap())).unwrap()).unwrap();
             genesis.object.signature = genesis.calculate_signature(&sk, &pk).expect("failed to \
             calculate signature");
             genesis.object.signature_pubkey = pk.clone();
@@ -258,7 +257,7 @@ impl Hive {
             let sk =
                 "8003FFFFF694ED722F22ADDA712305AA22E8076E60089A46360110EA6DBF634EE621249A1BA4FF88B87784FA0B61879D4B8954D6D5C755AF833958B68B846136E669ADAE040F292BFC106125DE86C6012008144B3658674AFE9A01C56923171EEFCB4C720152EBF495DB138652E90403826CD88D7110490B91752A40DA881BFC70C391C55D44B22517D0F5186CD4A3CB3256ABF15957890F628C97D2F14038D54E0A706F16158C423B87B3B6D6187F69A0B9EE18083357DED66786320C979A762032310583EEB52AA4CC2060E8E4841143F14FE677743ECCC3DA3DCDCF96BA7316DD19A29A620764E06A38B5763047A8CD31E6293614194A566991C5DF3664B202EDDCA4B079807A2C8B53A52BA5934E6F4CC572A059C93E5FC9D09054E45A8939C2516D49BAF058781D9A435AE1513CC7578914DC0D2CEAA5A493DD5C832BE62FAB3C817772F24722AE022FB699A6DD62C6739913C41DEC6950D8";
             let (sk, pk) = mls.generate_keypair_from_fg(&mls.unpack_fg_from_private_key
-            (&PrivateKey(sk.from_hex().unwrap())).unwrap()).unwrap();
+            (&PrivateKey(hex::decode(sk).unwrap())).unwrap()).unwrap();
             genesis.object.signature = genesis.calculate_signature(&sk, &pk).expect("failed to \
             calculate signature");
             genesis.object.signature_pubkey = pk.clone();
@@ -297,7 +296,7 @@ impl Hive {
             let sk =
                 "8003FFFFF6A92AB90DD741AD2DBDB33D4AF90007BF75B80E61064FA6D59131875BC637A929E350ED11B004DECF4129732E1EB247571A6C5C54CC50692B6D31067E3814E7BEA3D974B23CEF8A974299CB07A5AA98B0679C83A60E445427F1054134033D4A2A51D6D8F706B3329A6BA28244ADBB8E2A5CA78A9580C7FC79AE4C962CB357579D1E854FECD60CA3765A326A1B93B528393C1830EABDDE7C72D9294B7EDC2378B1ADDA0F8F18894303910773BF2F48A1BF1F5B64D22F4E65838A7C00235592AB05CD68C48E19D8AC37EC46F14A750B614200B57398792616242321A381CAC49289B1A0AE6B6DB7207E4D83742381602A9C2E99AF52024F65082C30A8D51755B8BF3BE57354E878395E2652BC6B572794109F18D0D3CB4E869C043A7EB4DA6B50DCAFC6039D1CA8D87C611253D5E83EB1576D54D0043B3AD271D481DCBF9B7B29B84B07D594097163D4CF08C51E3E4EF026A9BAF08C6A51";
             let (sk, pk) = mls.generate_keypair_from_fg(&mls.unpack_fg_from_private_key
-            (&PrivateKey(sk.from_hex().unwrap())).unwrap()).unwrap();
+            (&PrivateKey(hex::decode(sk).unwrap())).unwrap()).unwrap();
             ms.object.signature = ms.calculate_signature(&sk, &pk).expect("failed to \
             calculate signature");
             ms.object.signature_pubkey = pk.clone();
@@ -692,7 +691,6 @@ impl Hive {
 
     pub fn generate_address() -> (Address, PrivateKey, PublicKey) {
         use byteorder::{ByteOrder, LittleEndian};
-        use self::rustc_serialize::hex::ToHex;
         use self::ntrumls::{NTRUMLS, PQParamSetID};
 
         let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
@@ -704,7 +702,7 @@ impl Hive {
         let mut buf = [0u8; 32];
         sha.result(&mut buf);
 
-        let addr_left = buf[..].to_hex()[24..].to_string();//.to_uppercase();
+        let addr_left = hex::encode(&buf[..])[24..].to_string();//.to_uppercase();
         let offset = 32 - ADDRESS_SIZE + 1;
         let checksum_byte = Address::calculate_checksum(&buf[offset..]);
 
@@ -716,7 +714,6 @@ impl Hive {
 
     pub fn generate_address_from_private_key(sk: &PrivateKey) -> (Address, PublicKey) {
         use byteorder::{ByteOrder, LittleEndian};
-        use self::rustc_serialize::hex::ToHex;
         use self::ntrumls::{NTRUMLS, PQParamSetID};
 
         let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);

@@ -1,7 +1,9 @@
-use rustc_serialize::json;
-use rustc_serialize::json::Json;
+//use rustc_serialize::json;
+//use rustc_serialize::json::Json;
 extern crate base64;
 
+use serde_json as json;
+use serde_json::Value;
 use iron;
 use iron::{Iron, Request, Response, IronResult, AfterMiddleware, Chain, Listening};
 use iron::prelude::*;
@@ -24,7 +26,7 @@ use model::transaction_validator::TransactionError;
 #[macro_export]
 macro_rules! format_success_response {
     ($a:ident) => {
-        Ok(Response::with((iron::status::Ok, json::encode(&$a).unwrap())))
+        Ok(Response::with((iron::status::Ok, json::to_string(&$a).unwrap())))
     };
 }
 
@@ -50,7 +52,7 @@ pub struct API {
     running: Arc<(Mutex<bool>, Condvar)>,
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct APIRequest<T: Serializable> {
     pub method: String,
     pub object: T,
@@ -532,8 +534,7 @@ impl API {
                                                                     "Error reading request")))?;
         let json_str = std::str::from_utf8(&body).map_err(|e| IronError::new(e,
                                                                              (status::InternalServerError, "Invalid UTF-8 string")))?;
-        let mut json = Json::from_str(json_str).map_err(|e| IronError::new(e,
-                                                                           (status::InternalServerError, "Invalid JSON")))?;
+        let mut json: json::Value = json::from_str(json_str).map_err(|e| IronError::new(e,(status::InternalServerError, "Invalid JSON")))?;
 
         match json.as_object() {
             Some(o) => {
@@ -541,12 +542,12 @@ impl API {
                     return Ok(API::format_error_response("No 'method' parameter"));
                 }
 
-                match o.get("method").unwrap().as_string() {
-                    Some(method) => {
-                        match method {
+                match o.get("method").unwrap() {
+                    Value::String(method) => {
+                        match method.as_ref() {
                             "broadcastTransaction" => {
                                 debug!("broadcastTransaction");
-                                match json::decode::<rpc::BroadcastTransaction>(&json_str) {
+                                match json::from_str::<rpc::BroadcastTransaction>(&json_str) {
                                     Ok(bt) => {
                                         unsafe {
                                             if let Some(ref arc) = PMNC {
@@ -567,7 +568,7 @@ impl API {
                             }
                             "getTransactionsToApprove" => {
                                 debug!("getTransactionsToApprove");
-                                match json::decode::<rpc::GetTransactionsToApprove>(&json_str) {
+                                match json::from_str::<rpc::GetTransactionsToApprove>(&json_str) {
                                     Ok(object) => {
                                         unsafe {
                                             if let Some(ref arc) = PMNC {
@@ -637,7 +638,7 @@ impl API {
                             "getBalances" => {
                                 debug!("getBalances");
 
-                                match json::decode::<rpc::GetBalances>(&json_str) {
+                                match json::from_str::<rpc::GetBalances>(&json_str) {
                                     Ok(object) => {
                                         unsafe {
                                             if let Some(ref arc) = PMNC {
@@ -668,7 +669,7 @@ impl API {
                                 };
                             }
                             "getInclusionStates" => {
-                                match json::decode::<rpc::GetInclusionStates>(&json_str) {
+                                match json::from_str::<rpc::GetInclusionStates>(&json_str) {
                                     Ok(object) => {
                                         unsafe {
                                             if let Some(ref mut arc) = PMNC {
@@ -696,7 +697,7 @@ impl API {
                                 }
                             }
                             "findTransactions" => {
-                                match json::decode::<rpc::FindTransactions>(&json_str) {
+                                match json::from_str::<rpc::FindTransactions>(&json_str) {
                                     Ok(object) => {
                                         unsafe {
                                             if let Some(ref mut arc) = PMNC {
@@ -722,7 +723,7 @@ impl API {
                                 }
                             }
                             "getTips" => {
-                                match json::decode::<rpc::GetTips>(&json_str) {
+                                match json::from_str::<rpc::GetTips>(&json_str) {
                                     Ok(object) => {
                                         unsafe {
                                             if let Some(ref mut arc) = PMNC {
@@ -748,7 +749,7 @@ impl API {
                                 }
                             }
                             "getTransactionsData" => {
-                                match json::decode::<rpc::GetTransactionsData>(&json_str) {
+                                match json::from_str::<rpc::GetTransactionsData>(&json_str) {
                                     Ok(object) => {
                                         unsafe {
                                             if let Some(ref mut arc) = PMNC {
@@ -776,7 +777,7 @@ impl API {
                             _ => Ok(API::format_error_response("Unknown 'method' parameter"))
                         }
                     }
-                    None => Ok(API::format_error_response("Invalid 'method' parameter"))
+                    _ => Ok(API::format_error_response("Invalid 'method' parameter"))
                 }
             }
             None => Ok(API::format_error_response("Invalid request"))

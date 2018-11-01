@@ -1,15 +1,20 @@
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate byteorder;
 extern crate mio;
 extern crate rand;
 extern crate slab;
 extern crate env_logger;
-extern crate rustc_serialize;
+extern crate serde_json;
 extern crate iron;
 extern crate ntrumls;
 extern crate linked_hash_set;
 extern crate crypto;
 extern crate futures;
 extern crate crossbeam;
+extern crate pm_serde;
+extern crate hex;
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
@@ -123,105 +128,121 @@ fn main() {
     }
 }
 
-#[test]
-fn hive_test() {
-    use model::{Transaction, TransactionObject};
-    use model::transaction::{Hash, ADDRESS_NULL, HASH_SIZE};
-    use storage::hive::{CFType};
-
-    use self::rustc_serialize::hex::{ToHex, FromHex};
-    use rand::Rng;
-
-    let mut hive = Hive::new();
-    hive.init();
-
-    let h0 = Hash([1u8; HASH_SIZE]);
-    let h1 = Hash([2u8; HASH_SIZE]);
-    let h2 = Hash([3u8; HASH_SIZE]);
-
-    assert!(hive.put_approvee(h1, h0));
-    assert!(hive.put_approvee(h2, h0));
-
-    let hashes = hive.storage_load_approvee(&h0).expect("failed to load hashes");
-//    println!("{:?}", hashes);
-
-    let mut t0 = TransactionObject::new_random();
-    hive.storage_put(CFType::Transaction, &t0.hash, &t0);
-    let t1 = hive.storage_load_transaction(&t0.hash).expect("failed to load transaction from db");
-    assert_eq!(t0, t1.object);
-
-    let addr0 = ADDRESS_NULL;
-
-    let random_sk = true;
-
-    let mut data =
-        "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A\
-        3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87\
-        EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A\
-        0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A774\
-        84468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B021\
-        4EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().expect("invalid sk");
-//    let mut sk_data = [0u8; 32 * 8];
-//    if random_sk {
-//        rand::thread_rng().fill_bytes(&mut sk_data);
-//    } else {
-//        sk_data.copy_from_slice(&data[..(32 * 8)]);
+#[cfg(test)]
+mod tests {
+//    #[derive(PMSerializable)]
+//    struct Pack {
+//        v: i32
 //    }
 
-//    let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
-//    hive.storage_put(CFType::Address, &addr, &10000u32);
-//    let balance = hive.storage_get_address(&addr).expect("storage get address error");
+//    #[test]
+//    fn pm_serde_works() {
+//        let pack = Pack { v: 2 };
+//        super::serde_pm::serialize(&pack);
+//    }
+    use storage::Hive;
 
-//    println!("sk={}", sk_data.to_hex().to_uppercase());
-//    println!("address={:?}", addr);
-//    println!("address={:?} balance={}", addr, balance);
-}
+    #[test]
+    fn hive_test() {
+        use model::{Transaction, TransactionObject};
+        use model::transaction::{Hash, ADDRESS_NULL, HASH_SIZE};
+        use storage::hive::{CFType};
+        use hex;
 
-#[test]
-fn hive_transaction_test() {
-    use model::{Transaction, TransactionObject};
-    use model::transaction::ADDRESS_NULL;
-    use storage::hive::{CFType};
+        use rand::Rng;
 
-    use self::rustc_serialize::hex::{ToHex, FromHex};
-    use rand::Rng;
+        let mut hive = Hive::new();
+        hive.init();
 
-    let mut hive = Hive::new();
-    hive.init();
+        let h0 = Hash([1u8; HASH_SIZE]);
+        let h1 = Hash([2u8; HASH_SIZE]);
+        let h2 = Hash([3u8; HASH_SIZE]);
 
-    let mut t0 = TransactionObject::new_random();
-    hive.storage_put(CFType::Transaction, &t0.hash, &t0);
-    let t1 = hive.storage_load_transaction(&t0.hash).expect("failed to load transaction from db");
-    assert_eq!(t0, t1.object);
+        assert!(hive.put_approvee(h1, h0));
+        assert!(hive.put_approvee(h2, h0));
 
-    let addr0 = ADDRESS_NULL;
+        let hashes = hive.storage_load_approvee(&h0).expect("failed to load hashes");
+    //    println!("{:?}", hashes);
 
-    let random_sk = true;
+        let mut t0 = TransactionObject::new_random();
+        hive.storage_put(CFType::Transaction, &t0.hash, &t0);
+        let t1 = hive.storage_load_transaction(&t0.hash).expect("failed to load transaction from db");
+        assert_eq!(t0, t1.object);
 
-    let mut data =
-        "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A\
-        3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87\
-        EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A\
-        0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A774\
-        84468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B021\
-        4EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD".from_hex().expect("invalid sk");
-//    let mut sk_data = [0u8; 32 * 8];
-////    if random_sk {
-////        rand::thread_rng().fill_bytes(&mut sk_data);
-////    } else {
-////        sk_data.copy_from_slice(&data[..(32 * 8)]);
-////    }
+        let addr0 = ADDRESS_NULL;
 
-//    let addr = Hive::generate_address(&sk_data, 0);
-//    hive.storage_put(CFType::Address, &addr, &10000u32);
-//    let balance = hive.storage_get_address(&addr).expect("storage get address error");
+        let random_sk = true;
 
-//    println!("sk={}", sk_data.to_hex().to_uppercase());
-//    println!("address={:?}", addr);
-//    println!("address={:?} balance={}", addr, balance);
-}
+        let mut data = hex::decode(
+            "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A\
+            3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87\
+            EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A\
+            0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A774\
+            84468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B021\
+            4EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD").expect("invalid sk");
+    //    let mut sk_data = [0u8; 32 * 8];
+    //    if random_sk {
+    //        rand::thread_rng().fill_bytes(&mut sk_data);
+    //    } else {
+    //        sk_data.copy_from_slice(&data[..(32 * 8)]);
+    //    }
 
-#[test]
-fn pos_test() {
+    //    let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
+    //    hive.storage_put(CFType::Address, &addr, &10000u32);
+    //    let balance = hive.storage_get_address(&addr).expect("storage get address error");
 
+    //    println!("sk={}", sk_data.to_hex().to_uppercase());
+    //    println!("address={:?}", addr);
+    //    println!("address={:?} balance={}", addr, balance);
+    }
+
+    #[test]
+    fn hive_transaction_test() {
+        use model::{Transaction, TransactionObject};
+        use model::transaction::ADDRESS_NULL;
+        use storage::hive::{CFType};
+
+//        use self::ser::hex::{ToHex, FromHex};
+//        use serde::ser:
+        use rand::Rng;
+
+        let mut hive = Hive::new();
+        hive.init();
+
+        let mut t0 = TransactionObject::new_random();
+        hive.storage_put(CFType::Transaction, &t0.hash, &t0);
+        let t1 = hive.storage_load_transaction(&t0.hash).expect("failed to load transaction from db");
+        assert_eq!(t0, t1.object);
+
+        let addr0 = ADDRESS_NULL;
+
+        let random_sk = true;
+
+        let mut data = hex::decode(
+            "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A\
+            3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87\
+            EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A\
+            0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A774\
+            84468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B021\
+            4EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD").expect("invalid sk");
+    //    let mut sk_data = [0u8; 32 * 8];
+    ////    if random_sk {
+    ////        rand::thread_rng().fill_bytes(&mut sk_data);
+    ////    } else {
+    ////        sk_data.copy_from_slice(&data[..(32 * 8)]);
+    ////    }
+
+    //    let addr = Hive::generate_address(&sk_data, 0);
+    //    hive.storage_put(CFType::Address, &addr, &10000u32);
+    //    let balance = hive.storage_get_address(&addr).expect("storage get address error");
+
+    //    println!("sk={}", sk_data.to_hex().to_uppercase());
+    //    println!("address={:?}", addr);
+    //    println!("address={:?} balance={}", addr, balance);
+    }
+
+    #[test]
+    fn pos_test() {
+
+    }
 }

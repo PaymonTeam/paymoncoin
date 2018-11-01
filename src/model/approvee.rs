@@ -5,7 +5,7 @@ use model::transaction::*;
 use storage::hive::Hive;
 use utils::defines::AM;
 
-#[derive(Debug, PartialEq, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Approvee {
     //    hash: Hash,
     set: HashSet<Hash>,

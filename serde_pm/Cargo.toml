@@ -1,0 +1,16 @@
+[package]
+name = "pm_serde"
+version = "0.1.0"
+authors = ["Vladislav Markushin <negigic@gmail.com>"]
+#edition = "2018"
+
+[lib]
+name = "pm_serde"
+#proc-macro = true
+
+[dependencies]
+#syn = "^0.15"
+#quote = "^0.6"
+serde = "^1.0"
+libc = "0.2.36"
+rlibc = "1.0.0"

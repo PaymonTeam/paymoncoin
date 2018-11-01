@@ -1,5 +1,3 @@
-extern crate rustc_serialize;
-
 use std::sync::Mutex;
 use std::collections::HashMap;
 use model::transaction::*;
@@ -43,7 +41,8 @@ impl Snapshot {
         hive::Error> {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
-        use self::rustc_serialize::hex::{ToHex, FromHex};
+//        use self::rustc_serialize::hex::{ToHex, FromHex};
+        use hex::{encode, decode};
 
         let mut balances = HashMap::<Address, i64>::new();
 
@@ -57,7 +56,7 @@ impl Snapshot {
             let arr : Vec<&str> = l.splitn(2, ' ').collect();
             let (addr_str, balance) = (String::from(arr[0]), String::from(arr[1]).parse::<i64>()?);
             let mut arr = [0u8; ADDRESS_SIZE];
-            arr.copy_from_slice(&addr_str[1..].from_hex().expect("failed to load snapshot")[..ADDRESS_SIZE]);
+            arr.copy_from_slice(&decode(&addr_str[1..]).expect("failed to load snapshot")[..ADDRESS_SIZE]);
             let addr = Address(arr);
 
 //            if !addr.verify() {

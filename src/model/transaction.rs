@@ -1,4 +1,3 @@
-extern crate rustc_serialize;
 extern crate crypto;
 extern crate ntrumls;
 extern crate base64;
@@ -14,9 +13,9 @@ use std::clone::Clone;
 use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
 use utils::defines::AM;
 use std::str::FromStr;
-use self::rustc_serialize::{
-    hex::{FromHex, ToHex},
-    Encodable, Decodable, Encoder, Decoder
+use hex;
+use serde::{
+    Serialize, Serializer, Deserialize, Deserializer
 };
 pub const HASH_SIZE: usize = 20;
 pub const ADDRESS_SIZE: usize = 21;
@@ -73,26 +72,38 @@ impl Serializable for Hash {
     }
 }
 
-impl Encodable for Hash {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        let strs: Vec<String> = self.0.iter()
-            .map(|b| format!("{:02x}", b))
-            .collect();
-        s.emit_str(&format!("{}", strs.join("")))
+impl Serialize for Hash {
+    // FIXME:
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
+        S: Serializer {
+        unimplemented!()
     }
+//    fn encode<S: Serializer>(&self, s: &mut S) -> Result<(), S::Error> {
+//        let strs: Vec<String> = self.0.iter()
+//            .map(|b| format!("{:02x}", b))
+//            .collect();
+//        s.emit_str(&format!("{}", strs.join("")))
+//    }
+
 }
 
-impl Decodable for Hash {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
-        let v = d.read_str()?.from_hex().map_err(|e| d.error("failed to decode Hash"))?;
-        if v.len() < HASH_SIZE {
-            return Err(d.error("invalid hash size"));
-        }
-
-        let mut hash = HASH_NULL.clone();
-        hash.clone_from_slice(&v[..HASH_SIZE]);
-        Ok(hash)
+impl<'de> Deserialize<'de> for Hash {
+    // FIXME:
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
+        D: Deserializer<'de> {
+        unimplemented!()
     }
+//    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
+//        let v = d.read_str()?.from_hex().map_err(|e| d.error("failed to decode Hash"))?;
+//        if v.len() < HASH_SIZE {
+//            return Err(d.error("invalid hash size"));
+//        }
+//
+//        let mut hash = HASH_NULL.clone();
+//        hash.clone_from_slice(&v[..HASH_SIZE]);
+//        Ok(hash)
+//    }
+
 }
 
 impl super::super::std::fmt::Debug for Hash {
@@ -147,7 +158,7 @@ impl FromStr for Address {
             return Err(AddressError::InvalidAddress);
         }
 
-        match s[1..].to_string().from_hex() {
+        match hex::decode(s[1..].to_string()) {
             Err(_) => return Err(AddressError::InvalidAddress),
             Ok(vec) => {
                 let bytes:&[u8] = vec.as_ref();
@@ -164,17 +175,29 @@ impl FromStr for Address {
     }
 }
 
-impl Encodable for Address {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        s.emit_str(&format!("{:?}", self))
+impl Serialize for Address {
+    // FIXME:
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
+        S: Serializer {
+        unimplemented!()
     }
+//    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+//        s.emit_str(&format!("{:?}", self))
+//    }
+
 }
 
-impl Decodable for Address {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
-        let s = d.read_str()?;
-        Ok(Address::from_str(&s).map_err(|e| d.error("failed to decode Address"))?)
+impl<'de> Deserialize<'de> for Address {
+    // FIXME:
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
+        D: Deserializer<'de> {
+        unimplemented!()
     }
+//    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
+//        let s = d.read_str()?;
+//        Ok(Address::from_str(&s).map_err(|e| d.error("failed to decode Address"))?)
+//    }
+
 }
 
 impl super::super::std::fmt::Debug for Address {
@@ -224,7 +247,7 @@ impl Address {
         let mut buf = [0u8; 32];
         sha.result(&mut buf);
 
-        let addr_left = buf[..].to_hex()[24..].to_string(); //.to_uppercase();
+        let addr_left = hex::encode(&buf[..])[24..].to_string(); //.to_uppercase();
         let offset = 32 - ADDRESS_SIZE + 1;
         let checksum_byte = Address::calculate_checksum(&buf[offset..]);
 
@@ -277,13 +300,13 @@ impl Serializable for Signature {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum TransactionType {
     HashOnly,
     Full,
 }
 
-#[derive(Debug, PartialEq, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct TransactionObject {
     pub address: Address,
     pub attachment_timestamp: u64,

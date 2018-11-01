@@ -1,3 +1,6 @@
+#[macro_use]
+use serde_derive;
+
 use network::packet::{Serializable, SerializedBuffer};
 use model::{
     Transaction, TransactionObject,
@@ -7,7 +10,7 @@ use model::{
 /**
     GetNodeInfo
 */
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct GetNodeInfo {}
 
 impl GetNodeInfo {
@@ -26,7 +29,7 @@ impl Serializable for GetNodeInfo {
 /**
     NodeInfo
 */
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct NodeInfo {
     pub name: String,
 }
@@ -49,7 +52,7 @@ impl Serializable for NodeInfo {
 /**
     AttachTransaction
 */
-//#[derive(RustcDecodable, RustcEncodable)]
+//#[derive(Serialize, Deserialize)]
 pub struct AttachTransaction {
     pub transaction: TransactionObject,
 }
@@ -71,7 +74,7 @@ impl Serializable for AttachTransaction {
 /**
     BroadcastTransaction
 */
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct BroadcastTransaction {
     pub transaction: TransactionObject,
 }
@@ -93,7 +96,7 @@ impl Serializable for BroadcastTransaction {
 /**
     GetTransactionsToApprove
 */
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct GetTransactionsToApprove {
     pub depth: u32,
     pub num_walks: u32,
@@ -131,7 +134,7 @@ impl Serializable for GetTransactionsToApprove {
 /**
     TransactionsToApprove
 */
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct TransactionsToApprove {
     pub trunk: Hash,
     pub branch: Hash,
@@ -157,7 +160,7 @@ impl Serializable for TransactionsToApprove {
 /**
     RequestTransaction
 */
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct RequestTransaction {
     pub hash: Hash,
 }
@@ -179,7 +182,7 @@ impl Serializable for RequestTransaction {
 /**
     GetBalances
 */
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct GetBalances {
     pub addresses: Vec<Address>,
     pub tips: Vec<Hash>,
@@ -231,7 +234,7 @@ impl Serializable for GetBalances {
 /**
     Balances
 */
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct Balances {
     pub balances: Vec<u64>,
 }
@@ -259,7 +262,7 @@ impl Serializable for Balances {
     }
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct GetInclusionStates {
     pub transactions: Vec<Hash>,
     pub tips: Vec<Hash>
@@ -300,7 +303,7 @@ impl Serializable for GetInclusionStates {
     }
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct InclusionStates {
     pub booleans: Vec<bool>
 }
@@ -325,7 +328,7 @@ impl Serializable for InclusionStates {
     }
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct GetTips {
 }
 
@@ -339,7 +342,7 @@ impl Serializable for GetTips {
     fn read_params(&mut self, stream: &mut SerializedBuffer) {}
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct Tips {
     pub hashes: Vec<Hash>
 }
@@ -367,7 +370,7 @@ impl Serializable for Tips {
     }
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct FindTransactions {
     pub addresses: Vec<Address>,
     pub tags: Vec<Hash>,
@@ -424,7 +427,7 @@ impl Serializable for FindTransactions {
     }
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct FoundedTransactions {
     pub hashes: Vec<Hash>
 }
@@ -452,7 +455,7 @@ impl Serializable for FoundedTransactions {
     }
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct GetTransactionsData {
     pub hashes: Vec<Hash>,
 }
@@ -481,7 +484,7 @@ impl Serializable for GetTransactionsData {
     }
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct TransactionsData {
     pub transactions: Vec<String>,
 }
@@ -509,7 +512,7 @@ impl Serializable for TransactionsData {
     }
 }
 
-//#[derive(RustcDecodable, RustcEncodable)]
+//#[derive(Serialize, Deserialize)]
 pub struct ConsensusValue {
     pub value: u32,
 }
