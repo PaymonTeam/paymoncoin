@@ -5,16 +5,13 @@ authors = ["Vladislav <negigic@gmail.com>"]
 license = "GPL-3.0"
 
 [dependencies]
-pm_serde = { path = "serde_pm" }
-#hello_macro_derive = { path = "../hello_macro/hello_macro_derive" }
+serde_pm = { path = "serde_pm" }
 rocksdb = "^0.10"
-#exonum_rocksdb = "^0.7"
 rust-crypto = "^0.2"
 log = "0.3.9"
 rand = "0.3.20"
 time = "0.1.39"
 threadpool = "1.7.1"
-#rustc-serialize = "0.3.24"
 serde = "^1.0"
 serde_json = "^1.0"
 serde_derive = "^1.0"
@@ -37,8 +34,6 @@ tokio-io = "0.1"
 tokio-timer = "0.1"
 tokio-codec = "0.1"
 futures = "0.1"
-#futures = { git="https://github.com/rust-lang-nursery/futures-rs.git", branch="0.3" }
-#futures-preview = "0.3.0-alpha.5"
 bytes = "0.4"
 rhododendron = "^0.4"
 
@@ -50,9 +45,3 @@ name = "paymoncoin"
 path = "src/main.rs"
 doc = false
 debug = true
-
-#[[bin]]
-#name = "paymoncoin-pos"
-#path = "src/pos.rs"
-#doc = false
-#debug = true

@@ -1,11 +1,11 @@
 [package]
-name = "pm_serde"
+name = "serde_pm"
 version = "0.1.0"
 authors = ["Vladislav Markushin <negigic@gmail.com>"]
 #edition = "2018"
 
 [lib]
-name = "pm_serde"
+name = "serde_pm"
 #proc-macro = true
 
 [dependencies]
