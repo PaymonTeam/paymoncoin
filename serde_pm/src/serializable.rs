@@ -3,136 +3,96 @@ extern crate serde;
 
 use std::cell::RefCell;
 use std::ops::Deref;
-use std::error::Error;
 use std::fmt;
 
-#[derive(Debug)]
-pub enum SerializationError {
-    BoolError,
-    I8Error,
-    U8Error,
-    I32Error,
-    U32Error,
-    I64Error,
-    U64Error,
-    StringError,
-    BytesError,
-    ByteArrayError,
-    WrongSVUID,
-    LimitExceeded,
-}
-
-impl fmt::Display for SerializationError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.description())
-    }
-}
-
-impl Error for SerializationError {
-    fn description(&self) -> &str {
-        match *self {
-            SerializationError::BoolError => "failed to (de)serialize bool",
-            SerializationError::I8Error => "failed to (de)serialize i8",
-            SerializationError::U8Error => "failed to (de)serialize u8",
-            SerializationError::I32Error => "failed to (de)serialize i32",
-            SerializationError::U32Error => "failed to (de)serialize u32",
-            SerializationError::I64Error => "failed to (de)serialize i64",
-            SerializationError::U64Error => "failed to (de)serialize u64",
-            SerializationError::StringError => "failed to (de)serialize String",
-            SerializationError::BytesError => "failed to (de)serialize bytes",
-            SerializationError::ByteArrayError => "failed to (de)serialize byte array",
-            SerializationError::WrongSVUID => "wrong SVUID",
-            SerializationError::LimitExceeded => "buffer limit exceeded",
-        }
-    }
-}
+use error::{Error, Result, SerializationError};
 
 impl Serializable for i32 {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<()> {
         stream.write_i32(0)?;
         stream.write_i32(*self)?;
         Ok(())
     }
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<()> {
         *self = stream.read_i32()?;
         Ok(())
     }
 }
 
 impl Serializable for i64 {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<()> {
         stream.write_i32(0)?;
         stream.write_i64(*self)?;
         Ok(())
     }
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<()> {
         *self = stream.read_i64()?;
         Ok(())
     }
 }
 
 impl Serializable for u32 {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<()> {
         stream.write_i32(0)?;
         stream.write_u32(*self)?;
         Ok(())
     }
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<()> {
         *self = stream.read_u32()?;
         Ok(())
     }
 }
 
 impl Serializable for u64 {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<()> {
         stream.write_i32(0)?;
         stream.write_u64(*self)?;
         Ok(())
     }
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<()> {
         *self = stream.read_u64()?;
         Ok(())
     }
 }
 
 impl Serializable for u8 {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<()> {
         stream.write_i32(0)?;
         stream.write_byte(*self)?;
         Ok(())
     }
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<()> {
         *self = stream.read_byte()?;
         Ok(())
     }
 }
 
 impl Serializable for bool {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<()> {
         stream.write_i32(0)?;
         stream.write_bool(self.clone())?;
         Ok(())
     }
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<()> {
         *self = stream.read_bool()?;
         Ok(())
     }
 }
 
 impl Serializable for String {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<()> {
         stream.write_i32(0)?;
         stream.write_string(self.clone())?;
         Ok(())
     }
 
-    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<()> {
         *self = stream.read_string()?;
         Ok(())
     }
@@ -276,7 +236,7 @@ impl SerializedBuffer {
 
     }
 
-    pub fn write_byte(&mut self, i: u8) -> Result<(), SerializationError> {
+    pub fn write_byte(&mut self, i: u8) -> Result<()> {
         if !self.calculated_size_only {
             if self.position + 1 > self.limit {
                 return Err(SerializationError::U8Error);
@@ -289,7 +249,7 @@ impl SerializedBuffer {
         Ok(())
     }
 
-    pub fn write_i32(&mut self, i: i32) -> Result<(), SerializationError> {
+    pub fn write_i32(&mut self, i: i32) -> Result<()> {
         if !self.calculated_size_only {
             if self.position + 4 > self.limit {
                 return Err(SerializationError::I32Error);
@@ -308,7 +268,7 @@ impl SerializedBuffer {
         Ok(())
     }
 
-    pub fn write_i64(&mut self, i: i64) -> Result<(), SerializationError> {
+    pub fn write_i64(&mut self, i: i64) -> Result<()> {
         if !self.calculated_size_only {
             if self.position + 8 > self.limit {
                 return Err(SerializationError::I64Error);
@@ -335,15 +295,15 @@ impl SerializedBuffer {
         Ok(())
     }
 
-    pub fn write_u64(&mut self, i: u64) -> Result<(), SerializationError> {
+    pub fn write_u64(&mut self, i: u64) -> Result<()> {
         self.write_i64(i as i64)
     }
 
-    pub fn write_u32(&mut self, i: u32) -> Result<(), SerializationError> {
+    pub fn write_u32(&mut self, i: u32) -> Result<()> {
         self.write_i32(i as i32)
     }
 
-    pub fn write_bool(&mut self, val: bool) -> Result<(), SerializationError> {
+    pub fn write_bool(&mut self, val: bool) -> Result<()> {
         if !self.calculated_size_only {
             if val {
                 self.write_i32(0x6e4a64b3)?;
@@ -356,7 +316,7 @@ impl SerializedBuffer {
         Ok(())
     }
 
-    fn write_bytes_internal(&mut self, b:&[u8], length:usize) -> Result<(), SerializationError> {
+    fn write_bytes_internal(&mut self, b:&[u8], length:usize) -> Result<()> {
         if length == 0 {
             return Ok(());
         }
@@ -372,7 +332,7 @@ impl SerializedBuffer {
         Ok(())
     }
 
-    pub fn write_bytes(&mut self, b:&[u8]/*, length:usize*/) -> Result<(), SerializationError> {
+    pub fn write_bytes(&mut self, b:&[u8]/*, length:usize*/) -> Result<()> {
         let length = b.len();
         if !self.calculated_size_only {
             if self.position + length > self.limit {
@@ -385,7 +345,7 @@ impl SerializedBuffer {
         Ok(())
     }
 
-    pub fn write_bytes_offset(&mut self, b:&[u8], length:usize) -> Result<(), SerializationError> {
+    pub fn write_bytes_offset(&mut self, b:&[u8], length:usize) -> Result<()> {
         if !self.calculated_size_only {
             if self.position + length > self.limit {
                 return Err(SerializationError::BytesError);
@@ -397,7 +357,7 @@ impl SerializedBuffer {
         Ok(())
     }
 
-    pub fn write_bytes_serialized_buffer(&mut self, b: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    pub fn write_bytes_serialized_buffer(&mut self, b: &mut SerializedBuffer) -> Result<()> {
         let length = b.limit() - b.position();
         if length == 0 {
             return Ok(());
@@ -415,7 +375,7 @@ impl SerializedBuffer {
         Ok(())
     }
 
-    pub fn write_byte_array(&mut self, b: &[u8]) -> Result<(), SerializationError> {
+    pub fn write_byte_array(&mut self, b: &[u8]) -> Result<()> {
         let length = b.len();
 
         if length <= 253 {
@@ -477,24 +437,24 @@ impl SerializedBuffer {
         Ok(())
     }
 
-    pub fn write_byte_array_serialized_buffer(&mut self, b: &mut SerializedBuffer) -> Result<(), SerializationError> {
+    pub fn write_byte_array_serialized_buffer(&mut self, b: &mut SerializedBuffer) -> Result<()> {
         b.rewind();
         self.write_byte_array(&b.buffer)
     }
 
-    pub fn write_f32(&mut self, f: f32) -> Result<(), SerializationError> {
+    pub fn write_f32(&mut self, f: f32) -> Result<()> {
         self.write_u32(f32::to_bits(f))
     }
 
-    pub fn write_f64(&mut self, f: f64) -> Result<(), SerializationError> {
+    pub fn write_f64(&mut self, f: f64) -> Result<()> {
         self.write_u64(f64::to_bits(f))
     }
 
-    pub fn write_string(&mut self, s:String) -> Result<(), SerializationError> {
+    pub fn write_string(&mut self, s:String) -> Result<()> {
         self.write_byte_array(s.as_ref())
     }
 
-    pub fn read_i32(&mut self) -> Result<i32, SerializationError> {
+    pub fn read_i32(&mut self) -> Result<i32> {
         if self.position + 4 > self.limit {
             return Err(SerializationError::I32Error);
         }
@@ -507,7 +467,7 @@ impl SerializedBuffer {
         Ok(result)
     }
 
-    pub fn read_i64(&mut self) -> Result<i64, SerializationError> {
+    pub fn read_i64(&mut self) -> Result<i64> {
         if self.position + 8 > self.limit {
             return Err(SerializationError::I64Error);
         }
@@ -525,25 +485,25 @@ impl SerializedBuffer {
         Ok(result)
     }
 
-    pub fn read_u32(&mut self) -> Result<u32, SerializationError> {
+    pub fn read_u32(&mut self) -> Result<u32> {
         self.read_i32().map(|i| i as u32)
     }
 
-    pub fn read_u64(&mut self) -> Result<u64, SerializationError> {
+    pub fn read_u64(&mut self) -> Result<u64> {
         self.read_i64().map(|i| i as u64)
     }
 
-    pub fn read_f32(&mut self) -> Result<f32, SerializationError> {
+    pub fn read_f32(&mut self) -> Result<f32> {
         let i = self.read_u32()?;
         Ok(f32::from_bits(i))
     }
 
-    pub fn read_f64(&mut self) -> Result<f64, SerializationError> {
+    pub fn read_f64(&mut self) -> Result<f64> {
         let i = self.read_u64()?;
         Ok(f64::from_bits(i))
     }
 
-    pub fn read_byte(&mut self) -> Result<u8, SerializationError> {
+    pub fn read_byte(&mut self) -> Result<u8> {
         if self.position + 1 > self.limit {
             return Err(SerializationError::U8Error);
         }
@@ -552,7 +512,7 @@ impl SerializedBuffer {
         Ok(result)
     }
 
-    pub fn read_bool(&mut self) -> Result<bool, SerializationError> {
+    pub fn read_bool(&mut self) -> Result<bool> {
         let i = self.read_u32()?;
 
         if i == 0x6e4a64b3 {
@@ -564,7 +524,7 @@ impl SerializedBuffer {
         Err(SerializationError::BoolError)
     }
 
-    pub fn read_string(&mut self) -> Result<String, SerializationError> {
+    pub fn read_string(&mut self) -> Result<String> {
         let mut sl = 1usize;
         if self.position + 1 > self.limit {
             return Err(SerializationError::StringError);
@@ -592,7 +552,7 @@ impl SerializedBuffer {
         Ok(result)
     }
 
-    pub fn read_byte_array(&mut self) -> Result<Vec<u8>, SerializationError> {
+    pub fn read_byte_array(&mut self) -> Result<Vec<u8>> {
         let mut sl = 1usize;
         if self.position + 1 > self.limit {
             return Err(SerializationError::ByteArrayError);
@@ -622,7 +582,7 @@ impl SerializedBuffer {
         Ok(result)
     }
 
-    pub fn read_bytes(&mut self, b: &mut [u8], length: usize) -> Result<(), SerializationError> {
+    pub fn read_bytes(&mut self, b: &mut [u8], length: usize) -> Result<()> {
         if self.position + length > self.limit {
             return Err(SerializationError::BytesError);
         }
@@ -663,8 +623,8 @@ impl Deref for SerializedBuffer {
 }
 
 pub trait Serializable : Default {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<(), SerializationError>;
-    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<(), SerializationError>;
+    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) -> Result<()>;
+    fn read_params(&mut self, stream: &mut SerializedBuffer) -> Result<()>;
 }
 
 thread_local! {
@@ -684,7 +644,7 @@ pub fn calculate_object_size<T>(packet: &T) -> usize where T: Serializable {
     capacity
 }
 
-pub fn get_serialized_object<T>(packet: &T, with_svuid: bool) -> Result<SerializedBuffer, SerializationError> where T: Serializable {
+pub fn get_serialized_object<T>(packet: &T, with_svuid: bool) -> Result<SerializedBuffer> where T: Serializable {
     let size = calculate_object_size(packet);
     let mut sb = SerializedBuffer::new_with_size(size);
     packet.serialize_to_stream(&mut sb)?;

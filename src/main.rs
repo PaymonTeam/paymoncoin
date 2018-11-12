@@ -13,7 +13,7 @@ extern crate linked_hash_set;
 extern crate crypto;
 extern crate futures;
 extern crate crossbeam;
-extern crate pm_serde;
+extern crate serde_pm;
 extern crate hex;
 extern crate tokio_timer;
 //extern crate secp256k1;
@@ -138,7 +138,7 @@ mod tests {
 //    }
 
 //    #[test]
-//    fn pm_serde_works() {
+//    fn serde_pm_works() {
 //        let pack = Pack { v: 2 };
 //        super::serde_pm::serialize(&pack);
 //    }

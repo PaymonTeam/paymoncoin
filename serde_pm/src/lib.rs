@@ -1,19 +1,13 @@
-mod serializable;
-
-//extern crate proc_macro;
-//extern crate syn;
-//#[macro_use]
-//extern crate quote;
-//
-//use self::proc_macro::TokenStream;
+extern crate serde;
 
 pub use self::serializable::*;
+pub use self::error::{Error, Result};
 
-pub fn serialize<T: Serializable>(obj: &T) -> Result<SerializedBuffer, SerializationError> {
+pub fn serialize<T: Serializable>(obj: &T) -> Result<SerializedBuffer> {
     get_serialized_object(obj, true)
 }
 
-pub fn deserialize<T: Serializable>(stream: &mut SerializedBuffer) -> Result<T, SerializationError> {
+pub fn deserialize<T: Serializable>(stream: &mut SerializedBuffer) -> Result<T> {
     let mut obj = T::default();
     obj.read_params(stream)?;
     Ok(obj)
@@ -36,6 +30,11 @@ pub fn deserialize<T: Serializable>(stream: &mut SerializedBuffer) -> Result<T, 
 //    };
 //    gen.into()
 //}
+
+pub mod ser;
+pub mod de;
+pub mod error;
+pub mod serializable;
 
 #[cfg(test)]
 mod tests {
