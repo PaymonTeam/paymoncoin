@@ -15,6 +15,8 @@ extern crate futures;
 extern crate crossbeam;
 extern crate pm_serde;
 extern crate hex;
+extern crate tokio_timer;
+//extern crate secp256k1;
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;

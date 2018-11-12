@@ -633,6 +633,26 @@ pub trait Serializable {
     fn read_params(&mut self, stream: &mut SerializedBuffer);
 }
 
+struct SerializableHasher {
+
+}
+
+impl ::std::hash::Hasher for SerializableHasher {
+    fn finish(&self) -> u64 {
+        unimplemented!()
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        unimplemented!()
+    }
+}
+
+//impl ::std::hash::Hash for Serializable {
+//    fn hash<H: Hasher>(&self, state: &mut H) {
+//        unimplemented!()
+//    }
+//}
+
 thread_local! {
     pub static sizeCalculatorBuffer: RefCell<SerializedBuffer> = RefCell::new(SerializedBuffer::new(true));
 }
