@@ -1,3 +1,4 @@
+//extern crate serde_pm;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -13,9 +14,9 @@ extern crate linked_hash_set;
 extern crate crypto;
 extern crate futures;
 extern crate crossbeam;
-extern crate serde_pm;
 extern crate hex;
 extern crate tokio_timer;
+extern crate parity_rocksdb_sys as rocksdb;
 //extern crate secp256k1;
 
 #[macro_use] extern crate log;
@@ -203,7 +204,7 @@ mod tests {
         use model::{Transaction, TransactionObject};
         use model::transaction::ADDRESS_NULL;
         use storage::hive::{CFType};
-
+        use super::hex;
 //        use self::ser::hex::{ToHex, FromHex};
 //        use serde::ser:
         use rand::Rng;

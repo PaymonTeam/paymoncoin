@@ -1,12 +1,13 @@
 extern crate rand;
 extern crate crypto;
-extern crate rocksdb;
+//extern crate rocksdb;
 extern crate log;
 extern crate ntrumls;
 
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
-use self::rocksdb::{DBIterator, DB, Options, IteratorMode, ColumnFamilyDescriptor, ColumnFamily};
+use rocksdb::ffi::*;
+//use rocksdb::{DBIterator, DB, Options, IteratorMode, ColumnFamilyDescriptor, ColumnFamily};
 use std::io;
 use std::num;
 use std::sync::Arc;
@@ -338,13 +339,6 @@ impl Hive {
             };
             debug!("state_diff2={}", self.put_state_diff(&sd));
         }
-
-//        println!("put addr1={}", self.put_address_transaction(coordinator.clone(), th1.clone()));
-//        println!("put addr2={}", self.put_address_transaction(coordinator.clone(), th2.clone()));
-//        println!("put addr3={}", self.put_address_transaction(coordinator.clone(), mh1.clone()));
-//        println!("put addr4={}", self.put_address_transaction(coordinator.clone(), th3.clone()));
-//        println!("put addr5={}", self.put_address_transaction(coordinator.clone(), th4.clone()));
-//        println!("put addr6={}", self.put_address_transaction(coordinator.clone(), mh2.clone()));
     }
 
     fn clear_db(db: &mut DB) {
@@ -425,8 +419,6 @@ impl Hive {
     }
 
     pub fn storage_next_milestone(&self, index: u32) -> Option<MilestoneObject> {
-//        let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize])
-//                                          .unwrap(), IteratorMode::Start).unwrap();
         let mut it = self.db.raw_iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize]).unwrap()).unwrap();
         it.seek(&get_serialized_object(&index, false));
         it.next();
@@ -531,7 +523,6 @@ impl Hive {
             Err(e) => {
                 warn!("get transaction from storage error ({})", e);
                 Some(Transaction::from_hash(hash.clone()))
-//                None
             }
         }
     }
@@ -581,7 +572,6 @@ impl Hive {
                 let buf = SerializedBuffer::from_slice(&res?);
                 if buf.len() < HASH_SIZE || buf.len() % HASH_SIZE != 0 {
                     return Some(Vec::new());
-//                    return None;
                 }
                 let mut arr = vec![];
                 let mut pos = 0;
@@ -596,7 +586,6 @@ impl Hive {
             Err(e) => {
                 warn!("get transaction from storage error ({})", e);
                 Some(Vec::new())
-//                None
             }
         }
     }
@@ -618,7 +607,7 @@ impl Hive {
     }
 
     fn init_db() -> DB {
-        use self::rocksdb::merge_operator::MergeOperands;
+        use rocksdb::merge_operator::MergeOperands;
         fn concat_merge(new_key: &[u8],
                         existing_val: Option<&[u8]>,
                         operands: &mut MergeOperands)
@@ -645,7 +634,6 @@ impl Hive {
 
         let cfs_v = CF_NAMES.to_vec().iter().map(|name| {
             let mut opts = Options::default();
-//                opts.set_merge_operator()
             opts.set_max_write_buffer_number(2);
             opts.set_write_buffer_size(2 * 1024 * 1024);
             opts.set_merge_operator("bytes_concat", concat_merge, None);
@@ -769,8 +757,6 @@ impl Hive {
 
     pub fn update_heights(&mut self, mut transaction: Transaction) -> Result<(),
         TransactionError> {
-//        let mut transaction = &mut transaction.clone();
-
         let mut trunk = match self.storage_load_transaction(&transaction.get_trunk_transaction_hash()) {
             Some(t) => t,
             None => return Err(TransactionError::InvalidHash)
