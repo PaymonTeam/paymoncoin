@@ -513,6 +513,7 @@ impl Serializable for TransactionsData {
 }
 
 //#[derive(Serialize, Deserialize)]
+#[derive(Eq, Debug, Clone)]
 pub struct ConsensusValue {
     pub value: u32,
 }
@@ -530,4 +531,25 @@ impl Serializable for ConsensusValue {
     }
 }
 
-unsafe impl Send for ConsensusValue {}
+use std::cmp::Ordering;
+
+impl Ord for ConsensusValue {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl PartialOrd for ConsensusValue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.value.cmp(&other.value))
+    }
+}
+
+impl PartialEq for ConsensusValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+
+//unsafe impl Send for ConsensusValue {}

@@ -5,9 +5,9 @@ authors = ["Vladislav <negigic@gmail.com>"]
 license = "GPL-3.0"
 
 [dependencies]
-#serde_pm = { path = "serde_pm" }
+serde_pm = { path = "serde_pm" }
 #rocksdb = "^0.10"
-parity-rocksdb-sys = "^0.5"
+parity-rocksdb = "^0.5"
 rust-crypto = "^0.2"
 log = "0.3.9"
 rand = "0.3.20"
@@ -37,8 +37,8 @@ tokio-codec = "0.1"
 futures = "0.1"
 bytes = "0.4"
 rhododendron = "^0.4"
-secp256k1 = "^0.11"
-#secp256k1-plus = "^0.5"
+#secp256k1 = "^0.11"
+secp256k1-plus = "^0.5"
 
 [target.'cfg(windows)'.dependencies]
 native-windows-gui = "0.2.0"

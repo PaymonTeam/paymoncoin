@@ -1,4 +1,4 @@
-//extern crate serde_pm;
+extern crate serde_pm;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -12,21 +12,25 @@ extern crate iron;
 extern crate ntrumls;
 extern crate linked_hash_set;
 extern crate crypto;
+#[macro_use]
 extern crate futures;
 extern crate crossbeam;
 extern crate hex;
 extern crate tokio_timer;
-extern crate parity_rocksdb_sys as rocksdb;
-//extern crate secp256k1;
+extern crate parity_rocksdb as rocksdb;
+extern crate secp256k1;
 
-#[macro_use] extern crate log;
-#[macro_use] extern crate lazy_static;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate lazy_static;
 
 #[macro_use]
 extern crate tokio_io;
 extern crate tokio;
 
-#[macro_use] pub mod utils;
+#[macro_use]
+pub mod utils;
 pub mod consensus;
 pub mod network;
 pub mod model;
@@ -54,6 +58,8 @@ use env_logger::LogBuilder;
 use log::{LogRecord, LogLevelFilter};
 use storage::Hive;
 use network::api::API;
+
+// region example
 
 fn main() {
     let format = |record: &LogRecord| {
@@ -146,58 +152,81 @@ mod tests {
     use storage::Hive;
 
     #[test]
-    fn hive_test() {
-        use model::{Transaction, TransactionObject};
-        use model::transaction::{Hash, ADDRESS_NULL, HASH_SIZE};
-        use storage::hive::{CFType};
-        use hex;
-
-        use rand::Rng;
-
-        let mut hive = Hive::new();
-        hive.init();
-
-        let h0 = Hash([1u8; HASH_SIZE]);
-        let h1 = Hash([2u8; HASH_SIZE]);
-        let h2 = Hash([3u8; HASH_SIZE]);
-
-        assert!(hive.put_approvee(h1, h0));
-        assert!(hive.put_approvee(h2, h0));
-
-        let hashes = hive.storage_load_approvee(&h0).expect("failed to load hashes");
-    //    println!("{:?}", hashes);
-
-        let mut t0 = TransactionObject::new_random();
-        hive.storage_put(CFType::Transaction, &t0.hash, &t0);
-        let t1 = hive.storage_load_transaction(&t0.hash).expect("failed to load transaction from db");
-        assert_eq!(t0, t1.object);
-
-        let addr0 = ADDRESS_NULL;
-
-        let random_sk = true;
-
-        let mut data = hex::decode(
-            "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A\
-            3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87\
-            EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A\
-            0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A774\
-            84468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B021\
-            4EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD").expect("invalid sk");
-    //    let mut sk_data = [0u8; 32 * 8];
-    //    if random_sk {
-    //        rand::thread_rng().fill_bytes(&mut sk_data);
-    //    } else {
-    //        sk_data.copy_from_slice(&data[..(32 * 8)]);
-    //    }
-
-    //    let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
-    //    hive.storage_put(CFType::Address, &addr, &10000u32);
-    //    let balance = hive.storage_get_address(&addr).expect("storage get address error");
-
-    //    println!("sk={}", sk_data.to_hex().to_uppercase());
-    //    println!("address={:?}", addr);
-    //    println!("address={:?} balance={}", addr, balance);
-    }
+//    fn hive_test() {
+//        use model::{Transaction, TransactionObject};
+//        use model::transaction::{Hash, ADDRESS_NULL, HASH_SIZE};
+//        use storage::hive::{CFType};
+//        use hex;
+//        use env_logger::LogBuilder;
+//        use log::{LogRecord, LogLevelFilter};
+//        use env;
+//
+//        let format = |record: &LogRecord| {
+//            format!("[{}]: {}", record.level(), record.args())
+////        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
+//        };
+//
+//        let mut builder = LogBuilder::new();
+//        builder.format(format)
+//            .filter(None, LogLevelFilter::Info)
+//            .filter(Some("futures"), LogLevelFilter::Error)
+//            .filter(Some("tokio"), LogLevelFilter::Error)
+//            .filter(Some("tokio-io"), LogLevelFilter::Error)
+//            .filter(Some("hyper"), LogLevelFilter::Error)
+//            .filter(Some("iron"), LogLevelFilter::Error);
+//
+//        if env::var("RUST_LOG").is_ok() {
+//            builder.parse(&env::var("RUST_LOG").unwrap());
+//        }
+//
+//        builder.init().unwrap();
+//
+//        use rand::Rng;
+//
+//        let mut hive = Hive::new();
+//        hive.init();
+//
+//        let h0 = Hash([1u8; HASH_SIZE]);
+//        let h1 = Hash([2u8; HASH_SIZE]);
+//        let h2 = Hash([3u8; HASH_SIZE]);
+//
+//        assert!(hive.put_approvee(h1, h0));
+//        assert!(hive.put_approvee(h2, h0));
+//
+//        let hashes = hive.storage_load_approvee(&h0).expect("failed to load hashes");
+//    //    println!("{:?}", hashes);
+//
+//        let mut t0 = TransactionObject::new_random();
+//        hive.storage_put(CFType::Transaction, &t0.hash, &t0);
+//        let t1 = hive.storage_load_transaction(&t0.hash).expect("failed to load transaction from db");
+//        assert_eq!(t0, t1.object);
+//
+//        let addr0 = ADDRESS_NULL;
+//
+//        let random_sk = true;
+//
+//        let mut data = hex::decode(
+//            "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A\
+//            3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87\
+//            EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A\
+//            0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A774\
+//            84468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B021\
+//            4EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD").expect("invalid sk");
+//    //    let mut sk_data = [0u8; 32 * 8];
+//    //    if random_sk {
+//    //        rand::thread_rng().fill_bytes(&mut sk_data);
+//    //    } else {
+//    //        sk_data.copy_from_slice(&data[..(32 * 8)]);
+//    //    }
+//
+//    //    let (addr, sk, pk) = Hive::generate_address(&sk_data, 0);
+//    //    hive.storage_put(CFType::Address, &addr, &10000u32);
+//    //    let balance = hive.storage_get_address(&addr).expect("storage get address error");
+//
+//    //    println!("sk={}", sk_data.to_hex().to_uppercase());
+//    //    println!("address={:?}", addr);
+//    //    println!("address={:?} balance={}", addr, balance);
+//    }
 
     #[test]
     fn hive_transaction_test() {
@@ -246,6 +275,47 @@ mod tests {
 
     #[test]
     fn pos_test() {
+    }
 
+    #[test]
+    fn db_test() {
+        use env_logger::LogBuilder;
+        use log::{LogRecord, LogLevelFilter};
+        use env;
+
+        let format = |record: &LogRecord| {
+            format!("[{}]: {}", record.level(), record.args())
+//        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
+        };
+
+        let mut builder = LogBuilder::new();
+        builder.format(format)
+            .filter(None, LogLevelFilter::Info)
+            .filter(Some("futures"), LogLevelFilter::Error)
+            .filter(Some("tokio"), LogLevelFilter::Error)
+            .filter(Some("tokio-io"), LogLevelFilter::Error)
+            .filter(Some("hyper"), LogLevelFilter::Error)
+            .filter(Some("iron"), LogLevelFilter::Error);
+
+        if env::var("RUST_LOG").is_ok() {
+            builder.parse(&env::var("RUST_LOG").unwrap());
+        }
+
+        builder.init().unwrap();
+        use model::transaction::{Hash, ADDRESS_NULL, HASH_SIZE};
+
+        let mut hive = Hive::new();
+        hive.init();
+
+        let h0 = Hash([1u8; HASH_SIZE]);
+        let h1 = Hash([2u8; HASH_SIZE]);
+        let h2 = Hash([3u8; HASH_SIZE]);
+
+        assert!(hive.put_approvee(h1, h0));
+        assert!(hive.put_approvee(h2, h0));
+
+        let hashes = hive.storage_load_approvee(&h1).expect("failed to load hashes");
     }
 }
+
+// endregion

@@ -55,6 +55,12 @@ impl Deref for Hash {
     }
 }
 
+impl AsRef<[u8]> for Hash {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl DerefMut for Hash {
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.0

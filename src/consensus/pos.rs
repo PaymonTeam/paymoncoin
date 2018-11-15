@@ -1,38 +1,45 @@
 extern crate rhododendron;
 
-use env_logger::LogBuilder;
-use log::{LogRecord, LogLevelFilter};
 use std::{
-    env,
     collections::HashMap,
-    thread,
+    env,
     fmt,
+    sync::{Arc, atomic::{AtomicUsize, Ordering}, Mutex},
+    thread,
     time::Duration,
-    sync::{Arc, Mutex, atomic::{Ordering, AtomicUsize} }
+    collections::BTreeSet,
+    marker::PhantomData,
+    net::SocketAddr,
 };
-use futures;
-use futures::oneshot;
-use futures::{
-    future::FutureResult,
-    AndThen
-};
-use futures::executor::{Run, Spawn};
-use futures::prelude::*;
-use futures::task::Task;
-use tokio;
-//use network::node::{OutputStream, InputStream, PacketData, Pair};
-use network::node::{PacketData, Pair};
-use network::rpc::ConsensusValue;
-use network::packet::{self, get_serialized_object, Serializable};
-use network::Neighbor;
-use utils::AM;
-use std::net::SocketAddr;
-use std::collections::BTreeSet;
-use std::marker::PhantomData;
-use self::rhododendron as bft;
-use tokio_timer::{self, Timer};
-//use secp256k1;
+
 use crypto;
+use env_logger::LogBuilder;
+use futures::{
+    self,
+    AndThen,
+    executor::{Run, Spawn},
+    future::FutureResult,
+    oneshot,
+    prelude::*,
+    sync::{mpsc, oneshot},
+    task::Task,
+};
+use log::{LogLevelFilter, LogRecord};
+use secp256k1;
+use tokio;
+use tokio_timer::{self, Timer};
+
+use network::{
+    Neighbor,
+    node::{PacketData, Pair},
+    packet::{self, get_serialized_object, Serializable},
+    rpc::{self, ConsensusValue},
+//use node::{OutputStream, InputStream, PacketData, Pair};
+};
+use utils::AM;
+
+use self::rhododendron as bft;
+
 type ValidatorIndex = usize;
 type ValidatorDataType = u32;
 const N: usize = 4;
@@ -40,34 +47,63 @@ const M: usize = 2;
 
 const ROUND_DURATION: Duration = Duration::from_millis(50);
 
-//trait Hash {
-//    fn calculate_hash(&self) -> &[u8];
-//}
+struct Network<T> {
+    endpoints: Vec<mpsc::UnboundedSender<T>>,
+    input: mpsc::UnboundedReceiver<(usize, T)>,
+}
 
-pub mod secp256k1 {
-    pub struct SecretKey {
+impl<T: Clone + Send + 'static> Network<T> {
+    fn new(nodes: usize)
+           -> (Self, Vec<mpsc::UnboundedSender<(usize, T)>>, Vec<mpsc::UnboundedReceiver<T>>)
+    {
+        let mut inputs = Vec::with_capacity(nodes);
+        let mut outputs = Vec::with_capacity(nodes);
+        let mut endpoints = Vec::with_capacity(nodes);
 
-    }
-    pub struct PublicKey {
-
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct Signature {
-
-    }
-    pub struct Message {
-
-    }
-
-    impl Message {
-        pub fn from_slice(slice: &[u8]) -> Self {
-            Message {}
+        let (in_tx, in_rx) = mpsc::unbounded();
+        for _ in 0..nodes {
+            let (out_tx, out_rx) = mpsc::unbounded();
+            inputs.push(in_tx.clone());
+            outputs.push(out_rx);
+            endpoints.push(out_tx);
         }
+
+        let network = Network {
+            endpoints,
+            input: in_rx,
+        };
+
+        (network, inputs, outputs)
     }
 
-    pub fn sign(data: &Message, sk: &SecretKey) -> Signature {
-        Signature {}
+    fn route_on_thread(self) {
+        ::std::thread::spawn(move || { let _ = self.wait(); });
+    }
+}
+
+impl<T: Clone> Future for Network<T> {
+    type Item = ();
+    type Error = ();
+
+    fn poll(&mut self) -> Poll<(), Self::Error> {
+        match try_ready!(self.input.poll()) {
+            None => Ok(Async::Ready(())),
+            Some((sender, item)) => {
+                {
+                    let receiving_endpoints = self.endpoints
+                        .iter()
+                        .enumerate()
+                        .filter(|&(i, _)| i != sender)
+                        .map(|(_, x)| x);
+
+                    for endpoint in receiving_endpoints {
+                        let _ = endpoint.unbounded_send(item.clone());
+                    }
+                }
+
+                self.poll()
+            }
+        }
     }
 }
 
@@ -84,65 +120,66 @@ trait AsBytes {
     fn as_bytes(&self) -> &[u8];
 }
 
-trait Signature {
-    type Hash: AsBytes;
+trait SignatureScheme {
+    type Hash: AsRef<[u8]>;
     type Signature;
     type Message;
     type SecretKey;
     type PublicKey;
 
     fn calculate_hash(bytes: &[u8]) -> Self::Hash;
-    fn calculate_signature(data: &[u8], sk: &Self::SecretKey) -> Self::Signature;
+    fn calculate_signature(&self, data: &[u8]) -> Self::Signature;
     fn get_index(&self) -> usize;
 }
 
-struct Secp256k1Signature {
-
+struct Secp256k1Signature<'a> {
+    _phantom: PhantomData<&'a ()>,
+    context: secp256k1::Secp256k1,//secp256k1::Secp256k1<secp256k1::All>,
+    secret_key: secp256k1::key::SecretKey,
 }
 
-//impl<'a> Signature for Secp256k1Signature {
-//    type Hash = &'a [u8];
-//    type Signature = secp256k1::Signature;
-//    type Message = secp256k1::Message;
-//    type SecretKey = secp256k1::SecretKey;
-//    type PublicKey = secp256k1::PublicKey;
-//
-//    fn calculate_hash(bytes: &[u8]) -> <Self as Signature>::Hash {
-//        use crypto::digest::Digest;
-//        use crypto::sha3;
-//        let mut sha = sha3::Sha3::sha3_256();
-//        let mut buf = [0u8; 32];
-//        sha.input(bytes);
-//        sha.result(&mut buf);
-//        &mut buf
-//    }
-//
-//    fn calculate_signature(data: &'_ [u8], sk: &'_ <Self as Signature>::SecretKey) -> <Self as Signature>::Signature {
-//        unimplemented!()
-//    }
-//
-//    fn get_index(&self) -> usize {
-//        unimplemented!()
-//    }
-//}
-//use self::secp256k1::*;
-//
-//let data = match message {
-//bft::Message::Propose(_, m) => {
-//use network::packet::get_serialized_object;
-//Message::from_slice(&get_serialized_object(&m, true)).expect("32 bytes")
-//},
-//bft::Message::Vote(bft::Vote::Commit(_, digest)) => {
-//Message::from_slice(digest.as_bytes()).expect("32 bytes")
-//}
-//};
-//
-//
-//sign(&data, secret_key)
+impl<'a> SignatureScheme for Secp256k1Signature<'a> {
+    type Hash = [u8; 32];
+    type Signature = secp256k1::Signature;
+    type Message = secp256k1::Message;
+    type SecretKey = secp256k1::key::SecretKey;
+    type PublicKey = secp256k1::key::PublicKey;
 
+    fn calculate_hash(bytes: &[u8]) -> <Self as SignatureScheme>::Hash {
+        use crypto::digest::Digest;
+        use crypto::sha3;
+        let mut sha = sha3::Sha3::sha3_256();
+        let mut buf = [0u8; 32];
+        sha.input(bytes);
+        sha.result(&mut buf);
+        buf
+    }
+
+    fn calculate_signature(&self, data: &[u8]) -> <Self as SignatureScheme>::Signature {
+        let hash = Self::calculate_hash(data);
+        let msg = secp256k1::Message::from_slice(&hash).expect("32 bytes");
+        self.context.sign(&msg, &self.secret_key).unwrap()
+    }
+
+    fn get_index(&self) -> usize {
+        unimplemented!()
+    }
+}
+
+impl<'a> Secp256k1Signature<'a> {
+    fn new(sk: <Self as SignatureScheme>::SecretKey) -> Self {
+        use rand::{Rng, thread_rng};
+        let k1 = secp256k1::Secp256k1::new();
+
+        Secp256k1Signature {
+            context: secp256k1::Secp256k1::new(),
+            _phantom: PhantomData {},
+            secret_key: sk,
+        }
+    }
+}
 
 struct Context<T, S>
-    where S: Signature,
 {
     local_id: ValidatorIndex,
     proposal: Mutex<Option<T>>,
@@ -150,14 +187,31 @@ struct Context<T, S>
     current_round: Arc<AtomicUsize>,
     timer: Timer,
     evaluated: Mutex<BTreeSet<T>>,
-    secret_key: S::SecretKey,
+    signature: S,
+}
+
+impl<T, S> Context<T, S> where S: SignatureScheme,
+                               T: fmt::Debug + Eq + Clone + Ord + Serializable,
+                               S::Signature: fmt::Debug + Eq + Clone,
+                               S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone {
+    pub fn new(proposal: T, signature: S, local_id: <Self as rhododendron::Context>::AuthorityId, node_count: usize) -> Self where T: Ord {
+        Context {
+            signature,
+            local_id,
+            proposal: Mutex::new(Some(proposal)),
+            current_round: Arc::new(AtomicUsize::new(0)),
+            timer: tokio_timer::wheel().tick_duration(ROUND_DURATION).build(),
+            evaluated: Mutex::new(BTreeSet::new()),
+            node_count,
+        }
+    }
 }
 
 impl<T, S> bft::Context for Context<T, S>
-    where T: fmt::Debug + Eq + Clone + Ord + Serializable + crypto::digest::Digest,
-          S: Signature,
+    where T: fmt::Debug + Eq + Clone + Ord + Serializable,
+          S: SignatureScheme,
           S::Signature: fmt::Debug + Eq + Clone,
-          S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone + crypto::digest::Digest,
+          S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone,
 {
     type Error = Error;
     type Candidate = T;
@@ -191,7 +245,7 @@ impl<T, S> bft::Context for Context<T, S>
             },
             bft::Message::Vote(bft::Vote::Commit(_, ref digest)) |
             bft::Message::Vote(bft::Vote::Prepare(_, ref digest)) => {
-                packet::SerializedBuffer::from_slice(digest.as_bytes())
+                packet::SerializedBuffer::from_slice(digest.as_ref())
             },
             bft::Message::Vote(bft::Vote::AdvanceRound(round)) => {
                 let mut buffer = packet::SerializedBuffer::new_with_size(::std::mem::size_of_val(&round));
@@ -200,7 +254,7 @@ impl<T, S> bft::Context for Context<T, S>
             }
         };
 
-        let signature = S::calculate_signature(&data, &self.secret_key);
+        let signature = self.signature.calculate_signature(&data);
 
         match message {
             bft::Message::Propose(r, proposal) => bft::LocalizedMessage::Propose(bft::LocalizedProposal {
@@ -263,13 +317,115 @@ impl<T, S> bft::Context for Context<T, S>
     }
 }
 
-//fn calculate_signature_sk128<T:Consensus>(message: &bft::Message<T, T::Hash>, secret_key: &T::Signature) -> T::Signature {
-//}
+fn init_log() {
+    use env_logger::LogBuilder;
+    use log::{LogRecord, LogLevelFilter};
+    use env;
+
+    let format = |record: &LogRecord| {
+        format!("[{}]: {}", record.level(), record.args())
+    };
+
+    let mut builder = LogBuilder::new();
+    builder.format(format)
+        .filter(None, LogLevelFilter::Info)
+        .filter(Some("futures"), LogLevelFilter::Error)
+        .filter(Some("tokio"), LogLevelFilter::Error)
+        .filter(Some("tokio-io"), LogLevelFilter::Error)
+        .filter(Some("hyper"), LogLevelFilter::Error)
+        .filter(Some("iron"), LogLevelFilter::Error);
+
+    if env::var("RUST_LOG").is_ok() {
+        builder.parse(&env::var("RUST_LOG").unwrap());
+    }
+
+    builder.init().unwrap();
+}
 
 #[test]
 pub fn pos_test() {
+
+    use secp256k1::*;
+    use rand::thread_rng;
+
     let nodes_count = 4;
-//    agree(context, 4, 1, )
+    let sk = Secp256k1::new().generate_keypair(&mut thread_rng()).unwrap().0;
+//    let context = Context::new(rpc::ConsensusValue{value: 1}, Secp256k1Signature::new(sk));
+}
+
+#[test]
+fn consensus_completes_with_minimum_good() {
+    use secp256k1::*;
+    use rand::thread_rng;
+
+    init_log();
+
+    let node_count = 10;
+    let max_faulty = 3;
+
+    let timer = tokio_timer::wheel().tick_duration(ROUND_DURATION).build();
+
+    let (network, net_send, net_recv) = Network::new(node_count);
+    network.route_on_thread();
+
+    let nodes = net_send
+        .into_iter()
+        .zip(net_recv)
+        .take(node_count - max_faulty)
+        .enumerate()
+        .map(|(i, (tx, rx))| {
+//            let ctx = Context {
+//                local_id: AuthorityId(i),
+//                proposal: Mutex::new(i),
+//                current_round: Arc::new(AtomicUsize::new(0)),
+//                timer: timer.clone(),
+//                evaluated: Mutex::new(BTreeSet::new()),
+//                node_count,
+//            };
+            let sk = Secp256k1::new().generate_keypair(&mut thread_rng()).unwrap().0;
+//            let ctx = Context::new(rpc::ConsensusValue{ value: i as u32 }, Secp256k1Signature::new(sk), i, node_count);
+            let ctx = Context {
+                signature: Secp256k1Signature::new(sk),
+                local_id: i,
+                proposal: Mutex::new(Some(rpc::ConsensusValue{ value: i as u32 })),
+                current_round: Arc::new(AtomicUsize::new(0)),
+                timer: timer.clone(),
+                evaluated: Mutex::new(BTreeSet::new()),
+                node_count,
+            };
+            rhododendron::agree(
+                ctx,
+                node_count,
+                max_faulty,
+                rx.map_err(|_| Error),
+                tx.sink_map_err(|_| Error).with(move |t| Ok((i, t))),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let timeout = timeout_in(Duration::from_millis(500)).map_err(|_| Error);
+    let results = ::futures::future::join_all(nodes)
+        .map(Some)
+        .select(timeout.map(|_| None))
+        .wait()
+        .map(|(i, _)| i)
+        .map_err(|(e, _)| e)
+        .expect("to complete")
+        .expect("to not time out");
+
+    for result in &results {
+        assert_eq!(&result.justification.digest, &results[0].justification.digest);
+    }
+}
+
+fn timeout_in(t: Duration) -> oneshot::Receiver<()> {
+    let (tx, rx) = oneshot::channel();
+    ::std::thread::spawn(move || {
+        ::std::thread::sleep(t);
+        let _ = tx.send(());
+    });
+
+    rx
 }
 
 #[derive(Debug)]
@@ -288,3 +444,4 @@ impl Validator {
         }
     }
 }
+

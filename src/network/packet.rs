@@ -628,6 +628,12 @@ impl Deref for SerializedBuffer {
     }
 }
 
+impl AsRef<[u8]> for SerializedBuffer {
+    fn as_ref(&self) -> &[u8] {
+        &self.buffer[self.position..self.limit]
+    }
+}
+
 pub trait Serializable {
     fn serialize_to_stream(&self, stream: &mut SerializedBuffer);
     fn read_params(&mut self, stream: &mut SerializedBuffer);
