@@ -30,12 +30,31 @@ pub enum SerializationError {
     ByteArrayError,
     WrongSVUID,
     LimitExceeded,
+    UnserializableType,
     Message(String),
+}
+
+impl Debug for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (&self.err as &Debug).fmt(f)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (&self.err as &fmt::Display).fmt(f)
+    }
+}
+
+impl error::Error for Error {
+    fn description(&self) -> &str {
+        (&self.err as &error::Error).description()
+    }
 }
 
 impl fmt::Display for SerializationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", (self as error::Error).description())
+        write!(f, "{}", (self as &error::Error).description())
     }
 }
 
@@ -53,6 +72,7 @@ impl error::Error for SerializationError {
             SerializationError::BytesError => "failed to (de)serialize bytes",
             SerializationError::ByteArrayError => "failed to (de)serialize byte array",
             SerializationError::WrongSVUID => "wrong SVUID",
+            SerializationError::UnserializableType => "the type is un(de)serializable",
             SerializationError::LimitExceeded => "buffer limit exceeded",
             SerializationError::Message(ref s) => s,
         }
@@ -71,8 +91,15 @@ impl From<Error> for io::Error {
             SerializationError::ByteArrayError | SerializationError::U8Error => io::Error::new(io::ErrorKind::InvalidInput, j),
             SerializationError::WrongSVUID => io::Error::new(io::ErrorKind::NotFound, j),
             SerializationError::LimitExceeded => io::Error::new(io::ErrorKind::UnexpectedEof, j),
-            SerializationError::Message(s) => io::Error::new(io::ErrorKind::Other, j),
+            SerializationError::UnserializableType => io::Error::new(io::ErrorKind::InvalidData, j),
+            SerializationError::Message(_) => io::Error::new(io::ErrorKind::Other, j),
         }
+    }
+}
+
+impl From<SerializationError> for Error {
+    fn from(j: SerializationError) -> Self {
+        Error { err: Box::new(j) }
     }
 }
 
@@ -80,7 +107,7 @@ impl de::Error for Error {
     #[cold]
     fn custom<T: Display>(msg: T) -> Error {
         Error {
-            err: Box::new(SerializationError::Message(msg.to_string().into_boxed_str()))
+            err: Box::new(SerializationError::Message(msg.to_string())) // TODO: .into_boxed_str()
         }
     }
 
@@ -98,7 +125,7 @@ impl ser::Error for Error {
     #[cold]
     fn custom<T: Display>(msg: T) -> Error {
         Error {
-            err: Box::new(SerializationError::Message(msg.to_string().into_boxed_str()))
+            err: Box::new(SerializationError::Message(msg.to_string())) // TODO: .into_boxed_str()
         }
     }
 }
