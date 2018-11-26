@@ -223,8 +223,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_unit_variant(self, name: &'static str, variant_index: u32, variant: &'static str) -> Result<()> {
-        debug!("serialize_unit_variant");
-        Err(SerializationError::UnserializableType.into())
+        debug!("serialize_unit_variant n={} i={} v={}", name, variant_index, variant);
+        self.buff.write_u32(variant_index)
+//        Ok(())
     }
 
     fn serialize_newtype_struct<T: ?Sized>(self, name: &'static str, value: &T) -> Result<()> where
@@ -237,7 +238,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_newtype_variant<T: ?Sized>(self, name: &'static str, variant_index: u32, variant: &'static str, value: &T) -> Result<()> where
         T: Serialize {
         debug!("serialize_newtype_variant");
-        Err(SerializationError::UnserializableType.into())
+
+//        Err(SerializationError::UnserializableType.into())
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {

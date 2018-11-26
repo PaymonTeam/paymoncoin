@@ -6,19 +6,19 @@ use super::error::{Error, Result, SerializationError};
 use super::serializable::SerializedBuffer;
 use SVUID;
 
-struct Deserializer<'de> {
-    buff: &'de mut SerializedBuffer
+struct Deserializer<'ids> {
+    buff: &'ids mut SerializedBuffer
 }
 
-impl<'de> Deserializer<'de> {
-    pub fn new(stream: &'de mut SerializedBuffer) -> Self {
+impl<'ids> Deserializer<'ids> {
+    pub fn new(stream: &'ids mut SerializedBuffer) -> Self {
         Deserializer {
             buff: stream
         }
     }
 }
 
-impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
+impl<'de, 'ids, 'a> de::Deserializer<'de> for &'a mut Deserializer<'ids> {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value> where
@@ -50,7 +50,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_i32");
-        visitor.visit_bool(false)
+        visitor.visit_i32(self.buff.read_i32()?)
     }
 
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value> where
@@ -198,10 +198,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         for f in fields {
             debug!("> field {}", *f);
         }
-//        visitor.visit_i32(0i32)?;
-//        visitor.visit_i32(0)
-//        visitor.visit_newtype_struct(self)
-        visitor.visit_seq(SeqAccess::new(self, safe_uint_cast(fields.len())?))
+        // TODO: make safe cast
+        visitor.visit_seq(SeqAccess::new(self, fields.len() as u32))
     }
 
     fn deserialize_enum<V>(self, name: &'static str, variants: &'static [&'static str], visitor: V) -> Result<V::Value> where
@@ -226,26 +224,24 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 }
 
-#[derive(Debug)]
-struct SeqAccess<'a, 'ids: 'a, R: 'a + io::Read> {
-    de: &'a mut Deserializer<'ids, R>,
+//#[derive(Debug)]
+struct SeqAccess<'a, 'ids: 'a> {
+    de: &'a mut Deserializer<'ids>,
     len: u32,
     next_index: u32,
 }
 
-impl<'a, 'ids, R: io::Read> SeqAccess<'a, 'ids, R> {
-    fn new(de: &'a mut Deserializer<'ids, R>, len: u32) -> SeqAccess<'a, 'ids, R> {
+impl<'a, 'ids> SeqAccess<'a, 'ids> {
+    fn new(de: &'a mut Deserializer<'ids>, len: u32) -> SeqAccess<'a, 'ids> {
         SeqAccess { de, len, next_index: 0 }
     }
 }
 
-impl<'de, 'a, 'ids, R> de::SeqAccess<'de> for SeqAccess<'a, 'ids, R>
-    where R: 'a + io::Read
-{
-    type Error = error::Error;
+impl<'de, 'a, 'ids> de::SeqAccess<'de> for SeqAccess<'a, 'ids> {
+    type Error = Error;
 
-    fn next_element_seed<T>(&mut self, seed: T) -> error::Result<Option<T::Value>>
-        where T: DeserializeSeed<'de>
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
+        where T: de::DeserializeSeed<'de>
     {
         if self.next_index < self.len {
             self.next_index += 1;
@@ -259,7 +255,8 @@ impl<'de, 'a, 'ids, R> de::SeqAccess<'de> for SeqAccess<'a, 'ids, R>
     }
 
     fn size_hint(&self) -> Option<usize> {
-        safe_uint_cast(self.len - self.next_index).ok()
+        //TODO: make safe cast
+        Some((self.len - self.next_index) as usize)
     }
 }
 
