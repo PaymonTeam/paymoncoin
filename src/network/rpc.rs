@@ -551,5 +551,11 @@ impl PartialEq for ConsensusValue {
     }
 }
 
-
-//unsafe impl Send for ConsensusValue {}
+impl Default for ConsensusValue {
+    fn default() -> Self {
+        ConsensusValue {
+            value: u32::default(),
+        }
+    }
+}
+unsafe impl Send for ConsensusValue {}

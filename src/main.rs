@@ -19,6 +19,7 @@ extern crate hex;
 extern crate tokio_timer;
 extern crate parity_rocksdb as rocksdb;
 extern crate secp256k1;
+extern crate rhododendron;
 
 #[macro_use]
 extern crate log;
@@ -50,7 +51,6 @@ use mio::Poll;
 use mio::net::TcpListener;
 
 use network::node::*;
-//use network::replicator_pool::ReplicatorSourcePool;
 use model::config::{PORT, Configuration, ConfigurationSettings};
 use model::config;
 use network::paymoncoin::PaymonCoin;
@@ -58,8 +58,6 @@ use env_logger::LogBuilder;
 use log::{LogRecord, LogLevelFilter};
 use storage::Hive;
 use network::api::API;
-
-// region example
 
 fn main() {
     let format = |record: &LogRecord| {
@@ -86,6 +84,12 @@ fn main() {
 
     let jh = Builder::new().name(format!("pmnc")).spawn(move || {
         let mut config = Configuration::new();
+        if let Ok(port) = env::var("API_PORT") {
+            config.set_int(ConfigurationSettings::Port, port.parse::<i32>().unwrap());
+        }
+        if let Ok(s) = env::var("NEIGHBORS") {
+            config.set_string(ConfigurationSettings::Neighbors, &s);
+        }
         let port = config.get_int(ConfigurationSettings::Port).unwrap();
 
         let pmnc = Arc::new(Mutex::new(PaymonCoin::new(config)));

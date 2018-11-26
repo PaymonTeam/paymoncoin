@@ -12,34 +12,6 @@ trait SVUID {
     fn svuid() -> i32;
 }
 
-//pub fn serialize<T: Serializable>(obj: &T) -> Result<SerializedBuffer> {
-//    get_serialized_object(obj, true)
-//}
-
-//pub fn deserialize<T: Serializable>(stream: &mut SerializedBuffer) -> Result<T> {
-//    let mut obj = T::default();
-//    obj.read_params(stream)?;
-//    Ok(obj)
-//}
-
-//#[proc_macro_derive(PMSerializable)]
-//pub fn pm_serializable_macro_derive(input: TokenStream) -> TokenStream {
-//    let ast = syn::parse(input).unwrap();
-//    impl_serialize(&ast)
-//}
-//
-//fn impl_serialize(ast: &syn::DeriveInput) -> TokenStream {
-//    let name = &ast.ident;
-//    let gen = quote! {
-//        impl Serializable for #name {
-//            fn ser() {
-//                println!("Hello, Macro! My name is {}", stringify!(#name));
-//            }
-//        }
-//    };
-//    gen.into()
-//}
-
 pub mod ser;
 pub mod de;
 pub mod error;
@@ -50,7 +22,7 @@ mod tests {
     use super::*;
 
 //    #[serde(bound(serialize = "T: SVUID"))]
-    #[derive(Serialize)]
+    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
     struct Pack {
         svuid: i32,
         v: i32
@@ -71,7 +43,7 @@ mod tests {
         }
     }
 
-    #[derive(Serialize, SVUID(228))]
+    #[derive(Serialize, Deserialize)]
     struct AutoPack {
         v: i32
     }
@@ -105,7 +77,9 @@ mod tests {
         let mut pack = Pack::new();
         pack.v = 3;
         let b0 = ser::to_buffer(&pack).expect("failed to serialize data");
-        let b1 = SerializedBuffer::from_slice(&[228u8, 0, 0, 0, 3, 0, 0, 0]);
+        let mut b1 = SerializedBuffer::from_slice(&[228u8, 0, 0, 0, 3, 0, 0, 0]);
         assert_eq!(b0.as_ref(), b1.as_ref());
+        let pack2 = de::from_stream::<Pack>(&mut b1).expect("failed to deserealize data");
+        assert_eq!(pack, pack2);
     }
 }

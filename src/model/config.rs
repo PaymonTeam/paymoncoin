@@ -181,8 +181,7 @@ impl Configuration {
         config.set_int(ConfigurationSettings::CacheSizeBytes, 15000);
 
         let mut f = File::open(config.get_string(ConfigurationSettings::Config).unwrap()).expect
-        ("config file \
-        not found");
+        ("config file not found");
         let file = BufReader::new(&f);
         for line in file.lines() {
             if let Ok(l) = line {

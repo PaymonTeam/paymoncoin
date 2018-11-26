@@ -45,8 +45,7 @@ impl PaymonCoin {
         let milestone_start_index = 1;
 
         let snapshot = Snapshot::init("db/snapshot.dat".to_string(), "".to_string()).expect("Can't \
-        load \
-        snapshot");
+        load snapshot");
         let mut hive = Arc::new(Mutex::new(Hive::new()));
 
         // used for shutdown replicator pool

@@ -1,15 +1,15 @@
-use std::io::Error;
+use std::io;
 use model::config::{Configuration, ConfigurationSettings};
 use network::packet::{SerializedBuffer};
 use std::sync::{Arc, Weak, Mutex};
 use network::neighbor::Neighbor;
 use std::net::{TcpStream, SocketAddr, IpAddr};
 use std::sync::mpsc::{Sender, Receiver};
-use std::collections::VecDeque;
+use std::collections::{VecDeque, BTreeSet};
 use model::{TransactionObject, Transaction, TransactionType};
 use ntrumls::{NTRUMLS, PQParamSetID, PublicKey, PrivateKey};
 use storage::Hive;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -22,12 +22,25 @@ use model::*;
 use futures::{Stream, Async};
 use futures::prelude::*;
 use futures::executor::Executor;
-use consensus::Validator;
+use consensus::{self, Validator, pos::{
+    Error,
+    Context,
+    Secp256k1Signature,
+    ROUND_DURATION,
+}};
 
-extern fn handle_sigint(_:i32) {
-    println!("Interrupted!");
-    panic!();
-}
+use futures::{
+    self,
+    AndThen,
+    executor::{Run, Spawn},
+    future::{FutureResult},
+    oneshot,
+    prelude::*,
+    sync::{mpsc, oneshot},
+    task::Task,
+    Future,
+};
+use rhododendron as bft;
 
 pub struct Pair<U, V> {
     pub low: U,
@@ -59,8 +72,9 @@ pub struct Node {
     transaction_requester: AM<TransactionRequester>,
     tips_vm: AM<TipsViewModel>,
     milestone: AM<Milestone>,
-//    to_send: OutputStream<'a>,
-//    received_consensus_values: InputStream<'a>,
+    bft_in: mpsc::UnboundedReceiver<(usize, bft::Communication<rpc::ConsensusValue, [u8; 32], usize, secp256k1::Signature>)>,
+    bft_out: mpsc::UnboundedSender<(bft::Communication<rpc::ConsensusValue, [u8; 32], usize, secp256k1::Signature>)>,
+//    bft_network: consensus::pos::TestNetwork<rpc::ConsensusValue>,
 }
 
 pub struct PacketData<T> {
@@ -68,74 +82,75 @@ pub struct PacketData<T> {
     data: T,
 }
 
-//#[derive(Clone)]
-//pub struct OutputStream<'a> {
-//    pub queue: AM<Vec<PacketData<'a>>>,
-//}
-//
-//impl<'a> OutputStream<'a> {
-//    fn new() -> Self {
-//        OutputStream {
-//            queue: make_am!(Vec::new()),
-//        }
-//    }
-//
-//    pub fn send_packet(&mut self, packet: PacketData<'a>) {
-//        let mut q = self.queue.lock().unwrap();
-//        q.push(packet);
-//    }
-//
-//    pub fn send_packet2(&mut self, b: Arc<dyn Serializable + 'a>) {
-//        drop(b);
-//    }
-//}
-//
-//impl<'a> Stream for OutputStream<'a> {
-//    type Item = PacketData<'a>;
-//    type Error = Error;
-//
-//    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
-//        let mut q = self.queue.lock().unwrap();
-//        Ok(Async::Ready(q.pop()))
-//    }
-//}
-//
-//#[derive(Clone)]
-//pub struct InputStream<'a> {
-//    pub queue: AM<Vec<PacketData<'a>>>,
-//}
-//
-//impl<'a> InputStream<'a> {
-//    fn new() -> Self {
-//        InputStream {
-//            queue: make_am!(Vec::new()),
-//        }
-//    }
-//
-//    pub fn send_packet(&mut self, packet: PacketData<'a>) {
-//        let mut q = self.queue.lock().unwrap();
-//        q.push(packet);
-//    }
-//}
-//
-//impl<'a> Stream for InputStream<'a> {
-//    type Item = PacketData<'a>;
-//    type Error = Error;
-//
-//    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
-//        let mut q = self.queue.lock().unwrap();
-//        Ok(Async::Ready(q.pop()))
-////        Ok(Async::NotReady)
-//    }
-//}
+/*#[derive(Clone)]
+pub struct OutputStream<'a> {
+    pub queue: AM<Vec<PacketData<'a>>>,
+}
+
+impl<'a> OutputStream<'a> {
+    fn new() -> Self {
+        OutputStream {
+            queue: make_am!(Vec::new()),
+        }
+    }
+
+    pub fn send_packet(&mut self, packet: PacketData<'a>) {
+        let mut q = self.queue.lock().unwrap();
+        q.push(packet);
+    }
+
+    pub fn send_packet2(&mut self, b: Arc<dyn Serializable + 'a>) {
+        drop(b);
+    }
+}
+
+impl<'a> Stream for OutputStream<'a> {
+    type Item = PacketData<'a>;
+    type Error = Error;
+
+    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
+        let mut q = self.queue.lock().unwrap();
+        Ok(Async::Ready(q.pop()))
+    }
+}
+
+#[derive(Clone)]
+pub struct InputStream<'a> {
+    pub queue: AM<Vec<PacketData<'a>>>,
+}
+
+impl<'a> InputStream<'a> {
+    fn new() -> Self {
+        InputStream {
+            queue: make_am!(Vec::new()),
+        }
+    }
+
+    pub fn send_packet(&mut self, packet: PacketData<'a>) {
+        let mut q = self.queue.lock().unwrap();
+        q.push(packet);
+    }
+}
+
+impl<'a> Stream for InputStream<'a> {
+    type Item = PacketData<'a>;
+    type Error = Error;
+
+    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
+        let mut q = self.queue.lock().unwrap();
+        Ok(Async::Ready(q.pop()))
+//        Ok(Async::NotReady)
+    }
+}*/
 
 impl Node {
     pub fn new(hive: Weak<Mutex<Hive>>, config: Configuration, node_tx: Sender<()>, pmnc_rx:
         Receiver<()>, transaction_validator: AM<TransactionValidator>, transaction_requester:
         AM<TransactionRequester>, tips_vm: AM<TipsViewModel>, milestone: AM<Milestone>)
         -> Node {
-//        let to_send = OutputStream::new();
-//        let received_consensus_values = InputStream::new();
+
+        let (_, in_rx) = mpsc::unbounded();
+        let (out_tx, _) = mpsc::unbounded();
 
         Node {
             hive,
@@ -153,8 +168,8 @@ impl Node {
             transaction_validator,
             tips_vm,
             milestone,
-//            to_send,
-//            received_consensus_values,
+            bft_in: in_rx,
+            bft_out: out_tx,
         }
     }
 
@@ -208,6 +223,48 @@ impl Node {
         self.thread_join_handles.push_back(jh);
 
         self.scoped_thread_join_handles.push_back(replicator_jh);
+
+        use crossbeam::scope;
+
+        let (in_tx, in_rx) = mpsc::unbounded();
+        let (out_tx, out_rx) = mpsc::unbounded();
+
+//        self.bft_in = in_tx;
+//        self.bft_out = out_rx;
+
+        thread::spawn(move || {
+            let node_count = 4;
+            let max_faulty = 1;
+
+            let timer = tokio_timer::wheel().tick_duration(ROUND_DURATION).build();
+            let timer_copy = timer.clone();
+
+            use secp256k1::*;
+
+            let local_id = 0;
+            let sk = Secp256k1::new().generate_keypair(&mut thread_rng()).unwrap().0;
+    //            let ctx = Context::new(rpc::ConsensusValue{ value: i as u32 }, Secp256k1Signature::new(sk), i, node_count);
+            let ctx = Context {
+                signature: Secp256k1Signature::new(sk),
+                local_id,
+                proposal: Mutex::new(Some(rpc::ConsensusValue { value: 0 as u32 })),
+                current_round: Arc::new(AtomicUsize::new(0)),
+                timer: timer_copy,
+                evaluated: Mutex::new(BTreeSet::new()),
+                node_count,
+            };
+
+            bft::agree(
+                ctx,
+                node_count,
+                max_faulty,
+                out_rx.map_err(|_| Error),
+                in_tx.sink_map_err(|_| Error).with(move |t| Ok((local_id, t))),
+            )
+                .map_err(|e| println!("error"))
+                .map(|r| println!("{:?}", r));
+//            tokio::run(f);
+        });
     }
 
     fn reply_thread(running: Weak<AtomicBool>, reply_queue: AWM<VecDeque<(Hash, AM<Neighbor>)>>,
@@ -386,6 +443,7 @@ impl Node {
                     }
                 }
             }
+
             thread::sleep(Duration::from_secs(1));
         }
     }
@@ -431,10 +489,10 @@ impl Node {
         let message_id = data.read_i64();
         let message_length = data.read_i32();
 
-//        if message_length != data.remaining() as i32 {
-//            error!("Received incorrect message length");
+        if message_length != data.remaining() as i32 {
+            warn!("Received incorrect message length");
 //            return;
-//        }
+        }
 
         let svuid = data.read_i32();
 
@@ -468,6 +526,11 @@ impl Node {
                 if let Ok(mut queue) = self.reply_queue.lock() {
                     queue.push_back((hash, neighbor.clone()));
                 }
+            },
+            rpc::ConsensusValue::SVUID => {
+//                let mut v = rpc::ConsensusValue::default();
+//                v.read_params(&mut data);
+//                self.bft_out.unbounded_send(v);
             }
             _ => {
                 warn!("Unknown SVUID {}", svuid);
@@ -493,4 +556,9 @@ impl Node {
 
         while let Some(th) = self.scoped_thread_join_handles.pop_front() {}
     }
+}
+
+extern fn handle_sigint(_:i32) {
+    println!("Interrupted!");
+    panic!();
 }
