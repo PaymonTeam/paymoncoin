@@ -1,0 +1,15 @@
+[package]
+name = "serde_pm_derive"
+version = "0.1.0"
+authors = ["Vladislav <negigic@gmail.com>"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "0.4.19"
+quote = "0.6.3"
+syn = "0.15"
+
+[dev-dependencies]
+serde_pm = { path = ".." }

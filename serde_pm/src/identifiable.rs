@@ -1,6 +1,6 @@
 //! `Identifiable` trait for any Rust data structure that can have an id.
 
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::unreadable_literal))]  // To match the look & feel from TL schema
+#![cfg_attr(feature = "cargo-clippy", allow(clippy::unreadable_literal))]
 
 
 /// Type id of the bool true value.

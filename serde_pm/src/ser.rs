@@ -239,7 +239,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         T: Serialize {
         debug!("serialize_newtype_variant");
 
-//        Err(SerializationError::UnserializableType.into())
+        Err(SerializationError::UnserializableType.into())
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {

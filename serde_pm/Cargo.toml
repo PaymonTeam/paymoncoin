@@ -2,18 +2,20 @@
 name = "serde_pm"
 version = "0.1.0"
 authors = ["Vladislav Markushin <negigic@gmail.com>"]
-#edition = "2018"
 
 [lib]
 name = "serde_pm"
-#proc-macro = true
+
+[workspace]
+members = ["serde_pm_derive"]
 
 [dependencies]
-#syn = "^0.15"
-#quote = "^0.6"
 log = "0.3.9"
 serde = "^1.0"
 serde_derive = "^1.0"
 env_logger = "0.3.1"
 libc = "0.2.36"
 rlibc = "1.0.0"
+num-traits = "0.2"
+serde_pm_derive = { path = "serde_pm_derive" }
+error-chain = "0.12"

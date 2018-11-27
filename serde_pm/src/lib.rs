@@ -4,6 +4,9 @@ extern crate serde;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
+extern crate num_traits;
+#[macro_use]
+extern crate error_chain;
 
 pub use self::serializable::*;
 pub use self::error::{Error, Result};
@@ -16,6 +19,10 @@ pub mod ser;
 pub mod de;
 pub mod error;
 pub mod serializable;
+pub mod identifiable;
+pub mod sized;
+pub mod utils;
+pub mod wrappers;
 
 #[cfg(test)]
 mod tests {

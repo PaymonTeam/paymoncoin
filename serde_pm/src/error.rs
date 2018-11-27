@@ -32,6 +32,10 @@ pub enum SerializationError {
     LimitExceeded,
     UnserializableType,
     Message(String),
+    SeqTooLong,
+    Cast,
+    WrongLen,
+    InvalidMapKey,
 }
 
 impl Debug for Error {
@@ -75,6 +79,10 @@ impl error::Error for SerializationError {
             SerializationError::UnserializableType => "the type is un(de)serializable",
             SerializationError::LimitExceeded => "buffer limit exceeded",
             SerializationError::Message(ref s) => s,
+            SerializationError::SeqTooLong => "the sequence is too long",
+            SerializationError::Cast => "value cast error",
+            SerializationError::WrongLen => "wrong length",
+            SerializationError::InvalidMapKey => "invalid map key",
         }
     }
 }
@@ -90,9 +98,9 @@ impl From<Error> for io::Error {
             SerializationError::StringError | SerializationError::BytesError  |
             SerializationError::ByteArrayError | SerializationError::U8Error => io::Error::new(io::ErrorKind::InvalidInput, j),
             SerializationError::WrongSVUID => io::Error::new(io::ErrorKind::NotFound, j),
-            SerializationError::LimitExceeded => io::Error::new(io::ErrorKind::UnexpectedEof, j),
-            SerializationError::UnserializableType => io::Error::new(io::ErrorKind::InvalidData, j),
-            SerializationError::Message(_) => io::Error::new(io::ErrorKind::Other, j),
+            SerializationError::LimitExceeded | SerializationError::InvalidMapKey => io::Error::new(io::ErrorKind::UnexpectedEof, j),
+            SerializationError::UnserializableType | SerializationError::SeqTooLong | SerializationError::WrongLen => io::Error::new(io::ErrorKind::InvalidData, j),
+            SerializationError::Message(_) | SerializationError::Cast => io::Error::new(io::ErrorKind::Other, j),
         }
     }
 }
