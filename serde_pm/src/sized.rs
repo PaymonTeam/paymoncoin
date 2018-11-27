@@ -1,10 +1,10 @@
-//! `MtProtoSized` trait for any Rust data structure a predictable size of its MTProto binary
+//! `PMSized` trait for any Rust data structure a predictable size of its MTProto binary
 //! representation can be computed.
 //!
 //! # Examples
 //!
 //! ```
-//! use serde_pm::{MtProtoSized, ByteBuf};
+//! use serde_pm::{PMSized, ByteBuf};
 //!
 //! struct Something {
 //!     name: String,
@@ -15,7 +15,7 @@
 //!
 //! // Implement manually
 //!
-//! impl MtProtoSized for Something {
+//! impl PMSized for Something {
 //!     fn size_hint(&self) -> serde_pm::Result<usize> {
 //!         let mut result = 0;
 //!
@@ -50,13 +50,13 @@
 //! # fn main() { run().unwrap(); }
 //! ```
 //!
-//! Alternatively, `MtProtoSized` can be `#[derive]`d:
+//! Alternatively, `PMSized` can be `#[derive]`d:
 //!
 //! ```
 //! #[macro_use]
 //! extern crate serde_pm_derive;
 //!
-//! #[derive(MtProtoSized)]
+//! #[derive(PMSized)]
 //! struct Something {
 //!     name: String,
 //!     small_num: u16,
@@ -78,21 +78,21 @@ use error::{self, SerializationError};
 use utils::check_seq_len;
 
 
-/// Size of a bool MtProto value.
+/// Size of a bool PM value.
 pub const BOOL_SIZE: usize = 4;
-/// Size of an int MtProto value.
+/// Size of an int PM value.
 pub const INT_SIZE: usize = 4;
-/// Size of a long MtProto value.
+/// Size of a long PM value.
 pub const LONG_SIZE: usize = 8;
-/// Size of a double MtProto value.
+/// Size of a double PM value.
 pub const DOUBLE_SIZE: usize = 8;
-/// Size of an int128 MtProto value.
+/// Size of an int128 PM value.
 pub const INT128_SIZE: usize = 16;
 
 
 /// A trait for a Rust data structure a predictable size of its MTProto binary representation
 /// can be computed.
-pub trait MtProtoSized {
+pub trait PMSized {
     /// Compute the size of MTProto binary representation of this value without actually
     /// serializing it.
     ///
@@ -105,7 +105,7 @@ pub trait MtProtoSized {
 macro_rules! impl_pm_sized_for_primitives {
     ($($type:ty => $size:expr,)+) => {
         $(
-            impl MtProtoSized for $type {
+            impl PMSized for $type {
                 fn size_hint(&self) -> error::Result<usize> {
                     Ok($size)
                 }
@@ -159,31 +159,31 @@ pub fn size_hint_from_byte_seq_len(len: usize) -> error::Result<usize> {
     Ok(size)
 }
 
-impl<'a> MtProtoSized for &'a str {
+impl<'a> PMSized for &'a str {
     fn size_hint(&self) -> error::Result<usize> {
         size_hint_from_byte_seq_len(self.as_bytes().len())
     }
 }
 
-impl MtProtoSized for String {
+impl PMSized for String {
     fn size_hint(&self) -> error::Result<usize> {
         size_hint_from_byte_seq_len(self.as_bytes().len())
     }
 }
 
-impl<'a, T: ?Sized + MtProtoSized> MtProtoSized for &'a T {
+impl<'a, T: ?Sized + PMSized> PMSized for &'a T {
     fn size_hint(&self) -> error::Result<usize> {
         (*self).size_hint()
     }
 }
 
-impl<T: ?Sized + MtProtoSized> MtProtoSized for Box<T> {
+impl<T: ?Sized + PMSized> PMSized for Box<T> {
     fn size_hint(&self) -> error::Result<usize> {
         (**self).size_hint()
     }
 }
 
-impl<'a, T: MtProtoSized> MtProtoSized for &'a [T] {
+impl<'a, T: PMSized> PMSized for &'a [T] {
     fn size_hint(&self) -> error::Result<usize> {
         // If len >= 2 ** 32, it's not serializable at all.
         check_seq_len(self.len())?;
@@ -201,15 +201,15 @@ impl<'a, T: MtProtoSized> MtProtoSized for &'a [T] {
     }
 }
 
-impl<T: MtProtoSized> MtProtoSized for Vec<T> {
+impl<T: PMSized> PMSized for Vec<T> {
     fn size_hint(&self) -> error::Result<usize> {
         self.as_slice().size_hint()
     }
 }
 
-impl<K, V, S> MtProtoSized for HashMap<K, V, S>
-    where K: Eq + Hash + MtProtoSized,
-          V: MtProtoSized,
+impl<K, V, S> PMSized for HashMap<K, V, S>
+    where K: Eq + Hash + PMSized,
+          V: PMSized,
           S: BuildHasher,
 {
     fn size_hint(&self) -> error::Result<usize> {
@@ -230,9 +230,9 @@ impl<K, V, S> MtProtoSized for HashMap<K, V, S>
     }
 }
 
-impl<K, V> MtProtoSized for BTreeMap<K, V>
-    where K: MtProtoSized,
-          V: MtProtoSized,
+impl<K, V> PMSized for BTreeMap<K, V>
+    where K: PMSized,
+          V: PMSized,
 {
     fn size_hint(&self) -> error::Result<usize> {
         // If len >= 2 ** 32, it's not serializable at all.
@@ -252,19 +252,19 @@ impl<K, V> MtProtoSized for BTreeMap<K, V>
     }
 }
 
-impl MtProtoSized for () {
+impl PMSized for () {
     fn size_hint(&self) -> error::Result<usize> {
         Ok(0)
     }
 }
 
-//impl<'a> MtProtoSized for Bytes<'a> {
+//impl<'a> PMSized for Bytes<'a> {
 //    fn size_hint(&self) -> error::Result<usize> {
 //        size_hint_from_byte_seq_len(self.len())
 //    }
 //}
 //
-//impl MtProtoSized for ByteBuf {
+//impl PMSized for ByteBuf {
 //    fn size_hint(&self) -> error::Result<usize> {
 //        size_hint_from_byte_seq_len(self.len())
 //    }
@@ -272,8 +272,8 @@ impl MtProtoSized for () {
 
 macro_rules! impl_pm_sized_for_tuple {
     ($($ident:ident : $ty:ident ,)+) => {
-        impl<$($ty),+> MtProtoSized for ($($ty,)+)
-            where $($ty: MtProtoSized,)+
+        impl<$($ty),+> PMSized for ($($ty,)+)
+            where $($ty: PMSized,)+
         {
             fn size_hint(&self) -> error::Result<usize> {
                 let mut result = 0;
@@ -304,7 +304,7 @@ impl_pm_sized_for_tuple! { x1: T1, x2: T2, x3: T3, x4: T4, x5: T5, x6: T6, x7: T
 
 macro_rules! impl_pm_sized_for_arrays {
     (__impl 0) => {
-        impl<T> MtProtoSized for [T; 0] {
+        impl<T> PMSized for [T; 0] {
             fn size_hint(&self) -> error::Result<usize> {
                 Ok(0)
             }
@@ -312,7 +312,7 @@ macro_rules! impl_pm_sized_for_arrays {
     };
 
     (__impl $size:expr) => {
-        impl<T: MtProtoSized> MtProtoSized for [T; $size] {
+        impl<T: PMSized> PMSized for [T; $size] {
             fn size_hint(&self) -> error::Result<usize> {
                 let mut result = 0;
 

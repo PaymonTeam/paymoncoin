@@ -24,7 +24,7 @@ pub(crate) fn impl_pm_sized(mut container: ast::Container) -> proc_macro2::Token
                         let field_name = &field.ident;
                         let span = ast::FieldNoAttrs::from_field(field).span();
                         let func = quote_spanned! {span=>
-                            _serde_pm::MtProtoSized::size_hint
+                            _serde_pm::PMSized::size_hint
                         };
 
                         Some(quote!(#func(&self.#field_name)?))
@@ -42,7 +42,7 @@ pub(crate) fn impl_pm_sized(mut container: ast::Container) -> proc_macro2::Token
                         let field_index = syn::Index::from(i);
                         let span = ast::FieldNoAttrs::from_field(field).span();
                         let func = quote_spanned! {span=>
-                            _serde_pm::MtProtoSized::size_hint
+                            _serde_pm::PMSized::size_hint
                         };
 
                         Some(quote!(#func(&self.#field_index)?))
@@ -67,7 +67,7 @@ pub(crate) fn impl_pm_sized(mut container: ast::Container) -> proc_macro2::Token
                             let field_name = &field.ident;
                             let span = ast::FieldNoAttrs::from_field(field).span();
                             let func = quote_spanned! {span=>
-                                _serde_pm::MtProtoSized::size_hint
+                                _serde_pm::PMSized::size_hint
                             };
 
                             let pattern = quote!(ref #field_name);
@@ -93,7 +93,7 @@ pub(crate) fn impl_pm_sized(mut container: ast::Container) -> proc_macro2::Token
                             let field_name = ident!("__field_{}", i);
                             let span = ast::FieldNoAttrs::from_field(field).span();
                             let func = quote_spanned! {span=>
-                                _serde_pm::MtProtoSized::size_hint
+                                _serde_pm::PMSized::size_hint
                             };
 
                             let pattern = quote!(ref #field_name);
@@ -129,7 +129,7 @@ pub(crate) fn impl_pm_sized(mut container: ast::Container) -> proc_macro2::Token
         const #dummy_const: () = {
             extern crate serde_pm as _serde_pm;
 
-            impl #item_impl_generics _serde_pm::MtProtoSized for #item_name #item_ty_generics
+            impl #item_impl_generics _serde_pm::PMSized for #item_name #item_ty_generics
                 #item_where_clause
             {
                 fn size_hint(&self) -> _serde_pm::Result<usize> {
@@ -158,7 +158,7 @@ fn add_pm_sized_trait_bound_if_missing(container: &mut ast::Container) {
                     let trait_ref_segments = path.segments
                         .iter()
                         .map(|s| s.ident.to_string());
-                    let pm_sized_segments = vec!["_serde_pm", "MtProtoSized"].into_iter();
+                    let pm_sized_segments = vec!["_serde_pm", "PMSized"].into_iter();
 
                     if trait_ref_segments.eq(pm_sized_segments) {
                         continue 'param;
@@ -166,7 +166,7 @@ fn add_pm_sized_trait_bound_if_missing(container: &mut ast::Container) {
                 }
             }
 
-            type_param.bounds.push(parse_quote!(_serde_pm::MtProtoSized));
+            type_param.bounds.push(parse_quote!(_serde_pm::PMSized));
         }
     }
 }

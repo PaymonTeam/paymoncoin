@@ -19,3 +19,6 @@ rlibc = "1.0.0"
 num-traits = "0.2"
 serde_pm_derive = { path = "serde_pm_derive" }
 error-chain = "0.12"
+
+[[test]]
+name = "regression_tests"

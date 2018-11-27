@@ -191,7 +191,7 @@ fn get_id_from_attrs(attrs: &[syn::Attribute]) -> u32 {
         }
     }
 
-    panic!("#[derive(MtProtoIdentifiable)] requires an #[pm_identifiable(id = \"...\")] attribute:\n    \
+    panic!("#[derive(PMIdentifiable)] requires an #[pm_identifiable(id = \"...\")] attribute:\n    \
             - on top of struct for structs;\n    \
             - or on top of each enum variant for enums.\n\
             id can can be either:\n    \

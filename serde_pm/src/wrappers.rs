@@ -43,7 +43,7 @@ use serde::ser::{Error as SerError, Serialize, Serializer, SerializeStruct};
 
 use error::{self, SerializationError};
 use identifiable::Identifiable;
-use sized::MtProtoSized;
+use sized::PMSized;
 use utils::{safe_uint_cast, safe_uint_eq};
 
 
@@ -164,9 +164,9 @@ impl<T: Identifiable> Identifiable for Boxed<T> {
     }
 }
 
-impl<T: MtProtoSized> MtProtoSized for Boxed<T> {
+impl<T: PMSized> PMSized for Boxed<T> {
     fn size_hint(&self) -> error::Result<usize> {
-        // Just an u32 value to use for `<u32 as MtProtoSized>::size_hint`
+        // Just an u32 value to use for `<u32 as PMSized>::size_hint`
         let id_size_hint = 0_u32.size_hint()?;
         let inner_size_hint = self.inner.size_hint()?;
 
@@ -188,7 +188,7 @@ impl<T> Arbitrary for Boxed<T>
 }
 
 /*
-/// A struct that wraps a [`MtProtoSized`] type value to serialize and
+/// A struct that wraps a [`PMSized`] type value to serialize and
 /// deserialize as a MTProto data type with the size of its serialized
 /// value.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -196,7 +196,7 @@ pub struct WithSize<T> {
     inner: T,
 }
 
-impl<T: MtProtoSized> WithSize<T> {
+impl<T: PMSized> WithSize<T> {
     /// Wrap a value along with its serialized size.
     pub fn new(inner: T) -> error::Result<WithSize<T>> {
         Ok(WithSize { inner })
@@ -219,7 +219,7 @@ impl<T: MtProtoSized> WithSize<T> {
 }
 
 impl<T> Serialize for WithSize<T>
-    where T: Serialize + MtProtoSized
+    where T: Serialize + PMSized
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: Serializer,
@@ -237,7 +237,7 @@ impl<T> Serialize for WithSize<T>
 // Using a custom implementation instead of the derived one because we need to check validity
 // of the deserialized size against the size hint of a deserialized value.
 impl<'de, T> Deserialize<'de> for WithSize<T>
-    where T: Deserialize<'de> + MtProtoSized
+    where T: Deserialize<'de> + PMSized
 {
     fn deserialize<D>(deserializer: D) -> Result<WithSize<T>, D::Error>
         where D: Deserializer<'de>
@@ -288,9 +288,9 @@ impl<T: Identifiable> Identifiable for WithSize<T> {
     }
 }
 
-impl<T: MtProtoSized> MtProtoSized for WithSize<T> {
+impl<T: PMSized> PMSized for WithSize<T> {
     fn size_hint(&self) -> error::Result<usize> {
-        // Just an u32 value to use for `<u32 as MtProtoSized>::size_hint`
+        // Just an u32 value to use for `<u32 as PMSized>::size_hint`
         let size_size_hint = 0_u32.size_hint()?;
         let inner_size_hint = self.inner.size_hint()?;
 

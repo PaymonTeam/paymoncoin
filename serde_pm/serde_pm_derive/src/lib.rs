@@ -2,7 +2,7 @@
 //!
 //! ```
 //! # #[macro_use] extern crate serde_pm_derive;
-//! #[derive(MtProtoIdentifiable, MtProtoSized)]
+//! #[derive(PMIdentifiable, PMSized)]
 //! # #[pm_identifiable(id = "0x00000000")]
 //! # struct Stub;
 //! # fn main() {}
@@ -15,7 +15,7 @@
 //! #[macro_use]
 //! extern crate serde_pm_derive;
 //!
-//! #[derive(MtProtoIdentifiable, MtProtoSized)]
+//! #[derive(PMIdentifiable, PMSized)]
 //! #[pm_identifiable(id = "0xbeefdead")]
 //! struct Message {
 //!     message_id: u32,
@@ -24,7 +24,7 @@
 //!     attachment: Attachment,
 //! }
 //!
-//! #[derive(MtProtoIdentifiable, MtProtoSized)]
+//! #[derive(PMIdentifiable, PMSized)]
 //! enum Attachment {
 //!     #[pm_identifiable(id = "0xdef19e00")]
 //!     Nothing,
@@ -67,7 +67,7 @@ use identifiable::impl_pm_identifiable;
 use sized::impl_pm_sized;
 
 
-#[proc_macro_derive(MtProtoIdentifiable, attributes(pm_identifiable))]
+#[proc_macro_derive(PMIdentifiable, attributes(pm_identifiable))]
 pub fn pm_identifiable(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
     let container = ast::Container::from_derive_input(ast)
@@ -76,11 +76,11 @@ pub fn pm_identifiable(input: TokenStream) -> TokenStream {
     impl_pm_identifiable(container).into()
 }
 
-#[proc_macro_derive(MtProtoSized, attributes(pm_sized))]
+#[proc_macro_derive(PMSized, attributes(pm_sized))]
 pub fn pm_sized(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as syn::DeriveInput);
     let container = ast::Container::from_derive_input(ast)
-        .expect("Cannot derive `pm::MtProtoSized` for unions.");
+        .expect("Cannot derive `pm::PMSized` for unions.");
 
     impl_pm_sized(container).into()
 }

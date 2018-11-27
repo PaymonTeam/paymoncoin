@@ -4,19 +4,39 @@ use std::io;
 use serde::ser::{self, Impossible, Serialize};
 use super::error::{Error, Result, SerializationError};
 use super::serializable::SerializedBuffer;
-use SVUID;
+use identifiable::Identifiable;
+use sized::PMSized;
 
-struct Serializer {
+pub struct Serializer {
     buff: SerializedBuffer
 }
 
-struct SerSeq/*<S: Serialize>*/ {
+pub struct SerSeq/*<S: Serialize>*/ {
 //    ser: S
 }
-struct SerStruct<'a> {
+pub struct SerStruct<'a> {
     ser: &'a mut Serializer,
+    len: u32,
+    next_index: u32,
 }
-struct SerNone {}
+
+impl<'a> SerStruct<'a> {
+    fn new(ser: &'a mut Serializer, len: u32) -> Self {
+        SerStruct { ser, len, next_index: 0 }
+    }
+
+    fn impl_serialize_value<T>(&mut self,
+                                   key: Option<&'static str>,
+                                   value: &T,
+                                   serializer_type: &'static str)
+                                   -> Result<()>
+        where T: ?Sized + Serialize
+    {
+        value.serialize(&mut *self.ser)
+    }
+}
+
+pub struct SerNone {}
 
 impl ser::SerializeTuple for SerNone {
     type Ok = ();
@@ -82,13 +102,13 @@ impl ser::SerializeMap for SerNone {
     }
 }
 
-impl ser::SerializeStructVariant for SerNone {
+impl<'a> ser::SerializeStructVariant for SerStruct<'a> {
     type Ok = ();
     type Error = Error;
 
     fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> Result<()> where
         T: Serialize {
-        Err(SerializationError::UnserializableType.into())
+        self.impl_serialize_value(Some(key), value, "SerializeStructVariant")
     }
 
     fn end(self) -> Result<()> {
@@ -119,8 +139,7 @@ impl<'a> ser::SerializeStruct for SerStruct<'a> {
     fn serialize_field<T: ?Sized>(&mut self, key: &'static str, value: &T) -> Result<()> where
         T: Serialize {
         debug!("> ser struct key={}", key);
-        value.serialize(&mut *self.ser)
-//        Ok(())
+        self.impl_serialize_value(Some(key), value, "SerializeStruct")
     }
 
     fn end(self) -> Result<()> {
@@ -137,7 +156,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeTupleVariant = SerNone;
     type SerializeMap = SerNone;
     type SerializeStruct = SerStruct<'a>;
-    type SerializeStructVariant = SerNone;
+    type SerializeStructVariant = SerStruct<'a>;
 
     fn serialize_bool(self, v: bool) -> Result<()> {
         debug!("serialize_bool");
@@ -237,9 +256,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_newtype_variant<T: ?Sized>(self, name: &'static str, variant_index: u32, variant: &'static str, value: &T) -> Result<()> where
         T: Serialize {
-        debug!("serialize_newtype_variant");
-
-        Err(SerializationError::UnserializableType.into())
+        debug!("serialize_newtype_variant {}[{}]:{}", name, variant_index, variant);
+        value.serialize(self)
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
@@ -276,8 +294,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         debug!("serialize_struct");
-        Ok(SerStruct { ser: self })
-//        Err(SerializationError::UnserializableType.into())
+        Ok(SerStruct::new(self, len as u32))
     }
 
     fn serialize_struct_variant(self, name: &'static str, variant_index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeStructVariant> {
@@ -301,11 +318,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 #[inline]
 pub fn to_buffer<T: ?Sized>(value: &T) -> Result<SerializedBuffer>
     where
-        T: Serialize,
+        T: Serialize + PMSized,
 {
-    let mut ser_calc = Serializer { buff: SerializedBuffer::new(true) };
-    value.serialize(&mut ser_calc)?;
-    let size = ser_calc.buff.capacity();
+    let size = value.size_hint().expect("unknown object size");
     debug!("serializing with size {}", size);
     let mut ser = Serializer { buff: SerializedBuffer::new_with_size(size) };
     value.serialize(&mut ser)?;
