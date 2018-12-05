@@ -10,6 +10,7 @@ proc-macro = true
 proc-macro2 = "0.4.19"
 quote = "0.6.3"
 syn = "0.15"
+lazy_static = "1.2.0"
 
 [dev-dependencies]
 serde_pm = { path = ".." }

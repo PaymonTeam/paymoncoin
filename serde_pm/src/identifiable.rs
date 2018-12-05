@@ -4,9 +4,9 @@
 
 
 /// Type id of the bool true value.
-pub const BOOL_TRUE_ID: u32 = 0x997275b5;
+pub const BOOL_TRUE_ID: u32 = 0x6e4a64b3;
 /// Type id of the bool false value.
-pub const BOOL_FALSE_ID: u32 = 0xbc799737;
+pub const BOOL_FALSE_ID: u32 = 0x3f5d29c3;
 /// Type id of the int type.
 pub const INT_ID: u32 = 0xa8509bda;
 /// Type id of the long type.

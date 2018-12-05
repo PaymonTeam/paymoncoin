@@ -6,14 +6,12 @@ use super::error::{Error, Result, SerializationError};
 use super::serializable::SerializedBuffer;
 use identifiable::Identifiable;
 use sized::PMSized;
+use utils::{safe_uint_cast};
 
 pub struct Serializer {
     buff: SerializedBuffer
 }
 
-pub struct SerSeq/*<S: Serialize>*/ {
-//    ser: S
-}
 pub struct SerStruct<'a> {
     ser: &'a mut Serializer,
     len: u32,
@@ -38,14 +36,13 @@ impl<'a> SerStruct<'a> {
 
 pub struct SerNone {}
 
-impl ser::SerializeTuple for SerNone {
+impl<'a> ser::SerializeTuple for SerStruct<'a> {
     type Ok = ();
     type Error = Error;
 
     fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<()> where
         T: Serialize {
-//        value.serialize(self)
-        Ok(())
+        self.impl_serialize_value(None, value, "SerializeTuple")
     }
 
     fn end(self) -> Result<()> {
@@ -53,14 +50,13 @@ impl ser::SerializeTuple for SerNone {
     }
 }
 
-impl ser::SerializeTupleStruct for SerNone {
+impl<'a> ser::SerializeTupleStruct for SerStruct<'a> {
     type Ok = ();
     type Error = Error;
 
     fn serialize_field<T: ?Sized>(&mut self, value: &T) -> Result<()> where
         T: Serialize {
-//        value.serialize(self)
-        Ok(())
+        self.impl_serialize_value(None, value, "SerializeTupleStruct")
     }
 
     fn end(self) -> Result<()> {
@@ -68,14 +64,13 @@ impl ser::SerializeTupleStruct for SerNone {
     }
 }
 
-impl ser::SerializeTupleVariant for SerNone {
+impl<'a> ser::SerializeTupleVariant for SerStruct<'a> {
     type Ok = ();
     type Error = Error;
 
     fn serialize_field<T: ?Sized>(&mut self, value: &T) -> Result<()> where
         T: Serialize {
-//        value.serialize(self)
-        Ok(())
+        self.impl_serialize_value(None, value, "SerializeTupleVariant")
     }
 
     fn end(self) -> Result<()> {
@@ -116,15 +111,14 @@ impl<'a> ser::SerializeStructVariant for SerStruct<'a> {
     }
 }
 
-impl ser::SerializeSeq for SerSeq {
+impl<'a> ser::SerializeSeq for SerStruct<'a> {
     type Ok = ();
     type Error = Error;
 
     fn serialize_element<T: ?Sized>(&mut self, value: &T) -> Result<()> where
         T: Serialize {
         debug!("> ser element");
-//        value.serialize(self.ser)
-        Ok(())
+        self.impl_serialize_value(None, value, "SerializeSeq")
     }
 
     fn end(self) -> Result<()> {
@@ -150,10 +144,10 @@ impl<'a> ser::SerializeStruct for SerStruct<'a> {
 impl<'a> ser::Serializer for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
-    type SerializeSeq = SerSeq;
-    type SerializeTuple = SerNone;
-    type SerializeTupleStruct = SerNone;
-    type SerializeTupleVariant = SerNone;
+    type SerializeSeq = SerStruct<'a>;
+    type SerializeTuple = SerStruct<'a>;
+    type SerializeTupleStruct = SerStruct<'a>;
+    type SerializeTupleVariant = SerStruct<'a>;
     type SerializeMap = SerNone;
     type SerializeStruct = SerStruct<'a>;
     type SerializeStructVariant = SerStruct<'a>;
@@ -266,25 +260,25 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         match len {
             Some(len) => {
                 self.buff.write_u32(len as u32)?;
-                Ok(SerSeq { /*ser: self*/ })
+                Ok(SerStruct::new(self, len as u32))
             },
             None => Err(SerializationError::UnserializableType.into())
         }
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
-        debug!("serialize_tuple");
-        Err(SerializationError::UnserializableType.into())
+        debug!("serialize_tuple {:?}", &self.buff.buffer);
+        Ok(SerStruct::new(self, safe_uint_cast(len)?))
     }
 
     fn serialize_tuple_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeTupleStruct> {
         debug!("serialize_tuple_struct");
-        Err(SerializationError::UnserializableType.into())
+        Ok(SerStruct::new(self, safe_uint_cast(len)?))
     }
 
     fn serialize_tuple_variant(self, name: &'static str, variant_index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeTupleVariant> {
         debug!("serialize_tuple_variant");
-        Err(SerializationError::UnserializableType.into())
+        Ok(SerStruct::new(self, safe_uint_cast(len)?))
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
@@ -324,6 +318,25 @@ pub fn to_buffer<T: ?Sized>(value: &T) -> Result<SerializedBuffer>
     debug!("serializing with size {}", size);
     let mut ser = Serializer { buff: SerializedBuffer::new_with_size(size) };
     value.serialize(&mut ser)?;
+    ser.buff.rewind();
+    Ok(ser.buff)
+}
+
+/// Serialize the given data structure as PM into the IO stream.
+#[inline]
+pub fn to_buffer_with_padding<T: ?Sized>(value: &T) -> Result<SerializedBuffer>
+    where
+        T: Serialize + PMSized,
+{
+    let size = value.size_hint().expect("unknown object size");
+    let padding = (4 - size % 4) % 4;
+    let final_size = size + padding;
+    debug!("serializing with size {}", final_size);
+    let mut ser = Serializer { buff: SerializedBuffer::new_with_size(final_size) };
+    value.serialize(&mut ser)?;
+    for _ in 0..padding {
+        ser.buff.write_byte(0);
+    }
     ser.buff.rewind();
     Ok(ser.buff)
 }

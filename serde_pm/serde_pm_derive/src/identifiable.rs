@@ -3,6 +3,13 @@ use syn;
 
 use ast;
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+lazy_static! {
+    pub static ref ENUM_IDENTS: Mutex<HashMap<u32, String>> = Mutex::new(HashMap::new());
+}
+
 pub(crate) fn impl_pm_identifiable(container: ast::Container) -> proc_macro2::TokenStream {
     let (item_impl_generics, item_ty_generics, item_where_clause) =
         container.generics.split_for_impl();
@@ -21,6 +28,12 @@ pub(crate) fn impl_pm_identifiable(container: ast::Container) -> proc_macro2::To
             let ids = data_enum.variants
                 .iter()
                 .map(|v| get_id_from_attrs(&v.attrs));
+            let names = data_enum.variants
+                .iter()
+                .map(|v| proc_macro2::Literal::string(&v.ident.to_string()));
+
+            let mut enum_idents = ENUM_IDENTS.lock().unwrap();
+            enum_idents.insert(1337, "kek".into());
 
             quote!(&[#(#ids),*])
         },

@@ -24,7 +24,7 @@
 //! about it:
 //!
 //! * `Boxed<T>` means "not a bare `T`" where boxed/bare types
-//!   distinction is drawn from the MTProto official documentation about
+//!   distinction is drawn from the PM official documentation about
 //!   serialization:
 //!   <https://core.telegram.org/pm/serialize#boxed-and-bare-types>.
 //! * `WithId<T>` means "`T` with an id" which explains *how* this type
@@ -48,7 +48,7 @@ use utils::{safe_uint_cast, safe_uint_eq};
 
 
 /// A struct that wraps an [`Identifiable`] type value to serialize and
-/// deserialize as a boxed MTProto data type.
+/// deserialize as a boxed PM data type.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Boxed<T> {
     inner: T,
@@ -189,7 +189,7 @@ impl<T> Arbitrary for Boxed<T>
 
 /*
 /// A struct that wraps a [`PMSized`] type value to serialize and
-/// deserialize as a MTProto data type with the size of its serialized
+/// deserialize as a PM data type with the size of its serialized
 /// value.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WithSize<T> {

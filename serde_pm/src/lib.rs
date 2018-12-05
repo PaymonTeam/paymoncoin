@@ -25,6 +25,7 @@ pub mod wrappers;
 pub use ser::{
     Serializer,
     to_buffer,
+    to_buffer_with_padding,
 };
 
 pub use de::{
@@ -35,7 +36,7 @@ pub use de::{
 // Error types and typedefs
 pub use error::{Error, SerializationError, Result};
 
-// Other items generally useful for MTProto [de]serialization
+// Other items generally useful for PM [de]serialization
 //pub use helpers::{UnsizedByteBuf, UnsizedByteBufSeed};
 pub use identifiable::Identifiable;
 pub use sized::{PMSized, size_hint_from_byte_seq_len};

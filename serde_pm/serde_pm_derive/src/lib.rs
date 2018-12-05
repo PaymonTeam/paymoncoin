@@ -1,4 +1,4 @@
-//! This crate provides Serde MTProto's two derive macros.
+//! This crate provides Serde PM's two derive macros.
 //!
 //! ```
 //! # #[macro_use] extern crate serde_pm_derive;
@@ -51,7 +51,8 @@ extern crate proc_macro2;
 extern crate quote;
 #[macro_use]
 extern crate syn;
-
+#[macro_use]
+extern crate lazy_static;
 
 #[macro_use]
 mod macros;
@@ -65,7 +66,7 @@ use proc_macro::TokenStream;
 
 use identifiable::impl_pm_identifiable;
 use sized::impl_pm_sized;
-
+//pub use identifiable::ENUM_IDENTS;
 
 #[proc_macro_derive(PMIdentifiable, attributes(pm_identifiable))]
 pub fn pm_identifiable(input: TokenStream) -> TokenStream {

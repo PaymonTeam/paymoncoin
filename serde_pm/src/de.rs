@@ -199,6 +199,8 @@ impl<'de, 'ids, 'a> de::Deserializer<'de> for &'a mut Deserializer<'ids> {
         V: de::Visitor<'de> {
         debug!("deserialize_identifier");
         // TODO: make right error type
+        let svuid = self.buff.read_u32()?;
+
         let (variant_id, rest) = self.enum_variant_ids.split_first()
             .ok_or_else(|| SerializationError::UnserializableType)?;
 

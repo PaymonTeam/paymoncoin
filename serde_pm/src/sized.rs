@@ -1,4 +1,4 @@
-//! `PMSized` trait for any Rust data structure a predictable size of its MTProto binary
+//! `PMSized` trait for any Rust data structure a predictable size of its PM binary
 //! representation can be computed.
 //!
 //! # Examples
@@ -80,20 +80,24 @@ use utils::check_seq_len;
 
 /// Size of a bool PM value.
 pub const BOOL_SIZE: usize = 4;
+/// Size of an byte PM value.
+pub const BYTE_SIZE: usize = 1;
 /// Size of an int PM value.
 pub const INT_SIZE: usize = 4;
 /// Size of a long PM value.
 pub const LONG_SIZE: usize = 8;
+/// Size of a float PM value.
+pub const FLOAT_SIZE: usize = 4;
 /// Size of a double PM value.
 pub const DOUBLE_SIZE: usize = 8;
 /// Size of an int128 PM value.
 pub const INT128_SIZE: usize = 16;
 
 
-/// A trait for a Rust data structure a predictable size of its MTProto binary representation
+/// A trait for a Rust data structure a predictable size of its PM binary representation
 /// can be computed.
 pub trait PMSized {
-    /// Compute the size of MTProto binary representation of this value without actually
+    /// Compute the size of PM binary representation of this value without actually
     /// serializing it.
     ///
     /// Returns an `error::Result` because not any value can be serialized (e.g. strings and
@@ -117,19 +121,17 @@ macro_rules! impl_pm_sized_for_primitives {
 impl_pm_sized_for_primitives! {
     bool => BOOL_SIZE,
 
-    // Minimum MTProto integer size is 4 bytes
-    i8  => INT_SIZE,
+    i8  => BYTE_SIZE,
     i16 => INT_SIZE,
     i32 => INT_SIZE,
     i64 => LONG_SIZE,
 
-    // Same here
-    u8  => INT_SIZE,
+    u8  => BYTE_SIZE,
     u16 => INT_SIZE,
     u32 => INT_SIZE,
     u64 => LONG_SIZE,
 
-    f32 => DOUBLE_SIZE,
+    f32 => FLOAT_SIZE,
     f64 => DOUBLE_SIZE,
 }
 
@@ -154,7 +156,7 @@ pub fn size_hint_from_byte_seq_len(len: usize) -> error::Result<usize> {
     };
 
     let size = len_info + data + padding;
-    assert!(size % 4 == 0);
+    assert_eq!(size % 4, 0);
 
     Ok(size)
 }
@@ -187,7 +189,7 @@ impl<'a, T: PMSized> PMSized for &'a [T] {
     fn size_hint(&self) -> error::Result<usize> {
         // If len >= 2 ** 32, it's not serializable at all.
         check_seq_len(self.len())?;
-
+        debug!("size!");
         let mut result = 4;    // 4 for slice length
 
         for elem in self.iter() {
