@@ -760,8 +760,7 @@ impl Hive {
         Ok(self.storage_put(CFType::Transaction, &t.object.hash, &t.object))
     }
 
-    pub fn update_heights(&mut self, mut transaction: Transaction) -> Result<(),
-        TransactionError> {
+    pub fn update_heights(&mut self, mut transaction: Transaction) -> Result<(), TransactionError> {
         let mut trunk = match self.storage_load_transaction(&transaction.get_trunk_transaction_hash()) {
             Some(t) => t,
             None => return Err(TransactionError::InvalidHash)

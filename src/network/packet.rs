@@ -138,16 +138,18 @@ impl SerializedBuffer {
         if self.position > limit {
             self.position = limit;
         }
-
+        debug!("lim {}", line!());
         self.limit = limit;
     }
 
     pub fn flip(&mut self) {
+        debug!("lim {}", line!());
         self.limit = self.position;
         self.position = 0;
     }
 
     pub fn clear(&mut self) {
+        debug!("lim {}", line!());
         self.limit = self.capacity;
         self.position = 0;
     }
@@ -201,6 +203,7 @@ impl SerializedBuffer {
         }
 
         self.position = self.limit - self.position;
+        debug!("lim {}", line!());
         self.limit = self.capacity;
     }
 
@@ -613,6 +616,7 @@ impl Clone for SerializedBuffer {
         let mut buffer = SerializedBuffer::new_with_size(len);
         buffer.buffer = bytes;
         buffer.position = self.position;
+        debug!("lim {}", line!());
         buffer.limit = self.limit;
         buffer.capacity = self.capacity;
         buffer.calculated_size_only = self.calculated_size_only;

@@ -64,16 +64,19 @@ impl SerializedBuffer {
         if self.position > limit {
             self.position = limit;
         }
+        debug!("lim {}", line!());
 
         self.limit = limit;
     }
 
     pub fn flip(&mut self) {
+        debug!("lim {}", line!());
         self.limit = self.position;
         self.position = 0;
     }
 
     pub fn clear(&mut self) {
+        debug!("lim {}", line!());
         self.limit = self.capacity;
         self.position = 0;
     }
@@ -122,11 +125,13 @@ impl SerializedBuffer {
         }
         let buffer_ptr = &mut self.buffer[0] as *mut u8;
 
+        info!("unsafe compact");
         unsafe {
             rlibc::memmove(buffer_ptr, buffer_ptr.offset(self.position as isize), size_of::<u8>() * (self.limit - self.position));
         }
 
         self.position = self.limit - self.position;
+        debug!("lim {}", line!());
         self.limit = self.capacity;
     }
 
@@ -251,6 +256,7 @@ impl SerializedBuffer {
         let buffer_ptr = &mut self.buffer[0] as *mut u8;
         let b_ptr = &b[0] as *const u8;
 
+        info!("unsafe write_bytes_internal");
         unsafe {
             rlibc::memcpy(buffer_ptr.offset(self.position as isize), b_ptr, size_of::<u8>() * length);
         }
@@ -529,7 +535,7 @@ impl SerializedBuffer {
         use std::mem::size_of;
         let buffer_ptr = &self.buffer[0] as *const u8;
         let b_ptr = &mut b[0] as *mut u8;
-
+        info!("unsafe read_bytes");
         unsafe {
             rlibc::memcpy(b_ptr, buffer_ptr.offset(self.position as isize), size_of::<u8>() * length);
         }
@@ -546,6 +552,7 @@ impl Clone for SerializedBuffer {
         let mut buffer = SerializedBuffer::new_with_size(len);
         buffer.buffer = bytes;
         buffer.position = self.position;
+        debug!("lim {}", line!());
         buffer.limit = self.limit;
         buffer.capacity = self.capacity;
         buffer.calculated_size_only = self.calculated_size_only;

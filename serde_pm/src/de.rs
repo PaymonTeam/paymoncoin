@@ -191,23 +191,26 @@ impl<'de, 'ids, 'a> de::Deserializer<'de> for &'a mut Deserializer<'ids> {
 
     fn deserialize_enum<V>(self, name: &'static str, variants: &'static [&'static str], visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
-        debug!("deserialize_enum");
+        debug!("deserialize_enum name={} vars={:?}", name, variants);
         visitor.visit_enum(EnumVariantAccess::new(self))
+//        visitor.visit_enum(EnumVariantAccess::new(self))
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_identifier");
         // TODO: make right error type
-        let svuid = self.buff.read_u32()?;
+        let variant_id = self.buff.read_u8()?;
+//
+//        let (variant_id, rest) = self.enum_variant_ids.split_first()
+//            .ok_or_else(|| SerializationError::UnserializableType)?;
+//
+//        debug!("Deserialized variant_id {}", variant_id);
+//        self.enum_variant_ids = rest;
 
-        let (variant_id, rest) = self.enum_variant_ids.split_first()
-            .ok_or_else(|| SerializationError::UnserializableType)?;
-
-        debug!("Deserialized variant_id {}", variant_id);
-        self.enum_variant_ids = rest;
-
-        visitor.visit_str(variant_id)
+//        V::Value::get
+        visitor.visit_u32(variant_id as u32)
+//        visitor.visit_str(variant_id)
     }
 
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value> where
@@ -271,9 +274,10 @@ impl<'de, 'a, 'ids> de::EnumAccess<'de> for EnumVariantAccess<'a, 'ids>
     fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
         where V: de::DeserializeSeed<'de>
     {
+        use serde::de::VariantAccess;
         debug!("Deserializing enum variant");
+//        self.newtype_variant_seed(seed)
         let value = seed.deserialize(&mut *self.de)?;
-
         Ok((value, self))
     }
 }

@@ -237,20 +237,21 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_unit_variant(self, name: &'static str, variant_index: u32, variant: &'static str) -> Result<()> {
         debug!("serialize_unit_variant n={} i={} v={}", name, variant_index, variant);
-        self.buff.write_u32(variant_index)
-//        Ok(())
+        // TODO: make safe cast
+        self.buff.write_u8(variant_index as u8)
     }
 
     fn serialize_newtype_struct<T: ?Sized>(self, name: &'static str, value: &T) -> Result<()> where
         T: Serialize {
         debug!("ser struct {}", name);
-//        self.buff.write_u32(T::svuid());
         value.serialize(self)
     }
 
     fn serialize_newtype_variant<T: ?Sized>(self, name: &'static str, variant_index: u32, variant: &'static str, value: &T) -> Result<()> where
         T: Serialize {
         debug!("serialize_newtype_variant {}[{}]:{}", name, variant_index, variant);
+        // TODO: make safe cast
+        self.buff.write_u8(variant_index as u8);
         value.serialize(self)
     }
 
@@ -267,7 +268,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
-        debug!("serialize_tuple {:?}", &self.buff.buffer);
+        debug!("serialize_tuple {:?} limit={}", &self.buff.buffer, self.buff.limit());
         Ok(SerStruct::new(self, safe_uint_cast(len)?))
     }
 
@@ -314,7 +315,10 @@ pub fn to_buffer<T: ?Sized>(value: &T) -> Result<SerializedBuffer>
     where
         T: Serialize + PMSized,
 {
-    let size = value.size_hint().expect("unknown object size");
+    let mut ser = Serializer { buff: SerializedBuffer::new(true) };
+    value.serialize(&mut ser)?;
+    let size = ser.buff.capacity();
+//    let size = value.size_hint().expect("unknown object size");
     debug!("serializing with size {}", size);
     let mut ser = Serializer { buff: SerializedBuffer::new_with_size(size) };
     value.serialize(&mut ser)?;

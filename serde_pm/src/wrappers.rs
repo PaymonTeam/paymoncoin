@@ -187,6 +187,12 @@ impl<T> Arbitrary for Boxed<T>
     }
 }
 
+impl<T: Default + Identifiable> Default for Boxed<T> {
+    fn default() -> Self {
+        Boxed::new(T::default())
+    }
+}
+
 /*
 /// A struct that wraps a [`PMSized`] type value to serialize and
 /// deserialize as a PM data type with the size of its serialized

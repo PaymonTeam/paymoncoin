@@ -189,7 +189,6 @@ impl<'a, T: PMSized> PMSized for &'a [T] {
     fn size_hint(&self) -> error::Result<usize> {
         // If len >= 2 ** 32, it's not serializable at all.
         check_seq_len(self.len())?;
-        debug!("size!");
         let mut result = 4;    // 4 for slice length
 
         for elem in self.iter() {
@@ -281,6 +280,7 @@ macro_rules! impl_pm_sized_for_tuple {
                 let mut result = 0;
                 let ($(ref $ident,)+) = *self;
                 $( result += $ident.size_hint()?; )+
+                info!("TUPLE SIze");
                 Ok(result)
             }
         }
