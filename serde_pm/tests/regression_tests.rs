@@ -34,12 +34,13 @@ impl Default for Algebraic {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, PMIdentifiable, PMSized, Default)]
 #[pm_identifiable(id = "0xacacacac")]
 struct Pack {
-//    v: i32,
-//    s: String,
-//    b: u8,
-//    vec: Vec<bool>,
-//    b_a: [u8; 5],
-    variant: Boxed<Algebraic>,
+    v: i32,
+    s: String,
+    b: u8,
+    vec: Vec<bool>,
+    b_a: [u8; 5],
+    variant: Algebraic,
+//    variant: Boxed<Algebraic>,
 }
 
 impl Pack {
@@ -81,18 +82,18 @@ fn serde_serialized_buffer() {
     let enum_ids = [ "", ];
 
     let mut pack = Pack::new();
-//    pack.v = 3;
-//    pack.s = "hello".into();
-//    pack.b = 42;
-//    pack.vec.append(&mut vec![true, false]);
-//    pack.b_a = [1u8, 2, 3, 4, 5];
-    pack.variant = Boxed::new(Algebraic::C("kek".into()));
+    pack.v = 3;
+    pack.s = "hello".into();
+    pack.b = 42;
+    pack.vec.append(&mut vec![true, false]);
+    pack.b_a = [1u8, 2, 3, 4, 5];
+    pack.variant = Algebraic::C("kek".into());
 
     let mut b0 = to_buffer(&pack).expect("failed to serialize data");
     debug!("b0={:?}", b0.as_ref());
-//    let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5]);
+    let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 3, 107, 101, 107]);
 
-//    assert_eq!(b0.as_ref(), b1.as_ref());
+    assert_eq!(b0.as_ref(), b1.as_ref());
     let pack2 = from_stream::<Pack>(&mut b0, &enum_ids).expect("failed to deserealize data");
     assert_eq!(pack, pack2);
     debug!("{:?}", pack2);

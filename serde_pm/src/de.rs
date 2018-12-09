@@ -274,11 +274,14 @@ impl<'de, 'a, 'ids> de::EnumAccess<'de> for EnumVariantAccess<'a, 'ids>
     fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
         where V: de::DeserializeSeed<'de>
     {
-        use serde::de::VariantAccess;
+        use serde::de::IntoDeserializer;
+        
         debug!("Deserializing enum variant");
-//        self.newtype_variant_seed(seed)
-        let value = seed.deserialize(&mut *self.de)?;
-        Ok((value, self))
+
+        let index: u8 = Deserialize::deserialize(&mut *self.de)?;
+        let value: Result<_> = seed.deserialize(index.into_deserializer());
+
+        Ok((value?, self))
     }
 }
 
