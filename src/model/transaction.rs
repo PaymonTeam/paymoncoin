@@ -2,8 +2,10 @@ extern crate crypto;
 extern crate ntrumls;
 extern crate base64;
 
+use serde_pm_derive;
+
 use model::approvee::*;
-use network::packet::{Serializable, SerializedBuffer};
+use serde_pm::{Identifiable, SerializedBuffer, from_stream, to_buffer};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
 use std::ops::{Deref, DerefMut};
@@ -67,16 +69,16 @@ impl DerefMut for Hash {
     }
 }
 
-impl Serializable for Hash {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-        stream.write_i32(0);
-        stream.write_bytes(&self.0);
-    }
-
-    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        stream.read_bytes(&mut self.0, HASH_SIZE);
-    }
-}
+//impl Serializable for Hash {
+//    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
+//        stream.write_i32(0);
+//        stream.write_bytes(&self.0);
+//    }
+//
+//    fn read_params(&mut self, stream: &mut SerializedBuffer) {
+//        stream.read_bytes(&mut self.0, HASH_SIZE);
+//    }
+//}
 
 impl Serialize for Hash {
     // FIXME:

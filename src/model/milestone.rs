@@ -2,7 +2,6 @@ use model::transaction::*;
 use model::LedgerValidator;
 use model::snapshot::Snapshot;
 use model::TransactionValidator;
-use network::packet::*;
 use model::transaction_validator::TransactionError;
 
 use std::collections::{HashSet, HashMap, LinkedList};
@@ -41,42 +40,12 @@ impl MilestoneObject {
         }
     }
 
-//    pub fn from_bytes(mut bytes: SerializedBuffer) -> Self {
-//        let mut index = 0u32;
-//        let mut hash = HASH_NULL;
-//        index.read_params(SerializedBuffer::from_slice(&key));
-//        hash.read_params(SerializedBuffer::from_slice(&bytes));
-//
-//        MilestoneObject {
-//            index,
-//            hash
-//        };
-//
-//        let mut milestone = MilestoneObject { index: 0, hash: HASH_NULL };
-//        milestone.read_params(&mut bytes);
-//        milestone
-//    }
-
     pub fn index(&self) -> u32 {
         self.index
     }
 
     pub fn get_hash(&self) -> Hash {
         self.hash.clone()
-    }
-}
-
-impl Serializable for MilestoneObject {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-        stream.write_i32(MilestoneObject::SVUID);
-
-        stream.write_u32(self.index);
-        stream.write_bytes(&self.hash);
-    }
-
-    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        self.index = stream.read_u32();
-        stream.read_bytes(&mut self.hash, HASH_SIZE);
     }
 }
 
