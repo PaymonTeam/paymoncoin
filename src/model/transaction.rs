@@ -299,6 +299,7 @@ pub struct TransactionObject {
     pub snapshot: u32,
     pub solid: bool,
     pub height: u64,
+//    pub data: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, PMIdentifiable)]

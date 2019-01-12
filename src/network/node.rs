@@ -75,8 +75,8 @@ pub struct Node {
     transaction_requester: AM<TransactionRequester>,
     tips_vm: AM<TipsViewModel>,
     milestone: AM<Milestone>,
-    bft_in: mpsc::UnboundedReceiver<(usize, bft::Communication<rpc::ConsensusValue, [u8; 32], usize, secp256k1::Signature>)>,
-    bft_out: mpsc::UnboundedSender<(bft::Communication<rpc::ConsensusValue, [u8; 32], usize, secp256k1::Signature>)>,
+    bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>,
+    bft_out: mpsc::UnboundedSender<(ConsensusType)>,
 //    bft_network: consensus::pos::TestNetwork<rpc::ConsensusValue>,
 }
 
@@ -198,12 +198,15 @@ impl Node {
             }
         }
 
+        let (in_tx, in_rx) = mpsc::unbounded();
+        let (out_tx, out_rx) = mpsc::unbounded();
+
         let running_weak = Arc::downgrade(&self.running.clone());
         let broadcast_queue_weak = Arc::downgrade(&self.broadcast_queue.clone());
         let neighbors_weak = Arc::downgrade(&self.neighbors.clone());
         let tr_weak = Arc::downgrade(&self.transaction_requester.clone());
         let jh = thread::spawn(|| Node::broadcast_thread(running_weak, broadcast_queue_weak, neighbors_weak,
-                                                         tr_weak));
+                                                         tr_weak, in_rx));
         self.thread_join_handles.push_back(jh);
 
         let running_weak = Arc::downgrade(&self.running.clone());
@@ -229,11 +232,8 @@ impl Node {
 
         use crossbeam::scope;
 
-        let (in_tx, in_rx) = mpsc::unbounded();
-        let (out_tx, out_rx) = mpsc::unbounded();
-
-//        self.bft_in = in_tx;
-//        self.bft_out = out_rx;
+//        self.bft_in = in_rx;
+        self.bft_out = out_tx;
 
         thread::spawn(move || {
             let node_count = 4;
@@ -245,7 +245,8 @@ impl Node {
             use secp256k1::*;
 
             let local_id = 0;
-            let sk = Secp256k1::new().generate_keypair(&mut thread_rng()).unwrap().0;
+            let ctx = Secp256k1::<All>::new();
+            let sk = ctx.generate_keypair(&mut thread_rng()).0;
     //            let ctx = Context::new(rpc::ConsensusValue{ value: i as u32 }, Secp256k1Signature::new(sk), i, node_count);
             let ctx = Context {
                 signature: Secp256k1Signature::new(sk),
@@ -257,16 +258,16 @@ impl Node {
                 node_count,
             };
 
-            bft::agree(
+            let f = bft::agree(
                 ctx,
                 node_count,
                 max_faulty,
                 out_rx.map_err(|_| Error),
                 in_tx.sink_map_err(|_| Error).with(move |t| Ok((local_id, t))),
             )
-                .map_err(|e| println!("error"))
-                .map(|r| println!("{:?}", r));
-//            tokio::run(f);
+                .map_err(|e| println!("error {:?}", e))
+                .map(|r| println!("committed = {:?}", r));
+            tokio::run(f);
         });
     }
 
@@ -305,7 +306,7 @@ impl Node {
                                             };
                                             if let Some(arc) = hive.upgrade() {
                                                 if let Ok(mut hive) = arc.lock() {
-                                                    transaction = hive.storage_load_transaction(&tip).unwrap();
+                                                    transaction = Box::new(hive.storage_load_transaction(&tip).unwrap());
                                                 } else {
                                                     panic!("broken hive mutex");
                                                 }
@@ -320,7 +321,7 @@ impl Node {
                             } else {
                                 if let Some(arc) = hive.upgrade() {
                                     if let Ok(mut hive) = arc.lock() {
-                                        transaction = hive.storage_load_transaction(&hash).unwrap();
+                                        transaction = Box::new(hive.storage_load_transaction(&hash).unwrap());
                                     } else {
                                         panic!("broken hive mutex");
                                     }
@@ -406,38 +407,59 @@ impl Node {
         }
     }
 
-    fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>, tr: AWM<TransactionRequester>) {
+    fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>, tr: AWM<TransactionRequester>, mut bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>) {
         loop {
+            match bft_in.poll() {
+                Ok(Async::Ready(Some((i, t)))) => {
+                    debug!("bft_in received {}, {:?}", i, t);
+                }
+                Ok(Async::Ready(None)) => {
+
+                }
+                _ => {
+                    debug!("bft_in returned something wrong");
+                }
+            }
+
             if let Some(arc) = running.upgrade() {
                 let b = arc.load(Ordering::SeqCst);
-                if !b { break; }
+                if !b {
+                    debug!("exiting broadcast thread");
+                    break;
+                }
+            }
 
-                if let Some(arc) = broadcast_queue.upgrade() {
-                    if let Ok(mut queue) = arc.lock() {
-                        if let Some(t) = queue.pop_front() {
-                            if let Some(arc) = neighbors.upgrade() {
-                                if let Ok(neighbors) = arc.lock() {
-                                    for n in neighbors.iter() {
-                                        if let Ok(mut n) = n.lock() {
-                                            // TODO: make delay and clone neighbors list
-                                            info!("sending to {:?}", n.addr);
-                                            let transaction = t.object.clone();
-                                            n.send_packet(transaction);
-                                            if let Some(arc) = tr.upgrade() {
-                                                if let Ok(mut tr) = arc.lock() {
-                                                    // TODO: get probability from var
-                                                    if let Some(hash) = tr
-                                                        .poll_transaction_to_request(thread_rng().gen::<f64>() < 0.7) {
-                                                        n.send_packet(rpc::RequestTransaction {
-                                                            hash
-                                                        });
-                                                    } else {
-                                                        n.send_packet(rpc::RequestTransaction {
-                                                            hash: HASH_NULL
-                                                        });
-                                                    }
-                                                }
-                                            }
+            let mut to_send = Vec::<Box<Transaction>>::new();
+
+            if let Some(arc) = broadcast_queue.upgrade() {
+                if let Ok(mut queue) = arc.lock() {
+                    if let Some(v) = queue.pop_front() {
+                        to_send.push(Box::new(v));
+                    }
+                }
+            }
+
+            while let Some(packet) = to_send.pop() {
+                if let Some(arc) = neighbors.upgrade() {
+                    if let Ok(neighbors) = arc.lock() {
+                        for n in neighbors.iter() {
+                            if let Ok(mut n) = n.lock() {
+                                // TODO: make delay and clone neighbors list
+                                info!("sending to {:?}", n.addr);
+                                n.send_packet(packet.clone());
+
+                                if let Some(arc) = tr.upgrade() {
+                                    if let Ok(mut tr) = arc.lock() {
+                                        // TODO: get probability from var
+                                        if let Some(hash) = tr
+                                            .poll_transaction_to_request(thread_rng().gen::<f64>() < 0.7) {
+                                            n.send_packet(Box::new(rpc::RequestTransaction {
+                                                hash
+                                            }));
+                                        } else {
+                                            n.send_packet(Box::new(rpc::RequestTransaction {
+                                                hash: HASH_NULL
+                                            }));
                                         }
                                     }
                                 }
@@ -446,7 +468,6 @@ impl Node {
                     }
                 }
             }
-
             thread::sleep(Duration::from_secs(1));
         }
     }
