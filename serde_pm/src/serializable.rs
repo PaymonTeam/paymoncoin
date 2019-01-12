@@ -560,17 +560,23 @@ impl Clone for SerializedBuffer {
     }
 }
 
-//impl Deref for SerializedBuffer {
-//    type Target = [u8];
-//
-//    fn deref(&self) -> &[u8] {
-//        &self.buffer[self.position..self.limit]
-//    }
-//}
+impl Deref for SerializedBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.buffer[self.position..self.limit]
+    }
+}
 
 impl AsRef<[u8]> for SerializedBuffer {
     fn as_ref(&self) -> &[u8] {
         &self.buffer[self.position..self.limit]
+    }
+}
+
+impl Default for SerializedBuffer {
+    fn default() -> Self {
+        SerializedBuffer::new(false)
     }
 }
 

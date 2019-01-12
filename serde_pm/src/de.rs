@@ -4,20 +4,17 @@ use std::io;
 use serde::de::{self, Deserialize};
 use super::error::{Error, Result, SerializationError};
 use super::serializable::SerializedBuffer;
-use SVUID;
 
 use utils::{safe_uint_cast};
 
 pub struct Deserializer<'ids> {
     buff: &'ids mut SerializedBuffer,
-    enum_variant_ids: &'ids [&'static str]
 }
 
 impl<'ids> Deserializer<'ids> {
-    pub fn new(stream: &'ids mut SerializedBuffer, enum_variant_ids: &'ids [&'static str]) -> Self {
+    pub fn new(stream: &'ids mut SerializedBuffer,) -> Self {
         Deserializer {
             buff: stream,
-            enum_variant_ids
         }
     }
 }
@@ -316,11 +313,11 @@ impl<'de, 'a, 'ids> de::VariantAccess<'de> for EnumVariantAccess<'a, 'ids>
     }
 }
 
-pub fn from_stream<'de, T>(stream: &'de mut SerializedBuffer, enum_variant_ids: &[&'static str]) -> Result<T>
+pub fn from_stream<'de, T>(stream: &'de mut SerializedBuffer) -> Result<T>
     where
         T: de::Deserialize<'de>,
 {
-    let mut de = Deserializer::new(stream, enum_variant_ids);
+    let mut de = Deserializer::new(stream);
     let value = T::deserialize(&mut de)?;
 
     Ok(value)

@@ -30,7 +30,7 @@ const BOOL_VARIANT_NAMES: &[&str] = &["false", "true"];
 
 
 /// A trait for a Rust data structure that can have an id.
-pub trait Identifiable {
+pub trait Identifiable : serde::Serialize {
     /// Get all possible ids (known at compile time) of an identifiable type.
     ///
     /// This is most useful for enums where each variant has its own id.
@@ -97,6 +97,10 @@ pub trait Identifiable {
     /// `#[derive(Deserialize)]` call `Deserializer::deserialize_identifier()`
     /// to identify an enum variant.
     fn enum_variant_id(&self) -> Option<&'static str>;
+
+    fn primary_type_id() -> u32 where Self: Sized {
+        Self::all_type_ids()[0]
+    }
 }
 
 
@@ -224,7 +228,7 @@ impl<'a> Identifiable for &'a str {
     }
 }
 
-impl<T> Identifiable for Vec<T> {
+impl<T> Identifiable for Vec<T> where T: serde::Serialize {
     fn all_type_ids() -> &'static [u32] {
         VECTOR_IDS
     }

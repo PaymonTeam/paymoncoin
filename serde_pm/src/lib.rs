@@ -9,10 +9,6 @@ extern crate serde_pm_derive;
 #[macro_use]
 extern crate log;
 
-trait SVUID {
-    fn svuid() -> i32;
-}
-
 pub mod ser;
 pub mod de;
 pub mod error;
@@ -25,6 +21,7 @@ pub mod wrappers;
 pub use ser::{
     Serializer,
     to_buffer,
+    to_boxed_buffer,
     to_buffer_with_padding,
 };
 
@@ -40,5 +37,6 @@ pub use error::{Error, SerializationError, Result};
 //pub use helpers::{UnsizedByteBuf, UnsizedByteBufSeed};
 pub use identifiable::Identifiable;
 pub use sized::{PMSized, size_hint_from_byte_seq_len};
+pub use serializable::SerializedBuffer;
 pub use wrappers::{Boxed, WithId};
 pub use self::serializable::*;

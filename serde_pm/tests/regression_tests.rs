@@ -10,7 +10,7 @@ extern crate env_logger;
 
 use serde::ser::{self};
 use serde::de::{self, Deserializer, DeserializeSeed, Error as DeError};
-use serde_pm_other_name::{Boxed, PMSized, from_stream, to_buffer, to_buffer_with_padding};
+use serde_pm_other_name::{Boxed, PMSized, from_stream, to_buffer, to_buffer_with_padding, to_boxed_buffer};
 use serde_pm_other_name::serializable::*;
 use serde_pm_other_name::identifiable::Identifiable;
 
@@ -77,9 +77,6 @@ fn init_log() {
 #[test]
 fn serde_serialized_buffer() {
     init_log();
-    info!("array {:?}", Pack::all_type_ids());
-
-    let enum_ids = [ "", ];
 
     let mut pack = Pack::new();
     pack.v = 3;
@@ -94,42 +91,73 @@ fn serde_serialized_buffer() {
     let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 3, 107, 101, 107]);
 
     assert_eq!(b0.as_ref(), b1.as_ref());
-    let pack2 = from_stream::<Pack>(&mut b0, &enum_ids).expect("failed to deserealize data");
+    let pack2 = from_stream::<Pack>(&mut b0).expect("failed to deserealize data");
     assert_eq!(pack, pack2);
     debug!("{:?}", pack2);
 }
 
-//#[test]
-//fn serde_serialized_buffe2r_padded() {
-//    let enum_ids = [ "", ];
-//    let mut pack = Pack::new();
-//    pack.v = 3;
-//    pack.s = "hello".into();
-//    pack.b = 42;
-//    pack.vec.append(&mut vec![true, false]);
-//    pack.b_a = [1u8, 2, 3, 4, 5];
-//
-//    let b0 = to_buffer_with_padding(&pack).expect("failed to serialize data");
-//    debug!("b0={:?}", b0.as_ref());
-//    let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 0, 0]);
-//
-//    assert_eq!(b0.as_ref(), b1.as_ref());
-//    let pack2 = from_stream::<Pack>(&mut b1, &enum_ids).expect("failed to deserealize data");
-//    assert_eq!(pack, pack2);
-//    debug!("{:?}", pack2);
-//}
+#[test]
+fn serde_serialized_buffer_with_type_id() {
+    init_log();
+    assert_eq!(Pack::all_type_ids().len(), 1);
 
-//#[test]
-//fn floating_point() {
-//    #[derive(Debug, Serialize, Deserialize, PMSized, Default)]
-//    struct FD(f32, f64);
-//    let fd = FD(std::f32::consts::PI, std::f64::consts::SQRT_2);
-//
-//    let b0 = to_buffer(&fd).expect("failed to serialize data");
-//    debug!("b0={:?}", b0.as_ref());
-//    let mut b1 = SerializedBuffer::from_slice(&[219, 15, 73, 64, 205, 59, 127, 102, 158, 160, 246, 63]);
-//
-//    assert_eq!(b0.as_ref(), b1.as_ref());
-//    let pack2 = from_stream::<FD>(&mut b1, &[&""]).expect("failed to deserealize data");
-//    debug!("{:?}", pack2);
-//}
+    let mut pack = Pack::new();
+    pack.v = 3;
+    pack.s = "hello".into();
+    pack.b = 42;
+    pack.vec.append(&mut vec![true, false]);
+    pack.b_a = [1u8, 2, 3, 4, 5];
+    pack.variant = Algebraic::C("kek".into());
+
+    let mut b0 = to_boxed_buffer(&pack).expect("failed to serialize data");
+    debug!("b0={:?}", b0.as_ref());
+    let mut b1 = SerializedBuffer::from_slice(&[172, 172, 172, 172, 3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 3, 107, 101, 107]);
+
+    assert_eq!(b0.as_ref(), b1.as_ref());
+
+    let type_id = b0.read_u32().expect("failed to read type_id");
+    let pack_type_id = Pack::all_type_ids()[0];
+    if type_id == pack_type_id {
+        let pack2 = from_stream::<Pack>(&mut b0).expect("failed to deserealize data");
+        assert_eq!(pack, pack2);
+        debug!("{:?}", pack2);
+    } else {
+        panic!("unknown type_id");
+    }
+}
+
+#[test]
+fn serde_serialized_buffer_padded() {
+    let enum_ids = [ "", ];
+    let mut pack = Pack::new();
+    pack.v = 3;
+    pack.s = "hello".into();
+    pack.b = 42;
+    pack.vec.append(&mut vec![true, false]);
+    pack.b_a = [1u8, 2, 3, 4, 5];
+
+    let mut b0 = to_buffer_with_padding(&pack).expect("failed to serialize data");
+    debug!("b0={:?}", b0.as_ref());
+    let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 0, 0]);
+
+    assert_eq!(b0.as_ref(), b1.as_ref());
+
+    let pack2 = from_stream::<Pack>(&mut b0).expect("failed to deserealize data");
+    assert_eq!(pack, pack2);
+    debug!("{:?}", pack2);
+}
+
+#[test]
+fn floating_point() {
+    #[derive(Debug, Serialize, Deserialize, PMSized, Default)]
+    struct FD(f32, f64);
+    let fd = FD(std::f32::consts::PI, std::f64::consts::SQRT_2);
+
+    let b0 = to_buffer(&fd).expect("failed to serialize data");
+    debug!("b0={:?}", b0.as_ref());
+    let mut b1 = SerializedBuffer::from_slice(&[219, 15, 73, 64, 205, 59, 127, 102, 158, 160, 246, 63]);
+
+    assert_eq!(b0.as_ref(), b1.as_ref());
+    let pack2 = from_stream::<FD>(&mut b1).expect("failed to deserealize data");
+    debug!("{:?}", pack2);
+}

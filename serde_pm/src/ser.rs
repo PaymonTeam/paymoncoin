@@ -6,7 +6,10 @@ use super::error::{Error, Result, SerializationError};
 use super::serializable::SerializedBuffer;
 use identifiable::Identifiable;
 use sized::PMSized;
+use wrappers::Boxed;
+
 use utils::{safe_uint_cast};
+//use fasthash::murmur2;
 
 pub struct Serializer {
     buff: SerializedBuffer
@@ -251,6 +254,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         T: Serialize {
         debug!("serialize_newtype_variant {}[{}]:{}", name, variant_index, variant);
         // TODO: make safe cast
+//        let hash = murmur2::hash32(variant[variant_index]);
+//        self.buff.write_u32(hash);
         self.buff.write_u8(variant_index as u8);
         value.serialize(self)
     }
@@ -313,7 +318,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 #[inline]
 pub fn to_buffer<T: ?Sized>(value: &T) -> Result<SerializedBuffer>
     where
-        T: Serialize + PMSized,
+        T: Serialize// + PMSized,
 {
     let mut ser = Serializer { buff: SerializedBuffer::new(true) };
     value.serialize(&mut ser)?;
@@ -328,11 +333,34 @@ pub fn to_buffer<T: ?Sized>(value: &T) -> Result<SerializedBuffer>
 
 /// Serialize the given data structure as PM into the IO stream.
 #[inline]
+pub fn to_boxed_buffer<T: ?Sized>(value: &T) -> Result<SerializedBuffer>
+    where T: Serialize + Identifiable {
+    use sized::INT_SIZE;
+
+    let mut ser = Serializer { buff: SerializedBuffer::new(true) };
+    value.serialize(&mut ser)?;
+    let size = ser.buff.capacity() + INT_SIZE;
+//    let size = value.size_hint().expect("unknown object size");
+    debug!("serializing with size {}", size);
+    let id = value.type_id();
+    let mut buffer = SerializedBuffer::new_with_size(size);
+    buffer.write_u32(id);
+    let mut ser = Serializer { buff: buffer };
+    value.serialize(&mut ser)?;
+    ser.buff.rewind();
+    Ok(ser.buff)
+}
+
+/// Serialize the given data structure as PM into the IO stream.
+#[inline]
 pub fn to_buffer_with_padding<T: ?Sized>(value: &T) -> Result<SerializedBuffer>
     where
-        T: Serialize + PMSized,
+        T: Serialize// + PMSized,
 {
-    let size = value.size_hint().expect("unknown object size");
+    let mut ser = Serializer { buff: SerializedBuffer::new(true) };
+    value.serialize(&mut ser)?;
+    let size = ser.buff.capacity();
+//    let size = value.size_hint().expect("unknown object size");
     let padding = (4 - size % 4) % 4;
     let final_size = size + padding;
     debug!("serializing with size {}", final_size);
