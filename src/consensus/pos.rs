@@ -26,6 +26,7 @@ use log::{LogLevelFilter, LogRecord};
 use secp256k1;
 use tokio;
 use tokio_timer::{self, Timer};
+use serde::Serialize;
 
 use network::{
     Neighbor,
@@ -612,4 +613,3 @@ impl Validator {
         }
     }
 }
-
