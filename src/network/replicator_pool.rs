@@ -4,13 +4,12 @@ use std::sync::{Arc, Weak, Mutex};
 
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::net::{TcpListener, TcpStream};
-#[cfg(any(target_os = "dragonfly",
-target_os = "freebsd", target_os = "ios", target_os = "macos"))]
+#[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "ios", target_os = "macos"))]
 use mio::unix::UnixReady;
 use slab;
 
 use network::replicator::ReplicatorSource;
-use network::packet::{SerializedBuffer};
+use serde_pm::{SerializedBuffer};
 use model::config::{Configuration, ConfigurationSettings, PORT};
 use network::node::Node;
 use std::sync::mpsc::{Sender, Receiver};

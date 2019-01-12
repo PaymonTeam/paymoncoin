@@ -335,11 +335,15 @@ pub struct TransactionObject {
     pub height: u64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, PMIdentifiable)]
+#[pm_identifiable(id = "0x73f73812")]
 pub struct Transaction {
     pub object: TransactionObject,
+    #[serde(skip)]
     pub bytes: SerializedBuffer,
+    #[serde(skip)]
     pub weight_magnitude: u16,
+    #[serde(skip)]
     pub approvers: Option<Approvee>,
 }
 
@@ -386,8 +390,9 @@ impl Transaction {
     // Generates empty transaction with hash
     pub fn from_hash(hash: Hash) -> Self {
         let mut transaction = TransactionObject::from_hash(hash);
-        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
-        transaction.serialize_to_stream(&mut bytes);
+        let bytes = to_buffer(&transaction).unwrap();
+//        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
+//        transaction.serialize_to_stream(&mut bytes);
         Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
             object: transaction,
@@ -405,8 +410,9 @@ impl Transaction {
     }
 
     pub fn from_bytes(mut bytes: SerializedBuffer) -> Self {
-        let mut transaction = TransactionObject::new();
-        transaction.read_params(&mut bytes);
+        let mut transaction = from_stream::<TransactionObject>(&mut bytes).expect("failed to create tx from bytex");
+//        let mut transaction = TransactionObject::new();
+//        transaction.read_params(&mut bytes);
 //        transaction.data_type = TransactionType::Full;
 
         Transaction {
@@ -418,10 +424,12 @@ impl Transaction {
     }
 
     pub fn from_object(mut transaction: TransactionObject) -> Self {
-        use network::packet::calculate_object_size;
-        let transaction_size = calculate_object_size(&transaction);
-        let mut bytes = SerializedBuffer::new_with_size(transaction_size);
-        transaction.serialize_to_stream(&mut bytes);
+//        use network::packet::calculate_object_size;
+//        let transaction_size = calculate_object_size(&transaction);
+//        let mut bytes = SerializedBuffer::new_with_size(transaction_size);
+//        transaction.serialize_to_stream(&mut bytes);
+        use serde_pm::to_buffer;
+        let mut bytes = to_buffer(&transaction).unwrap();
 
         Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
@@ -432,9 +440,10 @@ impl Transaction {
     }
 
     pub fn new() -> Self {
-        let mut transaction = TransactionObject::new();
-        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
-        transaction.serialize_to_stream(&mut bytes);
+        let transaction = TransactionObject::new();
+        let mut bytes = to_buffer(&transaction).unwrap();
+//        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
+//        transaction.serialize_to_stream(&mut bytes);
 
         Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
@@ -453,8 +462,9 @@ impl Transaction {
 
     pub fn new_random() -> Self {
         let mut transaction = TransactionObject::new_random();
-        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
-        transaction.serialize_to_stream(&mut bytes);
+        let bytes = to_buffer(&transaction).unwrap();
+//        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
+//        transaction.serialize_to_stream(&mut bytes);
 
         Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
@@ -466,7 +476,9 @@ impl Transaction {
 
     pub fn calculate_hash(&mut self) -> Hash {
         if self.bytes.position() == 0 {
-            self.object.serialize_to_stream(&mut self.bytes);
+            // TODO: make convenient function for this
+            self.bytes.write_bytes(&to_buffer(&self.object).unwrap());
+//            self.object.serialize_to_stream(&mut self.bytes);
         }
 
         let mut sb = SerializedBuffer::new_with_size(ADDRESS_SIZE + 4 + 8 + HASH_SIZE);
@@ -526,7 +538,8 @@ impl Transaction {
     /* Converts transaction data to Base64 */
     pub fn get_base64_data(&mut self) -> String {
         if self.bytes.position() == 0 {
-            self.object.serialize_to_stream(&mut self.bytes);
+//            self.object.serialize_to_stream(&mut self.bytes);
+            self.bytes.write_bytes(&to_buffer(&self.object).unwrap());
         }
         return base64::encode(&self.bytes.buffer[0..self.bytes.limit()]);
     }

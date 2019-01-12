@@ -1,7 +1,8 @@
 #[macro_use]
 use serde_derive;
+use serde::Serialize;
+use serde_pm::SerializedBuffer;
 
-use network::packet::{Serializable, SerializedBuffer};
 use model::{
     Transaction, TransactionObject,
     transaction::*
@@ -160,7 +161,8 @@ impl Serializable for TransactionsToApprove {
 /**
     RequestTransaction
 */
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PMIdentifiable)]
+#[pm_identifiable(id = "0x0a8c76de")]
 pub struct RequestTransaction {
     pub hash: Hash,
 }
@@ -491,29 +493,8 @@ pub struct TransactionsData {
 
 impl TransactionsData { pub const SVUID : i32 = 16; }
 
-impl Serializable for TransactionsData {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-        stream.write_i32(Self::SVUID);
-
-        stream.write_u32(self.transactions.len() as u32);
-        for tx in &self.transactions {
-            stream.write_string(tx.clone())
-        }
-    }
-
-    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        self.transactions.clear();
-
-        let len = stream.read_u32();
-        for _ in 0..len {
-            let tx = stream.read_string();
-            self.transactions.push(tx);
-        }
-    }
-}
-
-//#[derive(Serialize, Deserialize)]
-#[derive(Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, Eq, Debug, Clone, PMIdentifiable)]
+#[pm_identifiable(id = "0x183f2199")]
 pub struct ConsensusValue {
     pub value: u32,
 }

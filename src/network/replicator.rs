@@ -8,7 +8,8 @@ use byteorder::{ByteOrder, NativeEndian, BigEndian, LittleEndian};
 
 use mio::{Poll, PollOpt, Ready, Token};
 use mio::net::TcpStream;
-use network::packet::{SerializedBuffer, Serializable, calculate_object_size};
+use serde::{Serialize, Deserialize};
+use serde_pm::{SerializedBuffer, to_buffer};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 

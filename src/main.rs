@@ -1,3 +1,5 @@
+#![feature(custom_attribute)]
+
 extern crate serde_pm;
 extern crate serde;
 #[macro_use]
@@ -20,6 +22,8 @@ extern crate tokio_timer;
 extern crate parity_rocksdb as rocksdb;
 extern crate secp256k1;
 extern crate rhododendron;
+#[macro_use]
+extern crate serde_pm_derive;
 
 #[macro_use]
 extern crate log;

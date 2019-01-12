@@ -14,7 +14,7 @@ use utils::{AM, AWM};
 use std;
 use std::io::Read;
 use network::rpc;
-use network::packet::Serializable;
+use serde::{Serialize, Deserialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -53,7 +53,7 @@ pub struct API {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct APIRequest<T: Serializable> {
+pub struct APIRequest<T: Serialize> {
     pub method: String,
     pub object: T,
 }
@@ -439,7 +439,7 @@ impl API {
     }
 
     pub fn get_transactions_data(pmnc: &mut PaymonCoin, hashes: &Vec<Hash>) -> Result<Vec<String>, APIError> {
-        use network::packet::SerializedBuffer;
+        use serde_pm::SerializedBuffer;
         let mut elements = Vec::<String>::new();
 
         if let Ok(hive) = pmnc.hive.lock() {

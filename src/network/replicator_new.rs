@@ -29,7 +29,7 @@ use crossbeam::scope;
 
 use utils::AM;
 use network::Neighbor;
-use network::packet::SerializedBuffer;
+use serde_pm::{SerializedBuffer};
 
 pub enum ReadState<A> {
     ReadingData {

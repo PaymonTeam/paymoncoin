@@ -1,6 +1,5 @@
 use std::io;
 use model::config::{Configuration, ConfigurationSettings};
-use network::packet::{SerializedBuffer};
 use std::sync::{Arc, Weak, Mutex};
 use network::neighbor::Neighbor;
 use std::net::{TcpStream, SocketAddr, IpAddr};
@@ -17,7 +16,7 @@ use model::transaction;
 use model::transaction::{Hash, HASH_NULL};
 use rand::{Rng, thread_rng};
 use utils::{AM, AWM};
-use network::{rpc, packet::Serializable};
+use network::{rpc};
 use model::*;
 use futures::{Stream, Async};
 use futures::prelude::*;
@@ -28,6 +27,7 @@ use consensus::{self, Validator, pos::{
     Secp256k1Signature,
     ROUND_DURATION,
 }};
+use serde_pm::{SerializedBuffer, from_stream, to_buffer, Identifiable};
 
 use futures::{
     self,
@@ -41,6 +41,9 @@ use futures::{
     Future,
 };
 use rhododendron as bft;
+use serde::Serialize;
+
+type ConsensusType = bft::Communication<rpc::ConsensusValue, [u8; 32], usize, secp256k1::Signature>;
 
 pub struct Pair<U, V> {
     pub low: U,
