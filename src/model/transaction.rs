@@ -148,17 +148,6 @@ impl DerefMut for Address {
     }
 }
 
-impl Serializable for Address {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-        stream.write_i32(0);
-        stream.write_bytes(&self.0);
-    }
-
-    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        stream.read_bytes(&mut self.0, ADDRESS_SIZE);
-    }
-}
-
 impl FromStr for Address {
     type Err = AddressError;
 
@@ -281,31 +270,6 @@ impl Deref for Account {
 impl DerefMut for Account {
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.0
-    }
-}
-
-impl Serializable for Account {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-        stream.write_i32(0);
-        stream.write_bytes(&self.0);
-    }
-
-    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        stream.read_bytes(&mut self.0, ADDRESS_SIZE);
-    }
-}
-
-impl Serializable for Signature {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-        stream.write_byte_array(&self.0)
-    }
-
-    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        if let Some(v) = stream.read_byte_array() {
-            self.0 = v;
-        } else {
-            error!("error reading byte array");
-        }
     }
 }
 
