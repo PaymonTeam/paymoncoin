@@ -372,10 +372,12 @@ impl Hive {
                                              .unwrap(), IteratorMode::End).unwrap();
         match it.next() {
             Some((key, bytes)) => {
-                let mut index = 0u32;
-                let mut hash = HASH_NULL;
-                index.read_params(&mut SerializedBuffer::from_slice(&key));
-                hash.read_params(&mut SerializedBuffer::from_slice(&bytes));
+                let index = from_stream(&mut SerializedBuffer::from_slice(&key)).unwrap();
+                let hash = from_stream(&mut SerializedBuffer::from_slice(&bytes)).unwrap();
+//                let mut index = 0u32;
+//                let mut hash = HASH_NULL;
+//                index.read_params(&mut SerializedBuffer::from_slice(&key));
+//                hash.read_params(&mut SerializedBuffer::from_slice(&bytes));
 
                 Some(MilestoneObject {
                     index,
@@ -402,10 +404,12 @@ impl Hive {
 
         match it.next() {
             Some((key, bytes)) => {
-                let mut index = 0u32;
-                let mut hash = HASH_NULL;
-                index.read_params(&mut SerializedBuffer::from_slice(&key));
-                hash.read_params(&mut SerializedBuffer::from_slice(&bytes));
+                let index = from_stream(&mut SerializedBuffer::from_slice(&key)).unwrap();
+                let hash = from_stream(&mut SerializedBuffer::from_slice(&bytes)).unwrap();
+//                let mut index = 0u32;
+//                let mut hash = HASH_NULL;
+//                index.read_params(&mut SerializedBuffer::from_slice(&key));
+//                hash.read_params(&mut SerializedBuffer::from_slice(&bytes));
 
                 Some(MilestoneObject {
                     index,
@@ -420,17 +424,19 @@ impl Hive {
     }
 
     pub fn storage_next_milestone(&self, index: u32) -> Option<MilestoneObject> {
-        let key = get_serialized_object(&index, false);
+        let key = to_buffer(&index).unwrap(); //get_serialized_object(&index, false);
         let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize]).unwrap(), IteratorMode::From(&key, Direction::Forward)).unwrap();
-//        let mut it = self.db.raw_iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize]).unwrap()).unwrap();
-//        it.seek(&get_serialized_object(&index, false));
+
         match it.next() {
             Some((key, bytes)) => {
 //                let key = it.key().unwrap();
-                let mut index = 0u32;
-                let mut hash = HASH_NULL;
-                index.read_params(&mut SerializedBuffer::from_slice(key.as_ref()));
-                hash.read_params(&mut SerializedBuffer::from_slice(bytes.as_ref()));
+                let index = from_stream(&mut SerializedBuffer::from_slice(&key)).unwrap();
+                let hash = from_stream(&mut SerializedBuffer::from_slice(&bytes)).unwrap();
+
+//                let mut index = 0u32;
+//                let mut hash = HASH_NULL;
+//                index.read_params(&mut SerializedBuffer::from_slice(key.as_ref()));
+//                hash.read_params(&mut SerializedBuffer::from_slice(bytes.as_ref()));
 
                 Some(MilestoneObject {
                     index,
@@ -446,11 +452,12 @@ impl Hive {
 
     pub fn storage_load_milestone(&self, index: u32) -> Option<MilestoneObject> {
         let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize]).unwrap
-        (), &get_serialized_object(&index, false));
+        (), &to_buffer(&index).unwrap());
         match vec {
             Ok(res) => {
-                let mut hash = HASH_NULL;
-                hash.read_params(&mut SerializedBuffer::from_slice(&res?));
+                let hash = from_stream(&mut SerializedBuffer::from_slice(&res?)).unwrap();
+//                let mut hash = HASH_NULL;
+//                hash.read_params(&mut SerializedBuffer::from_slice(&res?));
 
                 Some(MilestoneObject {
                     index, hash
@@ -472,7 +479,7 @@ impl Hive {
     }
 
     pub fn put_milestone(&mut self, milestone: &MilestoneObject) -> bool {
-        let key = get_serialized_object(&milestone.index, false);
+        let key = to_buffer(&milestone.index).unwrap();
         self.storage_put(CFType::Milestone, &key, &milestone.hash)
     }
 
@@ -490,13 +497,13 @@ impl Hive {
         self.storage_put(CFType::Transaction, &t.object.hash, &t.object)
     }
 
-    pub fn storage_put<T>(&mut self, t: CFType, key: &[u8], packet: &T) -> bool where T : Serializable {
-        let object = get_serialized_object(packet, false);
+    pub fn storage_put<T>(&mut self, t: CFType, key: &[u8], packet: &T) -> bool where T : Serialize {
+        let object = to_buffer(packet).unwrap();
         self.db.put_cf(self.db.cf_handle(CF_NAMES[t as usize]).unwrap(), key, &object).is_ok()
     }
 
-    pub fn storage_merge<T>(&mut self, t: CFType, key: &[u8], packet: &T) -> bool where T : Serializable {
-        let object = get_serialized_object(packet, false);
+    pub fn storage_merge<T>(&mut self, t: CFType, key: &[u8], packet: &T) -> bool where T : Serialize {
+        let object = to_buffer(packet).unwrap();
         match self.db.merge_cf(self.db.cf_handle(CF_NAMES[t as usize]).unwrap(), key, &object) {
             Ok(_) => {
                 debug!("merged {:?};{:?} into {}", key, hex::encode(&object), CF_NAMES[t as usize]);
@@ -598,8 +605,9 @@ impl Hive {
         let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::Address as usize]).unwrap(), key);
         match vec {
             Ok(res) => {
-                let mut num = 0;
-                num.read_params(&mut SerializedBuffer::from_slice(&res?));
+                let num = from_stream(&mut SerializedBuffer::from_slice(&res?)).unwrap();
+//                let mut num = 0;
+//                num.read_params(&mut SerializedBuffer::from_slice(&res?));
                 Some(num)
             },
 

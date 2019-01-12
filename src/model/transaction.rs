@@ -21,6 +21,7 @@ use serde::{
 };
 pub const HASH_SIZE: usize = 20;
 pub const ADDRESS_SIZE: usize = 21;
+// FIXME: do something with this value
 pub const TRANSACTION_SIZE: usize = 173 + 4; // HASH_SIZE + 1 (checksum byte)
 
 pub const HASH_NULL: Hash = Hash([0u8; HASH_SIZE]);
@@ -314,7 +315,8 @@ pub enum TransactionType {
     Full,
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, PMIdentifiable)]
+#[pm_identifiable(id = "0x146C22D3")]
 pub struct TransactionObject {
     pub address: Address,
     pub attachment_timestamp: u64,
@@ -345,6 +347,12 @@ pub struct Transaction {
     pub weight_magnitude: u16,
     #[serde(skip)]
     pub approvers: Option<Approvee>,
+}
+
+impl Default for Transaction {
+    fn default() -> Self {
+        Transaction::new()
+    }
 }
 
 impl Transaction {
@@ -624,66 +632,6 @@ impl TransactionObject {
 
     pub fn get_snapshot_index(&self) -> u32{
         return self.snapshot;
-    }
-}
-
-impl Serializable for TransactionObject {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-        stream.write_i32(TransactionObject::SVUID);
-        stream.write_bytes(&self.hash);
-        stream.write_bytes(&self.address);
-        stream.write_u64(self.attachment_timestamp);
-        stream.write_u64(self.attachment_timestamp_lower_bound);
-        stream.write_u64(self.attachment_timestamp_upper_bound);
-        stream.write_bytes(&self.branch_transaction);
-        stream.write_bytes(&self.trunk_transaction);
-        stream.write_u64(self.nonce);
-        stream.write_bytes(&self.tag);
-        stream.write_u64(self.timestamp);
-        stream.write_u32(self.value);
-        let b = match self.data_type {
-            TransactionType::HashOnly => 0,
-            TransactionType::Full => 1,
-        };
-        stream.write_byte(b);
-        stream.write_byte_array(&self.signature.0);
-        stream.write_byte_array(&self.signature_pubkey.0);
-        stream.write_u32(self.snapshot);
-        stream.write_bool(self.solid);
-        stream.write_u64(self.height);
-    }
-
-    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        stream.read_bytes(&mut self.hash, HASH_SIZE);
-        stream.read_bytes(&mut self.address, ADDRESS_SIZE);
-        self.attachment_timestamp = stream.read_u64();
-        self.attachment_timestamp_lower_bound = stream.read_u64();
-        self.attachment_timestamp_upper_bound = stream.read_u64();
-        stream.read_bytes(&mut self.branch_transaction, HASH_SIZE);
-        stream.read_bytes(&mut self.trunk_transaction, HASH_SIZE);
-        self.nonce = stream.read_u64();
-        stream.read_bytes(&mut self.tag, HASH_SIZE);
-        self.timestamp = stream.read_u64();
-        self.value = stream.read_u32();
-        self.data_type = match stream.read_byte() {
-            1 => TransactionType::Full,
-            _ => TransactionType::HashOnly
-        };
-        self.signature = Signature(stream.read_byte_array().unwrap_or(vec![]));
-        self.signature_pubkey = PublicKey(stream.read_byte_array().unwrap_or(vec![]));
-        self.snapshot = stream.read_u32();
-        self.solid = stream.read_bool();
-        self.height = stream.read_u64();
-    }
-}
-
-impl Serializable for Transaction {
-    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-        self.object.serialize_to_stream(stream);
-    }
-
-    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-        self.object.read_params(stream);
     }
 }
 

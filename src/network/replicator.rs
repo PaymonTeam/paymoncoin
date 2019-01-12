@@ -128,7 +128,7 @@ impl ReplicatorSource {
             } else {
                 let mut buf = [0u8; 4];
                 self.sock.read(&mut buf).expect("Failed to read 4-byte buf");
-                let msg_len = NativeEndian::read_u32(buf.as_ref());
+                let msg_len = NativeEndian::read_u32(&buf);
                 return Ok(Some((msg_len >> 8) * 4));
             }
         } else {
@@ -136,7 +136,7 @@ impl ReplicatorSource {
         }
     }
 
-    pub fn send_packet<T>(&mut self, packet: T, message_id: i64) where T: Serializable {
+    pub fn send_packet<T>(&mut self, packet: T, message_id: i64) where T: Serialize {
         let message_length = calculate_object_size(&packet);
         let size = match message_length % 4 == 0 {
             true => 8 + 4 + message_length as usize,

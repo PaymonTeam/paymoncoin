@@ -489,51 +489,54 @@ impl Node {
 //        }
 
         let mark = data.position();
-        let message_id = data.read_i64();
-        let message_length = data.read_i32();
+        let message_id = data.read_i64().unwrap();
+        let message_length = data.read_i32().unwrap();
 
         if message_length != data.remaining() as i32 {
             warn!("Received incorrect message length");
 //            return;
         }
 
-        let svuid = data.read_i32();
+        let svuid = data.read_u32().unwrap();
 
         use std::collections::HashMap;
-        use network::packet::Serializable;
+        use serde::{Serialize};
+        use serde_pm::Identifiable;
 
+        let txid = TransactionObject::primary_type_id();
+        let cvid = rpc::ConsensusValue::primary_type_id();
         match svuid {
-            TransactionObject::SVUID => {
-                let mut transaction_object = TransactionObject::new();
-                transaction_object.read_params(&mut data);
-
+            txid => {
+                let mut transaction_object = from_stream(&mut data).expect("failed to deserialize tx");
+//                let mut transaction_object = TransactionObject::new();
+//                transaction_object.read_params(&mut data);
+//
                 let mut transaction = Transaction::from_object(transaction_object);
                 if let Ok(mut queue) = self.receive_queue.lock() {
                     queue.push_back(transaction);
                 }
             }
-            rpc::AttachTransaction::SVUID => {
-                let mut transaction_object = TransactionObject::new();
-                transaction_object.read_params(&mut data);
-
-                let mut transaction = Transaction::from_object(transaction_object);
-                if let Ok(mut queue) = self.receive_queue.lock() {
-                    queue.push_back(transaction);
-                }
-            }
-            rpc::RequestTransaction::SVUID => {
-                let mut tx_request = rpc::RequestTransaction { hash: HASH_NULL };
-                tx_request.read_params(&mut data);
-
-                let mut hash = tx_request.hash;
-                if let Ok(mut queue) = self.reply_queue.lock() {
-                    queue.push_back((hash, neighbor.clone()));
-                }
-            },
-            rpc::ConsensusValue::SVUID => {
-//                let mut v = rpc::ConsensusValue::default();
-//                v.read_params(&mut data);
-//                self.bft_out.unbounded_send(v);
+//            rpc::AttachTransaction::SVUID => {
+//                let mut transaction_object = TransactionObject::new();
+//                transaction_object.read_params(&mut data);
+//
+//                let mut transaction = Transaction::from_object(transaction_object);
+//                if let Ok(mut queue) = self.receive_queue.lock() {
+//                    queue.push_back(transaction);
+//                }
+//            }
+//            rpc::RequestTransaction::SVUID => {
+//                let mut tx_request = rpc::RequestTransaction { hash: HASH_NULL };
+//                tx_request.read_params(&mut data);
+//
+//                let mut hash = tx_request.hash;
+//                if let Ok(mut queue) = self.reply_queue.lock() {
+//                    queue.push_back((hash, neighbor.clone()));
+//                }
+//            },
+            cvid => {
+                let v = from_stream(&mut data).unwrap();
+                self.bft_out.unbounded_send(v);
             }
             _ => {
                 warn!("Unknown SVUID {}", svuid);

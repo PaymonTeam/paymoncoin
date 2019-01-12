@@ -74,15 +74,16 @@ impl Neighbor {
         self.addr.clone()
     }
 
-    pub fn send_packet<T>(&mut self, packet: T) where T : Serializable {
-        use network::packet::{SerializedBuffer, Serializable, calculate_object_size};
+    pub fn send_packet<T>(&mut self, packet: Box<T>) where T: Serialize + Identifiable {
+        use serde_pm::{SerializedBuffer, to_boxed_buffer};
         use self::futures::{Sink, Future};
         let message_id = 0;
-
-        let sb = packet::get_serialized_object(&packet, true);
+//        let sb = to_boxed_buffer(&packet).unwrap();
 
         if let Some(ref mut o) = self.sink {
-            let message_length = calculate_object_size(&packet);
+            let sb = to_boxed_buffer(&packet).unwrap();
+
+            let message_length = sb.capacity(); //calculate_object_size(&packet);
             let size = match message_length % 4 == 0 {
                 true => 8 + 4 + message_length as usize,
                 false => {
@@ -95,7 +96,8 @@ impl Neighbor {
             buff.set_position(0);
             buff.write_i64(message_id);
             buff.write_i32(message_length as i32);
-            packet.serialize_to_stream(&mut buff);
+            buff.write_bytes(&sb);
+//            packet.serialize_to_stream(&mut buff);
 
             buff.rewind();
 
