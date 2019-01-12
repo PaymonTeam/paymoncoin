@@ -9,7 +9,6 @@ use std::{
     marker::PhantomData,
     net::SocketAddr,
 };
-
 use crypto;
 use env_logger::LogBuilder;
 use futures::{
@@ -31,10 +30,9 @@ use tokio_timer::{self, Timer};
 use network::{
     Neighbor,
     node::{PacketData, Pair},
-    packet::{self, get_serialized_object, Serializable},
     rpc::{self, ConsensusValue},
-//use node::{OutputStream, InputStream, PacketData, Pair};
 };
+use serde_pm::{to_boxed_buffer, to_buffer, SerializedBuffer, Identifiable};
 use utils::AM;
 
 use rhododendron as bft;
@@ -113,18 +111,14 @@ impl<T: Clone + Send + 'static> Network<T> {
     pub fn new(nodes: usize)
         -> (Self, mpsc::UnboundedSender<(usize, T)>, Vec<mpsc::UnboundedReceiver<T>>)
     {
-//        let mut input = Vec::with_capacity(nodes);
         let mut outputs = Vec::with_capacity(nodes);
         let mut endpoints = Vec::with_capacity(nodes);
 
         let (in_tx, in_rx) = mpsc::unbounded();
         let (out_tx, out_rx) = mpsc::unbounded();
 
-//        for _ in 0..nodes {
-//            input.push(in_tx.clone());
-            outputs.push(out_rx);
-            endpoints.push(out_tx);
-//        }
+        outputs.push(out_rx);
+        endpoints.push(out_tx);
 
         let network = Network {
             endpoints,
@@ -167,6 +161,7 @@ impl<T: Clone> Future for Network<T> {
 
 #[derive(Debug)]
 pub struct Error;
+unsafe impl Send for Error {}
 
 impl From<bft::InputStreamConcluded> for Error {
     fn from(_: bft::InputStreamConcluded) -> Error {
@@ -188,13 +183,13 @@ pub trait SignatureScheme {
 
 pub struct Secp256k1Signature<'a> {
     _phantom: PhantomData<&'a ()>,
-    context: secp256k1::Secp256k1,
+    context: secp256k1::Secp256k1<secp256k1::All>,
     secret_key: secp256k1::key::SecretKey,
 }
 
 impl<'a> SignatureScheme for Secp256k1Signature<'a> {
     type Hash = [u8; 32];
-    type Signature = secp256k1::Signature;
+    type Signature = secp256k1::Signature; //SignatureDef; //
     type Message = secp256k1::Message;
     type SecretKey = secp256k1::key::SecretKey;
     type PublicKey = secp256k1::key::PublicKey;
@@ -212,7 +207,7 @@ impl<'a> SignatureScheme for Secp256k1Signature<'a> {
     fn calculate_signature(&self, data: &[u8]) -> <Self as SignatureScheme>::Signature {
         let hash = Self::calculate_hash(data);
         let msg = secp256k1::Message::from_slice(&hash).expect("32 bytes");
-        self.context.sign(&msg, &self.secret_key).unwrap()
+        self.context.sign(&msg, &self.secret_key)
     }
 
     fn get_index(&self) -> usize {
@@ -245,7 +240,7 @@ struct TestContext<T, S>
 }
 
 impl<T, S> TestContext<T, S> where S: SignatureScheme,
-                                   T: fmt::Debug + Eq + Clone + Ord + Serializable,
+                                   T: fmt::Debug + Eq + Clone + Ord + Serialize + Identifiable,
                                    S::Signature: fmt::Debug + Eq + Clone,
                                    S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone {
     pub fn new(proposal: T, signature: S, local_id: <Self as bft::Context>::AuthorityId, node_count: usize) -> Self where T: Ord {
@@ -262,7 +257,7 @@ impl<T, S> TestContext<T, S> where S: SignatureScheme,
 }
 
 impl<T, S> bft::Context for TestContext<T, S>
-    where T: fmt::Debug + Eq + Clone + Ord + Serializable,
+    where T: fmt::Debug + Eq + Clone + Ord + Serialize + Identifiable,
           S: SignatureScheme,
           S::Signature: fmt::Debug + Eq + Clone,
           S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone,
@@ -272,7 +267,7 @@ impl<T, S> bft::Context for TestContext<T, S>
     type Digest = S::Hash;
     type AuthorityId = ValidatorIndex;
     type Signature = S::Signature;
-    type RoundTimeout = Box<Future<Item=(), Error=Self::Error>>;
+    type RoundTimeout = Box<dyn Future<Item=(), Error=Self::Error> + Send>;
     type CreateProposal = FutureResult<Self::Candidate, Error>;
     type EvaluateProposal = FutureResult<bool, Error>;
 
@@ -287,7 +282,7 @@ impl<T, S> bft::Context for TestContext<T, S>
     }
 
     fn candidate_digest(&self, candidate: &Self::Candidate) -> Self::Digest {
-        S::calculate_hash( &get_serialized_object(candidate, true))
+        S::calculate_hash( to_boxed_buffer(candidate).unwrap().as_ref())
     }
 
     fn sign_local(&self, message: bft::Message<Self::Candidate, Self::Digest>)
@@ -295,25 +290,25 @@ impl<T, S> bft::Context for TestContext<T, S>
     {
         let data = match message {
             bft::Message::Propose(_, ref m) => {
-                get_serialized_object(m, true)
+                to_boxed_buffer(m).unwrap()
             },
             bft::Message::Vote(bft::Vote::Commit(_, ref digest)) |
             bft::Message::Vote(bft::Vote::Prepare(_, ref digest)) => {
-                packet::SerializedBuffer::from_slice(digest.as_ref())
+                SerializedBuffer::from_slice(digest.as_ref())
             },
             bft::Message::Vote(bft::Vote::AdvanceRound(round)) => {
-                let mut buffer = packet::SerializedBuffer::new_with_size(::std::mem::size_of_val(&round));
+                let mut buffer = SerializedBuffer::new_with_size(::std::mem::size_of_val(&round));
                 buffer.write_u32(round);
                 buffer
             }
         };
 
-        let signature = self.signature.calculate_signature(&data);
+        let signature = self.signature.calculate_signature(data.as_ref());
 
         match message {
             bft::Message::Propose(r, proposal) => bft::LocalizedMessage::Propose(bft::LocalizedProposal {
                 round_number: r,
-                digest: S::calculate_hash(&get_serialized_object(&proposal, true)),
+                digest: S::calculate_hash(to_boxed_buffer(&proposal).unwrap().as_ref()),
                 proposal,
                 digest_signature: signature.clone(),
                 full_signature: signature,
@@ -382,7 +377,7 @@ pub struct Context<T, S>
 }
 
 impl<T, S> Context<T, S> where S: SignatureScheme,
-                                   T: fmt::Debug + Eq + Clone + Ord + Serializable,
+                                   T: fmt::Debug + Eq + Clone + Ord + Serialize + Identifiable,
                                    S::Signature: fmt::Debug + Eq + Clone,
                                    S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone {
     pub fn new(proposal: T, signature: S, local_id: <Self as bft::Context>::AuthorityId, node_count: usize) -> Self where T: Ord {
@@ -399,7 +394,7 @@ impl<T, S> Context<T, S> where S: SignatureScheme,
 }
 
 impl<T, S> bft::Context for Context<T, S>
-    where T: fmt::Debug + Eq + Clone + Ord + Serializable,
+    where T: fmt::Debug + Eq + Clone + Ord + Serialize + Identifiable,
           S: SignatureScheme,
           S::Signature: fmt::Debug + Eq + Clone,
           S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone,
@@ -409,7 +404,7 @@ impl<T, S> bft::Context for Context<T, S>
     type Digest = S::Hash;
     type AuthorityId = ValidatorIndex;
     type Signature = S::Signature;
-    type RoundTimeout = Box<Future<Item=(), Error=Self::Error>>;
+    type RoundTimeout = Box<dyn Future<Item=(), Error=Self::Error> + Send>;
     type CreateProposal = FutureResult<Self::Candidate, Error>;
     type EvaluateProposal = FutureResult<bool, Error>;
 
@@ -424,7 +419,7 @@ impl<T, S> bft::Context for Context<T, S>
     }
 
     fn candidate_digest(&self, candidate: &Self::Candidate) -> Self::Digest {
-        S::calculate_hash( &get_serialized_object(candidate, true))
+        S::calculate_hash( to_buffer(candidate).unwrap().as_ref())
     }
 
     fn sign_local(&self, message: bft::Message<Self::Candidate, Self::Digest>)
@@ -432,25 +427,25 @@ impl<T, S> bft::Context for Context<T, S>
     {
         let data = match message {
             bft::Message::Propose(_, ref m) => {
-                get_serialized_object(m, true)
+                to_buffer(m).unwrap()
             },
             bft::Message::Vote(bft::Vote::Commit(_, ref digest)) |
             bft::Message::Vote(bft::Vote::Prepare(_, ref digest)) => {
-                packet::SerializedBuffer::from_slice(digest.as_ref())
+                SerializedBuffer::from_slice(digest.as_ref())
             },
             bft::Message::Vote(bft::Vote::AdvanceRound(round)) => {
-                let mut buffer = packet::SerializedBuffer::new_with_size(::std::mem::size_of_val(&round));
+                let mut buffer = SerializedBuffer::new_with_size(::std::mem::size_of_val(&round));
                 buffer.write_u32(round);
                 buffer
             }
         };
 
-        let signature = self.signature.calculate_signature(&data);
+        let signature = self.signature.calculate_signature(data.as_ref());
 
         match message {
             bft::Message::Propose(r, proposal) => bft::LocalizedMessage::Propose(bft::LocalizedProposal {
                 round_number: r,
-                digest: S::calculate_hash(&get_serialized_object(&proposal, true)),
+                digest: S::calculate_hash(to_boxed_buffer(&proposal).unwrap().as_ref()),
                 proposal,
                 digest_signature: signature.clone(),
                 full_signature: signature,
@@ -556,16 +551,7 @@ pub fn pos_test() {
         .take(node_count - max_faulty)
         .enumerate()
         .map(|(i, (tx, rx))| {
-//            let ctx = Context {
-//                local_id: AuthorityId(i),
-//                proposal: Mutex::new(i),
-//                current_round: Arc::new(AtomicUsize::new(0)),
-//                timer: timer.clone(),
-//                evaluated: Mutex::new(BTreeSet::new()),
-//                node_count,
-//            };
             let sk = Secp256k1::new().generate_keypair(&mut thread_rng()).unwrap().0;
-//            let ctx = Context::new(rpc::ConsensusValue{ value: i as u32 }, Secp256k1Signature::new(sk), i, node_count);
             let ctx = TestContext {
                 signature: Secp256k1Signature::new(sk),
                 local_id: i,
