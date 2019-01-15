@@ -443,11 +443,15 @@ impl Node {
                 }
             }
 
-            while let Some(packet) = to_send.pop() {
+            async {
+                let s = await!(bft_in.map(|(_, v)| v).collect());
+            }
+            for packet in to_send {
                 if let Some(arc) = neighbors.upgrade() {
                     if let Ok(neighbors) = arc.lock() {
                         for n in neighbors.iter() {
                             if let Ok(mut n) = n.lock() {
+                                n.send_packets(s.clone());
                                 // TODO: make delay and clone neighbors list
                                 info!("sending to {:?}", n.addr);
                                 n.send_packet(packet.clone());

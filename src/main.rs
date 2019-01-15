@@ -1,4 +1,4 @@
-#![feature(custom_attribute)]
+//#![feature(custom_attribute)]
 
 extern crate serde_pm;
 extern crate serde;
@@ -88,6 +88,7 @@ fn main() {
 
     let jh = Builder::new().name(format!("pmnc")).spawn(move || {
         let mut config = Configuration::new();
+
         if let Ok(port) = env::var("API_PORT") {
             config.set_int(ConfigurationSettings::Port, port.parse::<i32>().unwrap());
         }

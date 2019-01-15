@@ -176,7 +176,7 @@ pub struct ReplicatorNew {
 
 impl ReplicatorNew {
     pub fn new(config: &Configuration, node: Weak<Mutex<Node>>) -> Self {
-        let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
+        let host = "0.0.0.0".parse::<IpAddr>().expect("Failed to parse host string");
         let port = config.get_int(ConfigurationSettings::Port).unwrap_or(PORT as i32) as u16;
         let addr = SocketAddr::new(host, port);
 
@@ -213,6 +213,7 @@ impl ReplicatorNew {
 
             let connector = Interval::new(Instant::now(), Duration::from_millis(5000)).for_each(move |instant| {
                 let mut neighbors = neighbors.lock().unwrap();
+//                debug!("neighbors count={}", neighbors.len());
                 for n in neighbors.iter_mut() {
                     let mut neighbor_c = n.clone();
                     let mut neighbor_cc = n.clone();

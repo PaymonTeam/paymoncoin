@@ -38,7 +38,6 @@ pub struct PaymonCoin {
 
 impl PaymonCoin {
     pub fn new(config: Configuration) -> Self {
-
         let snapshot_timestamp = 1526912331;
         let coordinator = Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap();
         let num_keys_milestone = 22;
@@ -60,6 +59,7 @@ impl PaymonCoin {
         let mut milestone = Milestone::new(hive.clone(), coordinator.clone(), snapshot,
                                            transaction_validator.clone(), true,
                                            num_keys_milestone, milestone_start_index, true);
+        debug!("s3={}", config.get_string(ConfigurationSettings::Neighbors).unwrap());
 
         let mut node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), config.clone(),
                                                      replicator_tx, pmnc_rx,
@@ -106,17 +106,10 @@ impl PaymonCoin {
         let config_copy = self.config.clone();
         let replicator_rx = self.replicator_rx.take().unwrap();
 
-        let replicator_jh = scope(|scope| {
-            scope.spawn(|| {
-                let mut replicator_pool = ReplicatorNew::new(&config_copy, Arc::downgrade(&node_copy));
-                replicator_pool.run();
-            });
+        let replicator_jh = thread::spawn(move || {
+            let mut replicator_pool = ReplicatorNew::new(&config_copy, Arc::downgrade(&node_copy));
+            replicator_pool.run();
         });
-
-//        let replicator_jh = thread::spawn(move || {
-//            let mut replicator_pool = ReplicatorNew::new(&config_copy, Arc::downgrade(&node_copy));
-//            replicator_pool.run();
-//        });
 
         {
             let mut node = self.node.lock().unwrap();
