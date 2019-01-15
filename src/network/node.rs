@@ -43,6 +43,8 @@ use futures::{
 use rhododendron as bft;
 use serde::Serialize;
 
+//#[repr(transparent)]
+//struct ConsensusType(bft::Communication<rpc::ConsensusValue, [u8; 32], usize, secp256k1::Signature>);
 type ConsensusType = bft::Communication<rpc::ConsensusValue, [u8; 32], usize, secp256k1::Signature>;
 
 pub struct Pair<U, V> {
@@ -159,7 +161,7 @@ impl Node {
             hive,
             running: Arc::new(AtomicBool::new(true)),
             neighbors: make_am!(Vec::new()),
-            config: config.clone(),
+            config,
             node_tx,
             pmnc_rx,
             broadcast_queue: make_am!(VecDeque::new()),
@@ -176,10 +178,10 @@ impl Node {
         }
     }
 
-    pub fn init(&mut self, replicator_jh: ()) {//replicator_jh: JoinHandle<()>) {
+    pub fn init(&mut self, replicator_jh: JoinHandle<()>) {
         if let Some(s) = self.config.get_string(ConfigurationSettings::Neighbors) {
             if s.len() > 0 {
-                for addr in s.split(" ") {
+                for addr in s.split(",") {
                     if let Ok(addr) = addr.parse::<SocketAddr>() {
                         if let Ok(mut neighbors) = self.neighbors.lock() {
                             if neighbors.iter().find(|arc| {
@@ -228,7 +230,7 @@ impl Node {
                                                      tr_weak, ms_weak, tvm_weak));
         self.thread_join_handles.push_back(jh);
 
-        self.scoped_thread_join_handles.push_back(replicator_jh);
+        self.thread_join_handles.push_back(replicator_jh);
 
         use crossbeam::scope;
 
@@ -409,17 +411,19 @@ impl Node {
 
     fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>, tr: AWM<TransactionRequester>, mut bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>) {
         loop {
-            match bft_in.poll() {
-                Ok(Async::Ready(Some((i, t)))) => {
-                    debug!("bft_in received {}, {:?}", i, t);
-                }
-                Ok(Async::Ready(None)) => {
 
-                }
-                _ => {
-                    debug!("bft_in returned something wrong");
-                }
-            }
+//            tokio::spawn(bft_in).
+//            match bft_in.poll() {
+//                Ok(Async::Ready(Some((i, t)))) => {
+//                    debug!("bft_in received {}, {:?}", i, t);
+//                }
+//                Ok(Async::Ready(None)) => {
+//
+//                }
+//                _ => {
+//                    debug!("bft_in returned something wrong");
+//                }
+//            }
 
             if let Some(arc) = running.upgrade() {
                 let b = arc.load(Ordering::SeqCst);
