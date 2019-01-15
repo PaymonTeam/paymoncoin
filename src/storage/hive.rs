@@ -656,7 +656,7 @@ impl Hive {
         }).collect::<Vec<_>>();
 
         use std::thread;
-        let path = format!("db/data{:?}", thread::current().id());
+        let path = format!("db/data{}", env!("API_PORT"));
 
         match DB::open_cf(&opts, &path, &CF_NAMES, cfs_v.as_slice()) {
             Ok(mut db) => {
