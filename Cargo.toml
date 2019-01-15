@@ -3,6 +3,7 @@ name = "paymoncoin"
 version = "0.1.0"
 authors = ["Vladislav <negigic@gmail.com>"]
 license = "GPL-3.0"
+edition = "2018"
 
 [dependencies]
 serde_pm = { path = "serde_pm" }
@@ -45,6 +46,30 @@ native-windows-gui = "0.2.0"
 
 [[bin]]
 name = "paymoncoin"
+path = "src/main.rs"
+doc = false
+debug = true
+
+[[bin]]
+name = "paymoncoin_node0"
+path = "src/main.rs"
+doc = false
+debug = true
+
+[[bin]]
+name = "paymoncoin_node1"
+path = "src/main.rs"
+doc = false
+debug = true
+
+[[bin]]
+name = "paymoncoin_node2"
+path = "src/main.rs"
+doc = false
+debug = true
+
+[[bin]]
+name = "paymoncoin_node3"
 path = "src/main.rs"
 doc = false
 debug = true
