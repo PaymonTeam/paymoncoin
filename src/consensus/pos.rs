@@ -242,8 +242,8 @@ struct TestContext<T, S>
 
 impl<T, S> TestContext<T, S> where S: SignatureScheme,
                                    T: fmt::Debug + Eq + Clone + Ord + Serialize + Identifiable,
-                                   S::Signature: fmt::Debug + Eq + Clone,
-                                   S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone {
+                                   S::Signature: fmt::Debug + Eq + Clone + Serialize,
+                                   S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone + Serialize {
     pub fn new(proposal: T, signature: S, local_id: <Self as bft::Context>::AuthorityId, node_count: usize) -> Self where T: Ord {
         TestContext {
             signature,
@@ -260,8 +260,8 @@ impl<T, S> TestContext<T, S> where S: SignatureScheme,
 impl<T, S> bft::Context for TestContext<T, S>
     where T: fmt::Debug + Eq + Clone + Ord + Serialize + Identifiable,
           S: SignatureScheme,
-          S::Signature: fmt::Debug + Eq + Clone,
-          S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone,
+          S::Signature: fmt::Debug + Eq + Clone + Serialize,
+          S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone + Serialize,
 {
     type Error = Error;
     type Candidate = T;
@@ -379,8 +379,8 @@ pub struct Context<T, S>
 
 impl<T, S> Context<T, S> where S: SignatureScheme,
                                    T: fmt::Debug + Eq + Clone + Ord + Serialize + Identifiable,
-                                   S::Signature: fmt::Debug + Eq + Clone,
-                                   S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone {
+                                   S::Signature: fmt::Debug + Eq + Clone + Serialize,
+                                   S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone + Serialize {
     pub fn new(proposal: T, signature: S, local_id: <Self as bft::Context>::AuthorityId, node_count: usize) -> Self where T: Ord {
         Context {
             signature,
@@ -397,8 +397,8 @@ impl<T, S> Context<T, S> where S: SignatureScheme,
 impl<T, S> bft::Context for Context<T, S>
     where T: fmt::Debug + Eq + Clone + Ord + Serialize + Identifiable,
           S: SignatureScheme,
-          S::Signature: fmt::Debug + Eq + Clone,
-          S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone,
+          S::Signature: fmt::Debug + Eq + Clone + Serialize,
+          S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone + Serialize,
 {
     type Error = Error;
     type Candidate = T;
@@ -552,7 +552,7 @@ pub fn pos_test() {
         .take(node_count - max_faulty)
         .enumerate()
         .map(|(i, (tx, rx))| {
-            let sk = Secp256k1::new().generate_keypair(&mut thread_rng()).unwrap().0;
+            let sk = Secp256k1::new().generate_keypair(&mut thread_rng()).0;//unwrap().0;
             let ctx = TestContext {
                 signature: Secp256k1Signature::new(sk),
                 local_id: i,
