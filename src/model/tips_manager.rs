@@ -3,14 +3,14 @@ use std::iter::Iterator;
 use std::cmp::max;
 use std::sync::{Arc, Mutex};
 
-use model::transaction::*;
-use storage::hive::Hive;
-use model::milestone::{Milestone, MilestoneObject};
-use utils::defines::AM;
-use model::tips_view_model::TipsViewModel;
-use model::ledger_validator::LedgerValidator;
-use model::transaction_validator::TransactionValidator;
-use model::transaction_validator::TransactionError;
+use crate::model::transaction::*;
+use crate::storage::hive::Hive;
+use crate::model::milestone::{Milestone, MilestoneObject};
+use crate::utils::defines::AM;
+use crate::model::tips_view_model::TipsViewModel;
+use crate::model::ledger_validator::LedgerValidator;
+use crate::model::transaction_validator::TransactionValidator;
+use crate::model::transaction_validator::TransactionError;
 use std::thread;
 
 use rand::Rng;
@@ -367,7 +367,7 @@ impl TipsManager {
                                     /*Random seed*/) -> Result<Option<Hash>, TransactionError> {
         let mut rnd = rand::thread_rng();
         let mut monte_carlo_integrations = HashMap::<Hash, i32>::new();
-        let mut tail: Hash;
+        let _tail: Hash;
 //        println!("visited_hashes={:?}", visited_hashes);
 //        println!("diff={:?}", diff);
         for _ in 0..iterations {
@@ -445,7 +445,7 @@ impl TipsManager {
             };
 
             added_back = false;
-            let mut approvers = transaction.get_approvers(&self.hive).clone();
+            let approvers = transaction.get_approvers(&self.hive).clone();
             for approver in &approvers {
                 if ratings.get(approver).is_none() && *approver != current_hash {
                     if !added_back {
@@ -474,7 +474,7 @@ impl TipsManager {
         result += approvers.iter().
             map(|x| ratings.get(x)).
             filter(|x| x.is_some()).
-            fold(0i64, |a, b| TipsManager::cap_sum(a, *b.unwrap(), (<i64>::max_value() / 2)));
+            fold(0i64, |a, b| TipsManager::cap_sum(a, *b.unwrap(), <i64>::max_value() / 2));
         return result;
     }
 
@@ -490,7 +490,7 @@ impl TipsManager {
         //if tip is confirmed stop
 
 //         println!("hive lock 19");
-        let mut transaction = match self.hive.lock() {
+        let transaction = match self.hive.lock() {
             Ok(hive) => hive.storage_load_transaction(&tip).expect("can't find transaction"),
             Err(_) => {
                 panic!("hive mutex is broken");
@@ -549,9 +549,9 @@ impl TipsManager {
             };
             // println!("hive unlock 21");
 
-            let mut approver_hashes = transaction.get_approvers(&self.hive);
+            let approver_hashes = transaction.get_approvers(&self.hive);
             for approver in approver_hashes.iter() {
-                rating = TipsManager::cap_sum(rating, self.recursive_update_ratings(approver.clone(), ratings, analyzed_tips), (<i64>::max_value() / 2));
+                rating = TipsManager::cap_sum(rating, self.recursive_update_ratings(approver.clone(), ratings, analyzed_tips), <i64>::max_value() / 2);
             }
             ratings.insert(tx_hash.clone(), rating);
         } else {
@@ -570,7 +570,7 @@ impl TipsManager {
 
     pub fn shutdown(&mut self) {
         self.shutting_down = true;
-        if let Some(mut jh) = self.solidity_rescan_handle.take() {
+        if let Some(jh) = self.solidity_rescan_handle.take() {
             jh.join();
         };
     }

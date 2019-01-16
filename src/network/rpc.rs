@@ -3,7 +3,7 @@ use serde_derive;
 use serde::Serialize;
 use serde_pm::SerializedBuffer;
 
-use model::{
+use crate::model::{
     Transaction, TransactionObject,
     transaction::*
 };

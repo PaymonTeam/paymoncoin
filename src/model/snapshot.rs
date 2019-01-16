@@ -1,8 +1,8 @@
 use std::sync::Mutex;
 use std::collections::HashMap;
-use model::transaction::*;
-use storage::hive;
-use model::transaction_validator::TransactionError;
+use crate::model::transaction::*;
+use crate::storage::hive;
+use crate::model::transaction_validator::TransactionError;
 
 pub const SNAPSHOT_PUBKEY: &str = "ABC123";
 pub const SNAPSHOT_INDEX: u32 = 1;
@@ -16,7 +16,7 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    pub fn init(path: String, snapshot_sig_path: String) -> Option<Snapshot> {
+    pub fn init(path: String, _snapshot_sig_path: String) -> Option<Snapshot> {
         if INITIAL_SNAPSHOT.is_none() {
             // TODO: check file signature
 
@@ -37,7 +37,7 @@ impl Snapshot {
         None
     }
 
-    fn init_initial_state(snapshot_file_path: String) -> Result<HashMap<Address, i64>,
+    fn init_initial_state(_snapshot_file_path: String) -> Result<HashMap<Address, i64>,
         hive::Error> {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
@@ -46,7 +46,7 @@ impl Snapshot {
 
         let mut balances = HashMap::<Address, i64>::new();
 
-        let mut f = File::open("db/snapshot.dat")?;
+        let f = File::open("db/snapshot.dat")?;
         let file = BufReader::new(&f);
 
         let mut total = 0i64;
@@ -89,7 +89,7 @@ impl Snapshot {
         }
     }
 
-    pub fn patched_diff(&self, mut diff: HashMap<Address, i64>) -> HashMap<Address, i64> {
+    pub fn patched_diff(&self, diff: HashMap<Address, i64>) -> HashMap<Address, i64> {
         diff.into_iter().map(|(address, balance)| {
             let new_balance = match self.state.get(&address) {
                 Some(n) => *n,

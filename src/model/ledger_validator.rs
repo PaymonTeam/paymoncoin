@@ -1,10 +1,10 @@
-use storage::Hive;
-use model::{Milestone, MilestoneObject, TransactionRequester, Snapshot};
+use crate::storage::Hive;
+use crate::model::{Milestone, MilestoneObject, TransactionRequester, Snapshot};
 use std::collections::{HashSet, HashMap, LinkedList};
-use model::transaction::*;
-use model::{StateDiff, StateDiffObject};
-use utils::*;
-use model::transaction_validator::TransactionError;
+use crate::model::transaction::*;
+use crate::model::{StateDiff, StateDiffObject};
+use crate::utils::*;
+use crate::model::transaction_validator::TransactionError;
 use std::i64;
 
 pub struct LedgerValidator {
@@ -177,8 +177,8 @@ impl LedgerValidator {
     pub fn update_snapshot(&mut self, milestone_obj: &MilestoneObject, latest_snapshot: &mut Snapshot) ->
     Result<bool,
         TransactionError> {
-        let mut transaction;
-        if let Ok(mut hive) = self.hive.lock() {
+        let transaction;
+        if let Ok(hive) = self.hive.lock() {
             transaction = match hive.storage_load_transaction(&milestone_obj.hash) {
                 Some(t) => t,
                 None => {
@@ -195,11 +195,11 @@ impl LedgerValidator {
         if !has_snapshot {
             let tail = transaction.get_hash();
 
-            let mut milestone_latest_snapshot_index;
+            let milestone_latest_snapshot_index;
 
             milestone_latest_snapshot_index = /*milestone.*/latest_snapshot.index;
 
-            let mut current_state;
+            let current_state;
             match self.get_latest_diff(&mut HashSet::new(), Some(tail),
                                        milestone_latest_snapshot_index,true)? {
                 Some(cs) => {
@@ -263,7 +263,7 @@ impl LedgerValidator {
     }
 
     pub fn update_diff(&mut self, approved_hashes: &mut HashSet<Hash>, diff: &mut HashMap<Address, i64>, tip: Hash) -> Result<bool, TransactionError> {
-        if let Ok(mut hive) = self.hive.lock() {
+        if let Ok(hive) = self.hive.lock() {
             match hive.storage_load_transaction(&tip) {
                 Some(t) => {
                     if !t.is_solid() {

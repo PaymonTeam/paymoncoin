@@ -54,14 +54,14 @@ use std::{
 use mio::Poll;
 use mio::net::TcpListener;
 
-use network::node::*;
-use model::config::{PORT, Configuration, ConfigurationSettings};
-use model::config;
-use network::paymoncoin::PaymonCoin;
+use crate::network::node::*;
+use crate::model::config::{PORT, Configuration, ConfigurationSettings};
+use crate::model::config;
+use crate::network::paymoncoin::PaymonCoin;
 use env_logger::LogBuilder;
 use log::{LogRecord, LogLevelFilter};
-use storage::Hive;
-use network::api::API;
+use crate::storage::Hive;
+use crate::network::api::API;
 
 fn main() {
     let format = |record: &LogRecord| {
@@ -99,7 +99,7 @@ fn main() {
 
         let pmnc = Arc::new(Mutex::new(PaymonCoin::new(config)));
 
-        let node_arc = pmnc.lock().unwrap().run();
+        let _node_arc = pmnc.lock().unwrap().run();
 
         let pmnc_clone = pmnc.clone();
 //            let mut api_running = Arc::new(AtomicBool::from(true));
@@ -158,7 +158,7 @@ mod tests {
 //        let pack = Pack { v: 2 };
 //        super::serde_pm::serialize(&pack);
 //    }
-    use storage::Hive;
+    use crate::storage::Hive;
 
     #[test]
 //    fn hive_test() {
@@ -239,9 +239,9 @@ mod tests {
 
     #[test]
     fn hive_transaction_test() {
-        use model::{Transaction, TransactionObject};
-        use model::transaction::ADDRESS_NULL;
-        use storage::hive::{CFType};
+        use crate::model::{Transaction, TransactionObject};
+        use crate::model::transaction::ADDRESS_NULL;
+        use crate::storage::hive::{CFType};
         use super::hex;
 //        use self::ser::hex::{ToHex, FromHex};
 //        use serde::ser:
@@ -250,16 +250,16 @@ mod tests {
         let mut hive = Hive::new();
         hive.init();
 
-        let mut t0 = TransactionObject::new_random();
+        let t0 = TransactionObject::new_random();
         hive.storage_put(CFType::Transaction, &t0.hash, &t0);
         let t1 = hive.storage_load_transaction(&t0.hash).expect("failed to load transaction from db");
         assert_eq!(t0, t1.object);
 
-        let addr0 = ADDRESS_NULL;
+        let _addr0 = ADDRESS_NULL;
 
-        let random_sk = true;
+        let _random_sk = true;
 
-        let mut data = hex::decode(
+        let _data = hex::decode(
             "2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A\
             3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87\
             EC59ABDBD2FB5A00B0214EDBDA0A0A004F8A3DBBCC76744523A8A77484468E87EC59ABDBD2FB5A00B0214EDBDA0A\
@@ -290,7 +290,7 @@ mod tests {
     fn db_test() {
         use env_logger::LogBuilder;
         use log::{LogRecord, LogLevelFilter};
-        use env;
+        use crate::env;
 
         let format = |record: &LogRecord| {
             format!("[{}]: {}", record.level(), record.args())
@@ -311,7 +311,7 @@ mod tests {
         }
 
         builder.init().unwrap();
-        use model::transaction::{Hash, ADDRESS_NULL, HASH_SIZE};
+        use crate::model::transaction::{Hash, ADDRESS_NULL, HASH_SIZE};
 
         let mut hive = Hive::new();
         hive.init();
@@ -323,7 +323,7 @@ mod tests {
         assert!(hive.put_approvee(h1, h0));
         assert!(hive.put_approvee(h2, h0));
 
-        let hashes = hive.storage_load_approvee(&h1).expect("failed to load hashes");
+        let _hashes = hive.storage_load_approvee(&h1).expect("failed to load hashes");
     }
 }
 

@@ -6,7 +6,7 @@ extern crate ntrumls;
 
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
-use rocksdb::{DBIterator, DB, Options, IteratorMode, Direction, Column, WriteOptions, ReadOptions, Writable};
+use crate::rocksdb::{DBIterator, DB, Options, IteratorMode, Direction, Column, WriteOptions, ReadOptions, Writable};
 //use rocksdb::*;
 use std::io;
 use std::num;
@@ -14,11 +14,11 @@ use std::sync::Arc;
 use std::collections::{HashSet, HashMap, LinkedList};
 use ntrumls::*;
 
-use model::{Milestone, MilestoneObject};
-use model::transaction_validator::TransactionError;
-use model::transaction::*;
-use model::approvee::Approvee;
-use model::{StateDiffObject, StateDiff};
+use crate::model::{Milestone, MilestoneObject};
+use crate::model::transaction_validator::TransactionError;
+use crate::model::transaction::*;
+use crate::model::approvee::Approvee;
+use crate::model::{StateDiffObject, StateDiff};
 use serde::{Serialize, Deserialize};
 use serde_pm::{SerializedBuffer, to_buffer, to_boxed_buffer, from_stream};
 use std::time;
@@ -62,7 +62,7 @@ impl Hive {
     }
 
     pub fn init(&mut self) {
-        let mwm = 9;
+        let _mwm = 9;
         let coordinator = Address::from_str("P65DC4FEED4819C2910FA2DFC107399B7437ABAE2E7").unwrap();
         let mut th1 = HASH_NULL; // coordinator: 8000 -> Acc1
         let mut th2 = HASH_NULL; // coordinator: 2000 -> Acc2, trunk: th1, branch: th1
@@ -72,7 +72,7 @@ impl Hive {
         let mut mh2 = HASH_NULL; // coordiator: milestone: 2, trunk: mh1, branch: th4
         {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-            let mut genesis = TransactionObject {
+            let genesis = TransactionObject {
                 address: Address::from_str("PC19C342BA1A051A3BA7AF1DBBAA5E72469C94CC554").unwrap(),
                 attachment_timestamp: 1531147330u64 + 2, //time::SystemTime::now().elapsed()
                 // .unwrap().as_secs() + 2,
@@ -111,7 +111,7 @@ impl Hive {
 
         {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-            let mut genesis = TransactionObject {
+            let genesis = TransactionObject {
                 address: Address::from_str("PE138221B1A9CBEFCEAF03E17934A7373D6289F0536").unwrap(),
                 attachment_timestamp: 1531147330u64 + 3,
                 attachment_timestamp_lower_bound: 0u64,
@@ -150,7 +150,7 @@ impl Hive {
         // milestone
         {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-            let mut ms = TransactionObject {
+            let ms = TransactionObject {
                 address: ADDRESS_NULL,
                 attachment_timestamp: 1531147330u64 + 4,
                 attachment_timestamp_lower_bound: 0u64,
@@ -193,7 +193,7 @@ impl Hive {
 
         {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-            let mut genesis = TransactionObject {
+            let genesis = TransactionObject {
                 address: Address::from_str("PE138221B1A9CBEFCEAF03E17934A7373D6289F0536").unwrap(),
                 attachment_timestamp: 1531147330u64 + 4,
                 attachment_timestamp_lower_bound: 0u64,
@@ -231,7 +231,7 @@ impl Hive {
 
         {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-            let mut genesis = TransactionObject {
+            let genesis = TransactionObject {
                 address: Address::from_str("PC19C342BA1A051A3BA7AF1DBBAA5E72469C94CC554").unwrap(),
                 attachment_timestamp: 1531147330u64 + 5,
                 attachment_timestamp_lower_bound: 0u64,
@@ -270,7 +270,7 @@ impl Hive {
         // milestone
         {
             let mls = ntrumls::NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-            let mut ms = TransactionObject {
+            let ms = TransactionObject {
                 address: ADDRESS_NULL,
                 attachment_timestamp: 1531147330u64 + 9,
                 attachment_timestamp_lower_bound: 0u64,
@@ -474,7 +474,7 @@ impl Hive {
         let vec = self.db.get_cf(self.db.cf_handle(CF_NAMES[CFType::StateDiff as usize]).unwrap(), hash);
         match vec {
             Ok(res) => res.is_some(),
-            Err(e) => return false
+            Err(_e) => return false
         }
     }
 
@@ -619,8 +619,8 @@ impl Hive {
     }
 
     fn init_db() -> DB {
-        use rocksdb::MergeOperands;
-        fn concat_merge(new_key: &[u8],
+        use crate::rocksdb::MergeOperands;
+        fn concat_merge(_new_key: &[u8],
                         existing_val: Option<&[u8]>,
                         operands: &mut MergeOperands)
                         -> Vec<u8> {
@@ -645,7 +645,7 @@ impl Hive {
         opts.set_max_background_flushes(2);
         opts.add_merge_operator("bytes_concat", concat_merge);
 
-        let cfs_v = CF_NAMES.to_vec().iter().map(|name| {
+        let cfs_v = CF_NAMES.to_vec().iter().map(|_name| {
             let mut opts = Options::new();
             opts.set_max_write_buffer_number(2);
             opts.set_write_buffer_size(2 * 1024 * 1024);
@@ -663,7 +663,7 @@ impl Hive {
                 Hive::clear_db(&mut db);
                 return db;
             },
-            Err(e) => {
+            Err(_e) => {
                 opts.create_if_missing(true);
                 let mut db = DB::open(&opts, &path).expect("failed to create database");
 
@@ -674,7 +674,7 @@ impl Hive {
 
                 opts.add_merge_operator("bytes_concat", concat_merge);
 
-                let cfs_v = CF_NAMES.to_vec().iter().map(|name| {
+                let cfs_v = CF_NAMES.to_vec().iter().map(|_name| {
                     let mut opts = Options::new();
                     opts.set_max_write_buffer_number(2);
                     opts.set_write_buffer_size(2 * 1024 * 1024);
@@ -704,7 +704,7 @@ impl Hive {
         let mut buf = [0u8; 32];
         sha.result(&mut buf);
 
-        let addr_left = hex::encode(&buf[..])[24..].to_string();//.to_uppercase();
+        let _addr_left = hex::encode(&buf[..])[24..].to_string();//.to_uppercase();
         let offset = 32 - ADDRESS_SIZE + 1;
         let checksum_byte = Address::calculate_checksum(&buf[offset..]);
 
@@ -728,7 +728,7 @@ impl Hive {
         (addr, pk)
     }
 
-    fn add_transaction(&mut self, transaction: &TransactionObject) -> Result<(), Error> {
+    fn add_transaction(&mut self, _transaction: &TransactionObject) -> Result<(), Error> {
         unimplemented!();
         Ok(())
     }

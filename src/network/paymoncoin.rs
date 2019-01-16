@@ -8,15 +8,15 @@ use std::{
     time::Duration,
 };
 
-use storage::Hive;
-use network::node::*;
-use network::replicator_new::ReplicatorNew;
-use model::config::{PORT, Configuration, ConfigurationSettings};
-use model::config;
-use model::TipsViewModel;
-use model::transaction::Address;
-use utils::{AM, AWM};
-use model::*;
+use crate::storage::Hive;
+use crate::network::node::*;
+use crate::network::replicator_new::ReplicatorNew;
+use crate::model::config::{PORT, Configuration, ConfigurationSettings};
+use crate::model::config;
+use crate::model::TipsViewModel;
+use crate::model::transaction::Address;
+use crate::utils::{AM, AWM};
+use crate::model::*;
 use std::time;
 use std::str::FromStr;
 use crossbeam::scope;
@@ -45,32 +45,32 @@ impl PaymonCoin {
 
         let snapshot = Snapshot::init("db/snapshot.dat".to_string(), "".to_string()).expect("Can't \
         load snapshot");
-        let mut hive = Arc::new(Mutex::new(Hive::new()));
+        let hive = Arc::new(Mutex::new(Hive::new()));
 
         // used for shutdown replicator pool
         let (replicator_tx, replicator_rx) = channel::<()>();
         let (pmnc_tx, pmnc_rx) = channel::<()>();
 //        let (tx, rx) = channel();
 
-        let mut tips_vm: AM<TipsViewModel> = make_am!(TipsViewModel::new());
-        let mut transaction_requester: AM<TransactionRequester> = make_am!(TransactionRequester::new(hive.clone(), 0.001));
-        let mut transaction_validator = TransactionValidator::new(hive.clone(), tips_vm.clone(),
+        let tips_vm: AM<TipsViewModel> = make_am!(TipsViewModel::new());
+        let transaction_requester: AM<TransactionRequester> = make_am!(TransactionRequester::new(hive.clone(), 0.001));
+        let transaction_validator = TransactionValidator::new(hive.clone(), tips_vm.clone(),
                                                                   snapshot_timestamp, transaction_requester.clone());
-        let mut milestone = Milestone::new(hive.clone(), coordinator.clone(), snapshot,
+        let milestone = Milestone::new(hive.clone(), coordinator.clone(), snapshot,
                                            transaction_validator.clone(), true,
                                            num_keys_milestone, milestone_start_index, true);
         debug!("s3={}", config.get_string(ConfigurationSettings::Neighbors).unwrap());
 
-        let mut node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), config.clone(),
+        let node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), config.clone(),
                                                      replicator_tx, pmnc_rx,
                                                      transaction_validator.clone(),
                                                      transaction_requester.clone(),
                                                      tips_vm.clone(),
                                                      milestone.clone())));
-        let mut ledger_validator: AM<LedgerValidator> = make_am!(LedgerValidator::new(hive.clone(),
+        let ledger_validator: AM<LedgerValidator> = make_am!(LedgerValidator::new(hive.clone(),
                                                                               milestone.clone(),
                                                         transaction_requester.clone()));
-        let mut tips_manager = TipsManager::new(hive.clone(), milestone.clone(), ledger_validator
+        let tips_manager = TipsManager::new(hive.clone(), milestone.clone(), ledger_validator
             .clone(), transaction_validator.clone(), tips_vm.clone(), 15, true,
                                                 milestone_start_index);
         PaymonCoin {
@@ -104,7 +104,7 @@ impl PaymonCoin {
 
         let node_copy = self.node.clone();
         let config_copy = self.config.clone();
-        let replicator_rx = self.replicator_rx.take().unwrap();
+        let _replicator_rx = self.replicator_rx.take().unwrap();
 
         let replicator_jh = thread::spawn(move || {
             let mut replicator_pool = ReplicatorNew::new(&config_copy, Arc::downgrade(&node_copy));

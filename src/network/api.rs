@@ -8,20 +8,20 @@ use iron;
 use iron::{Iron, Request, Response, IronResult, AfterMiddleware, Chain, Listening};
 use iron::prelude::*;
 use iron::status;
-use network::Node;
-use network::paymoncoin::PaymonCoin;
-use utils::{AM, AWM};
+use crate::network::Node;
+use crate::network::paymoncoin::PaymonCoin;
+use crate::utils::{AM, AWM};
 use std;
 use std::io::Read;
-use network::rpc;
+use crate::network::rpc;
 use serde::{Serialize, Deserialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use model::transaction::*;
-use model::*;
+use crate::model::transaction::*;
+use crate::model::*;
 use std::collections::{HashMap, HashSet};
-use model::transaction_validator::TransactionError;
+use crate::model::transaction_validator::TransactionError;
 
 #[macro_export]
 macro_rules! format_success_response {
@@ -118,8 +118,8 @@ impl API {
 
         let mut visited_hashes = HashSet::new();
         let mut diff = HashMap::new();
-        let mut h0: Option<Hash>;
-        let mut h1: Option<Hash>;
+        let h0: Option<Hash>;
+        let h1: Option<Hash>;
 
         if let Some(hash) = reference {
             let hive = match pmnc.hive.lock() {
@@ -194,7 +194,7 @@ impl API {
         }
 
         let mut balances = HashMap::<Address, i64>::new();
-        let mut index;
+        let index;
 
         if let Ok(mls) = pmnc.milestone.lock() {
             index = mls.latest_snapshot.index;
@@ -464,7 +464,7 @@ impl API {
                              tags: &Vec<Hash>,
                              approvees: &Vec<Hash>) -> Result<Vec<Hash>, APIError> {
         let mut found_transactions = HashSet::<Hash>::new();
-        let mut contains_key = false;
+        let _contains_key = false;
 
         if addresses.is_empty() && tags.is_empty() && approvees.is_empty() {
             return Err(APIError::InvalidRequest);
@@ -523,7 +523,7 @@ impl API {
             None => return Ok(API::format_error_response("Wrong content-type")),
         };
 
-        let version = match req.headers.get_raw("X-PMNC-API-Version") {
+        let _version = match req.headers.get_raw("X-PMNC-API-Version") {
             Some(version) => format!("Version: {}\n", std::str::from_utf8(&version[0]).unwrap()),
             None => return Ok(API::format_error_response("Not API request")),
         };
@@ -534,7 +534,7 @@ impl API {
                                                                     "Error reading request")))?;
         let json_str = std::str::from_utf8(&body).map_err(|e| IronError::new(e,
                                                                              (status::InternalServerError, "Invalid UTF-8 string")))?;
-        let mut json: json::Value = json::from_str(json_str).map_err(|e| IronError::new(e,(status::InternalServerError, "Invalid JSON")))?;
+        let json: json::Value = json::from_str(json_str).map_err(|e| IronError::new(e,(status::InternalServerError, "Invalid JSON")))?;
 
         match json.as_object() {
             Some(o) => {
@@ -625,7 +625,7 @@ impl API {
                                         };
                                         return Ok(API::format_error_response("Internal error"));
                                     }
-                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
                                 };
                             }
                             "getNodeInfo" => {
@@ -665,7 +665,7 @@ impl API {
                                         };
                                         return Ok(API::format_error_response("Internal error"));
                                     }
-                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
                                 };
                             }
                             "getInclusionStates" => {
@@ -693,7 +693,7 @@ impl API {
                                             }
                                         }
                                     }
-                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
                                 }
                             }
                             "findTransactions" => {
@@ -719,12 +719,12 @@ impl API {
                                             }
                                         }
                                     }
-                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
                                 }
                             }
                             "getTips" => {
                                 match json::from_str::<rpc::GetTips>(&json_str) {
-                                    Ok(object) => {
+                                    Ok(_object) => {
                                         unsafe {
                                             if let Some(ref mut arc) = PMNC {
                                                 if let Ok(ref mut pmnc) = arc.lock() {
@@ -745,7 +745,7 @@ impl API {
                                             }
                                         }
                                     }
-                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
                                 }
                             }
                             "getTransactionsData" => {
@@ -771,7 +771,7 @@ impl API {
                                             }
                                         }
                                     }
-                                    Err(e) => return Ok(API::format_error_response("Invalid data"))
+                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
                                 }
                             }
                             _ => Ok(API::format_error_response("Unknown 'method' parameter"))

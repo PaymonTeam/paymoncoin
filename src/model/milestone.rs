@@ -1,12 +1,12 @@
-use model::transaction::*;
-use model::LedgerValidator;
-use model::snapshot::Snapshot;
-use model::TransactionValidator;
-use model::transaction_validator::TransactionError;
+use crate::model::transaction::*;
+use crate::model::LedgerValidator;
+use crate::model::snapshot::Snapshot;
+use crate::model::TransactionValidator;
+use crate::model::transaction_validator::TransactionError;
 
 use std::collections::{HashSet, HashMap, LinkedList};
-use utils::AM;
-use storage::Hive;
+use crate::utils::AM;
+use crate::storage::Hive;
 use std::thread;
 use std::time::SystemTime;
 use std::cmp::max;
@@ -145,7 +145,7 @@ impl Milestone {
 
             while !shutting_down {
                 let scan_time = SystemTime::now();
-                let mut previous_latest_milestone_index;
+                let previous_latest_milestone_index;
 
                 if let Ok(self_p) = milestone_clone_1.lock() {
                     shutting_down = self_p.shutting_down;
@@ -157,7 +157,7 @@ impl Milestone {
                     panic!("broken milestone mutex");
                 }
 
-                let mut hashes: Vec<Hash>;
+                let hashes: Vec<Hash>;
                 let mut hashes_is_ok = false;
                 // println!("hive lock 1");
                 if let Ok(hive) = hive.lock() {
@@ -311,7 +311,7 @@ impl Milestone {
             panic!("broken hive mutex");
         }
 
-        while let Some(mut milestone_obj) = closest_milestone.clone() {
+        while let Some(milestone_obj) = closest_milestone.clone() {
             if milestone_obj.index() <= latest.index() && !self.shutting_down {
 
                 if let Ok(tx_v) = self.transaction_validator.lock() {
@@ -388,10 +388,10 @@ impl Milestone {
     pub fn shutdown(&mut self){
         self.shutting_down = true;
 
-        if let Some(mut jh) = self.latest_milestone_tracker_thread.take() {
+        if let Some(jh) = self.latest_milestone_tracker_thread.take() {
             jh.join();
         };
-        if let Some(mut jh) = self.solid_milestone_tracker_thread.take() {
+        if let Some(jh) = self.solid_milestone_tracker_thread.take() {
             jh.join();
         };
     }

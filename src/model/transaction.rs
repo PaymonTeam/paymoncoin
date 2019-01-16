@@ -3,17 +3,17 @@ extern crate ntrumls;
 extern crate base64;
 
 use serde_pm_derive;
-
-use model::approvee::*;
+use std::fmt;
+use crate::model::approvee::*;
 use serde_pm::{Identifiable, SerializedBuffer, from_stream, to_buffer};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
 use std::ops::{Deref, DerefMut};
-use storage::hive::Hive;
+use crate::storage::hive::Hive;
 use std::collections::HashSet;
 use std::clone::Clone;
 use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
-use utils::defines::AM;
+use crate::utils::defines::AM;
 use std::str::FromStr;
 use hex;
 use serde::{
@@ -83,7 +83,7 @@ impl DerefMut for Hash {
 
 impl Serialize for Hash {
     // FIXME:
-    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
+    fn serialize<S>(&self, _serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
         S: Serializer {
         unimplemented!()
     }
@@ -98,7 +98,7 @@ impl Serialize for Hash {
 
 impl<'de> Deserialize<'de> for Hash {
     // FIXME:
-    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
+    fn deserialize<D>(_deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
         D: Deserializer<'de> {
         unimplemented!()
     }
@@ -115,8 +115,8 @@ impl<'de> Deserialize<'de> for Hash {
 
 }
 
-impl super::super::std::fmt::Debug for Hash {
-    fn fmt(&self, f: &mut super::super::std::fmt::Formatter) -> super::super::std::fmt::Result {
+impl fmt::Debug for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 //        use self::rustc_serialize::hex::ToHex;
         let strs: Vec<String> = self.0.iter()
             .map(|b| format!("{:02X}", b))
@@ -175,7 +175,7 @@ impl FromStr for Address {
 
 impl Serialize for Address {
     // FIXME:
-    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
+    fn serialize<S>(&self, _serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
         S: Serializer {
         unimplemented!()
     }
@@ -187,7 +187,7 @@ impl Serialize for Address {
 
 impl<'de> Deserialize<'de> for Address {
     // FIXME:
-    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
+    fn deserialize<D>(_deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
         D: Deserializer<'de> {
         unimplemented!()
     }
@@ -198,8 +198,8 @@ impl<'de> Deserialize<'de> for Address {
 
 }
 
-impl super::super::std::fmt::Debug for Address {
-    fn fmt(&self, f: &mut super::super::std::fmt::Formatter) -> super::super::std::fmt::Result {
+impl fmt::Debug for Address {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 //        use self::rustc_serialize::hex::ToHex;
         let strs: Vec<String> = self.0.iter()
             .map(|b| format!("{:02X}", b))
@@ -245,7 +245,7 @@ impl Address {
         let mut buf = [0u8; 32];
         sha.result(&mut buf);
 
-        let addr_left = hex::encode(&buf[..])[24..].to_string(); //.to_uppercase();
+        let _addr_left = hex::encode(&buf[..])[24..].to_string(); //.to_uppercase();
         let offset = 32 - ADDRESS_SIZE + 1;
         let checksum_byte = Address::calculate_checksum(&buf[offset..]);
 
@@ -334,7 +334,7 @@ impl Transaction {
     }
 
     pub fn get_approvers(&mut self, hive: &AM<Hive>) -> HashSet<Hash> {
-        let mut res = self.approvers.clone();
+        let res = self.approvers.clone();
         match res {
             Some(aprv) => aprv.get_hashes(),
             None => match Approvee::load(hive, &self.get_hash()) {
@@ -362,7 +362,7 @@ impl Transaction {
 
     // Generates empty transaction with hash
     pub fn from_hash(hash: Hash) -> Self {
-        let mut transaction = TransactionObject::from_hash(hash);
+        let transaction = TransactionObject::from_hash(hash);
         let bytes = to_buffer(&transaction).unwrap();
 //        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
 //        transaction.serialize_to_stream(&mut bytes);
@@ -383,7 +383,7 @@ impl Transaction {
     }
 
     pub fn from_bytes(mut bytes: SerializedBuffer) -> Self {
-        let mut transaction = from_stream::<TransactionObject>(&mut bytes).expect("failed to create tx from bytex");
+        let transaction = from_stream::<TransactionObject>(&mut bytes).expect("failed to create tx from bytex");
 //        let mut transaction = TransactionObject::new();
 //        transaction.read_params(&mut bytes);
 //        transaction.data_type = TransactionType::Full;
@@ -396,13 +396,13 @@ impl Transaction {
         }
     }
 
-    pub fn from_object(mut transaction: TransactionObject) -> Self {
+    pub fn from_object(transaction: TransactionObject) -> Self {
 //        use network::packet::calculate_object_size;
 //        let transaction_size = calculate_object_size(&transaction);
 //        let mut bytes = SerializedBuffer::new_with_size(transaction_size);
 //        transaction.serialize_to_stream(&mut bytes);
         use serde_pm::to_buffer;
-        let mut bytes = to_buffer(&transaction).unwrap();
+        let bytes = to_buffer(&transaction).unwrap();
 
         Transaction {
             weight_magnitude: transaction.hash.trailing_zeros(),
@@ -414,7 +414,7 @@ impl Transaction {
 
     pub fn new() -> Self {
         let transaction = TransactionObject::new();
-        let mut bytes = to_buffer(&transaction).unwrap();
+        let bytes = to_buffer(&transaction).unwrap();
 //        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
 //        transaction.serialize_to_stream(&mut bytes);
 
@@ -434,7 +434,7 @@ impl Transaction {
     }
 
     pub fn new_random() -> Self {
-        let mut transaction = TransactionObject::new_random();
+        let transaction = TransactionObject::new_random();
         let bytes = to_buffer(&transaction).unwrap();
 //        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
 //        transaction.serialize_to_stream(&mut bytes);
@@ -552,20 +552,20 @@ impl TransactionObject {
         use rand::thread_rng;
 
         let mut signature = Signature(Vec::new());
-        let mut signature_pubkey = PublicKey(Vec::new());
+        let signature_pubkey = PublicKey(Vec::new());
         let mut address = ADDRESS_NULL;
         let mut branch_transaction = HASH_NULL;
         let mut trunk_transaction = HASH_NULL;
         let mut bundle = HASH_NULL;
-        let mut hash = HASH_NULL;
+        let hash = HASH_NULL;
 
         let attachment_timestamp = 0u64;
         let attachment_timestamp_lower_bound = 0u64;
         let attachment_timestamp_upper_bound = 0u64;
         let timestamp = 0u64;
         let nonce = 0u64;
-        let current_index = 0u32;
-        let last_index = 0u32;
+        let _current_index = 0u32;
+        let _last_index = 0u32;
         let value = 0u32;
         let snapshot = 0u32;
         thread_rng().fill_bytes(&mut signature.0);
@@ -610,7 +610,7 @@ pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
     }
 
     // check nonce
-    let mut nonce = 0;
+    let _nonce = 0;
     let mut sha = Sha3::sha3_256();
     let mut buf = [0u8; 32];
 

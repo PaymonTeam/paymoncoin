@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use model::transaction::Hash;
+use crate::model::transaction::Hash;
 use rand::{Rng, thread_rng};
 
 extern crate linked_hash_set;

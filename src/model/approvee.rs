@@ -1,9 +1,9 @@
 use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
 
-use model::transaction::*;
-use storage::hive::Hive;
-use utils::defines::AM;
+use crate::model::transaction::*;
+use crate::storage::hive::Hive;
+use crate::utils::defines::AM;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Approvee {
@@ -28,7 +28,7 @@ impl Approvee {
 
     pub fn load(hive: &AM<Hive>, hash: &Hash) -> Option<Self> {
         // println!("hive lock 8");
-        if let Ok(mut hive) = hive.lock() {
+        if let Ok(hive) = hive.lock() {
             // println!("hive unlock 8");
             return Some(Approvee::new(&vec_to_set(&match hive.storage_load_approvee(hash) {
                 Some(vec_h) => vec_h,

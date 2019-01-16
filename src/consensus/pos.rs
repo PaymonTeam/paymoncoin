@@ -34,7 +34,7 @@ use crate::network::{
     rpc::{self, ConsensusValue},
 };
 use serde_pm::{to_boxed_buffer, to_buffer, SerializedBuffer, Identifiable};
-use utils::AM;
+use crate::utils::AM;
 
 use rhododendron as bft;
 
@@ -219,7 +219,7 @@ impl<'a> SignatureScheme for Secp256k1Signature<'a> {
 impl<'a> Secp256k1Signature<'a> {
     pub fn new(sk: <Self as SignatureScheme>::SecretKey) -> Self {
         use rand::{Rng, thread_rng};
-        let k1 = secp256k1::Secp256k1::new();
+        let _k1 = secp256k1::Secp256k1::new();
 
         Secp256k1Signature {
             context: secp256k1::Secp256k1::new(),
@@ -277,7 +277,7 @@ impl<T, S> bft::Context for TestContext<T, S>
     }
 
     fn proposal(&self) -> Self::CreateProposal {
-        let mut proposal = self.proposal.lock().unwrap().take().unwrap();
+        let proposal = self.proposal.lock().unwrap().take().unwrap();
 
         Ok(proposal).into_future()
     }
@@ -414,7 +414,7 @@ impl<T, S> bft::Context for Context<T, S>
     }
 
     fn proposal(&self) -> Self::CreateProposal {
-        let mut proposal = self.proposal.lock().unwrap().take().unwrap();
+        let proposal = self.proposal.lock().unwrap().take().unwrap();
 
         Ok(proposal).into_future()
     }
@@ -506,7 +506,7 @@ impl<T, S> bft::Context for Context<T, S>
 fn init_log() {
     use env_logger::LogBuilder;
     use log::{LogRecord, LogLevelFilter};
-    use env;
+    use crate::env;
 
     let format = |record: &LogRecord| {
         format!("[{}]: {}", record.level(), record.args())

@@ -21,14 +21,14 @@ use std::io::{BufReader, BufRead};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Instant, Duration};
 use std::thread;
-use network::Node;
-use model::config::{Configuration, ConfigurationSettings, PORT};
+use crate::network::Node;
+use crate::model::config::{Configuration, ConfigurationSettings, PORT};
 use futures::sync::mpsc;
 use futures::sync::mpsc::{Sender, UnboundedSender};
 use crossbeam::scope;
 
-use utils::AM;
-use network::Neighbor;
+use crate::utils::AM;
+use crate::network::Neighbor;
 use serde_pm::{SerializedBuffer};
 
 pub enum ReadState<A> {
@@ -190,7 +190,7 @@ impl ReplicatorNew {
         let addr = self.addr.clone();
         let node = self.node.clone();
 
-        let worker = stream::iter_ok::<_, io::Error>(iter::repeat(())).take(1).for_each(move |j| {
+        let worker = stream::iter_ok::<_, io::Error>(iter::repeat(())).take(1).for_each(move |_j| {
             let socket = TcpListener::bind(&addr).unwrap();
             info!("Listening on: {}", addr);
 
@@ -211,7 +211,7 @@ impl ReplicatorNew {
 
             let neighbors_c = neighbors.clone();
 
-            let connector = Interval::new(Instant::now(), Duration::from_millis(5000)).for_each(move |instant| {
+            let connector = Interval::new(Instant::now(), Duration::from_millis(5000)).for_each(move |_instant| {
                 let mut neighbors = neighbors.lock().unwrap();
 //                debug!("neighbors count={}", neighbors.len());
                 for n in neighbors.iter_mut() {
@@ -230,7 +230,7 @@ impl ReplicatorNew {
                                                   stdin_tx);
 
                         tokio::spawn({
-                            stdout.for_each(move |chunk| {
+                            stdout.for_each(move |_chunk| {
                                 Ok(())
                             })
                                 .map_err(move |e| {
@@ -290,7 +290,7 @@ impl ReplicatorNew {
                         }
                     }
 
-                    let connections_inner = connections.clone();
+                    let _connections_inner = connections.clone();
                     let reader = BufReader::new(reader);
 
                     let iter = stream::iter_ok::<_, io::Error>(iter::repeat(()));
@@ -362,7 +362,7 @@ mod tcp {
     use std::net::SocketAddr;
     use std::sync::{Mutex, Arc};
     use super::{ReplicatorSink};
-    use network::Neighbor;
+    use crate::network::Neighbor;
     use futures::sync::mpsc::UnboundedSender;
 
     pub fn connect(addr: &SocketAddr,
@@ -384,7 +384,7 @@ mod tcp {
             }
 
             let (sink, stream) = Bytes.framed(stream).split();//stream.split();//
-            let mut neighbor_c = neighbor.clone();
+            let neighbor_c = neighbor.clone();
             tokio::spawn(stdin.forward(sink).then(move |result| {
                 if let Err(e) = result {
                     let mut neighbor = neighbor_c.lock().unwrap();

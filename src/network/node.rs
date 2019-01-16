@@ -1,27 +1,27 @@
 use std::io;
-use model::config::{Configuration, ConfigurationSettings};
+use crate::model::config::{Configuration, ConfigurationSettings};
 use std::sync::{Arc, Weak, Mutex};
-use network::neighbor::Neighbor;
+use crate::network::neighbor::Neighbor;
 use std::net::{TcpStream, SocketAddr, IpAddr};
 use std::sync::mpsc::{Sender, Receiver};
 use std::collections::{VecDeque, BTreeSet};
-use model::{TransactionObject, Transaction, TransactionType};
+use crate::model::{TransactionObject, Transaction, TransactionType};
 use ntrumls::{NTRUMLS, PQParamSetID, PublicKey, PrivateKey};
-use storage::Hive;
+use crate::storage::Hive;
 use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use model::transaction;
-use model::transaction::{Hash, HASH_NULL};
+use crate::model::transaction;
+use crate::model::transaction::{Hash, HASH_NULL};
 use rand::{Rng, thread_rng};
-use utils::{AM, AWM};
-use network::{rpc};
-use model::*;
+use crate::utils::{AM, AWM};
+use crate::network::{rpc};
+use crate::model::*;
 use futures::{Stream, Async};
 use futures::prelude::*;
 use futures::executor::Executor;
-use consensus::{self, Validator, pos::{
+use crate::consensus::{self, Validator, pos::{
     Error,
     Context,
     Secp256k1Signature,
@@ -367,7 +367,7 @@ impl Node {
                     if let Ok(mut queue) = arc.lock() {
                         if let Some(mut t) = queue.pop_front() {
                             info!("received tx: {:?}", t.get_hash());
-                            let address = t.object.address.clone();
+                            let _address = t.object.address.clone();
                             let validated = transaction::validate_transaction(&mut t, 3);
                             info!("validated={}", validated);
 
@@ -409,25 +409,30 @@ impl Node {
         }
     }
 
-    fn bft_thread(running: Weak<AtomicBool>, neighbors: AWM<Vec<AM<Neighbor>>>, mut bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>) {
-        struct S {
-            bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>,
-        };
-        impl Future for S {
-            type Item = ();
-            type Error = ();
+//    fn bft_thread(running: Weak<AtomicBool>, neighbors: AWM<Vec<AM<Neighbor>>>, mut bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>) {
+//        struct S {
+//            bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>,
+//        };
+//        impl Future for S {
+//            type Item = ();
+//            type Error = ();
+//
+//            fn poll(&mut self) -> Result<Async<<Self as Future>::Item>, <Self as Future>::Error> {
+//                tokio::spawn(self.bft_in.for_each(|(i, c)| {
+//                    println!("{}", i);
+//                }));
+//                Ok(Async::NotReady)
+//            }
+//        }
+//        tokio::run(S{bft_in});
+//    }
 
-            fn poll(&mut self) -> Result<Async<<Self as Future>::Item>, <Self as Future>::Error> {
-                tokio::spawn(self.bft_in.for_each(|(i, c)| {
-                    println!("{}", i);
-                }));
-                Ok(Async::NotReady)
-            }
-        }
-        tokio::run(S{bft_in});
-    }
+    fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>, tr: AWM<TransactionRequester>, bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>) {
+        bft_in.for_each(|(i, c)| {
+            println!("{}", i);
+            futures::future::ok(())
+        }).wait();
 
-    fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>, tr: AWM<TransactionRequester>, mut bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>) {
         loop {
 
 //            tokio::spawn(bft_in).
@@ -442,9 +447,7 @@ impl Node {
 //                    debug!("bft_in returned something wrong");
 //                }
 //            }
-            bft_in.for_each(|(i, c)| {
-                println!("{}", i);
-            }).wait();
+
 
             if let Some(arc) = running.upgrade() {
                 let b = arc.load(Ordering::SeqCst);
@@ -515,8 +518,8 @@ impl Node {
     }
 
     pub fn on_connection_data_received(&mut self, mut data: SerializedBuffer, addr: SocketAddr) {
-        let mut neighbor;
-        if let Ok(mut neighbors) = self.neighbors.lock() {
+        let neighbor;
+        if let Ok(neighbors) = self.neighbors.lock() {
             neighbor = match neighbors.iter().find(
                 |arc| {
                     if let Ok(n) = arc.lock() { return n.addr.ip() == addr.ip() }
@@ -531,15 +534,15 @@ impl Node {
         } else {
             panic!("broken neighbors mutex");
         }
-        let length = data.limit();
+        let _length = data.limit();
 
 //        if length == 4 {
 //            connection.close();
 //            return;
 //        }
 
-        let mark = data.position();
-        let message_id = data.read_i64().unwrap();
+        let _mark = data.position();
+        let _message_id = data.read_i64().unwrap();
         let message_length = data.read_i32().unwrap();
 
         if message_length != data.remaining() as i32 {
@@ -553,10 +556,10 @@ impl Node {
         use serde::{Serialize};
         use serde_pm::Identifiable;
 
-        let txid = TransactionObject::primary_type_id();
-        let cvid = rpc::ConsensusValue::primary_type_id();
+        let _txid = TransactionObject::primary_type_id();
+        let _cvid = rpc::ConsensusValue::primary_type_id();
         match svuid {
-            txid => {
+            _txid => {
                 let mut transaction_object = from_stream(&mut data).expect("failed to deserialize tx");
 //                let mut transaction_object = TransactionObject::new();
 //                transaction_object.read_params(&mut data);
@@ -584,7 +587,7 @@ impl Node {
 //                    queue.push_back((hash, neighbor.clone()));
 //                }
 //            },
-            cvid => {
+            _cvid => {
                 let v = from_stream(&mut data).unwrap();
                 self.bft_out.unbounded_send(v);
             }
@@ -610,7 +613,7 @@ impl Node {
             th.join();
         }
 
-        while let Some(th) = self.scoped_thread_join_handles.pop_front() {}
+        while let Some(_th) = self.scoped_thread_join_handles.pop_front() {}
     }
 }
 

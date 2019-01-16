@@ -1,9 +1,9 @@
 extern crate linked_hash_set;
 
-use utils::{AM, AWM};
-use storage::Hive;
-use model::{TipsViewModel, Transaction};
-use model::transaction::*;
+use crate::utils::{AM, AWM};
+use crate::storage::Hive;
+use crate::model::{TipsViewModel, Transaction};
+use crate::model::transaction::*;
 use std::time::Duration;
 use std::thread::JoinHandle;
 use std::thread;
@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::{HashSet, LinkedList};
 use std::sync::atomic::{AtomicBool, Ordering};
 use self::linked_hash_set::LinkedHashSet;
-use model::TransactionRequester;
+use crate::model::TransactionRequester;
 
 // TODO: make Mutex
 pub static mut SNAPSHOT_TIMESTAMP: u64 = 0; //Duration = Duration::from_secs(0);
@@ -265,7 +265,7 @@ impl TransactionValidator {
                     // println!("hive unlock 27");
                     let approvers = transaction.get_approvers(&hive);
                     // TODO: optimize lock
-                    for h in approvers {
+                    for _h in approvers {
                         let mut tx;
                         // println!("hive lock 28");
                         if let Ok(mut hive) = hive.lock() {
@@ -331,7 +331,7 @@ impl TransactionValidator {
             let branch_tx;
 
             // println!("hive lock 29");
-            if let Ok(mut hive) = self.hive.lock() {
+            if let Ok(hive) = self.hive.lock() {
                 if let Some(tx) = hive.storage_load_transaction(&transaction.object
                     .trunk_transaction) {
                     trunk_tx = tx;
@@ -387,7 +387,7 @@ impl TransactionValidator {
 
         let approvers = transaction.get_approvers(&self.hive);
         // println!("hive lock 31");
-        if let Ok(mut hive) = self.hive.lock() {
+        if let Ok(_hive) = self.hive.lock() {
             if let Ok(mut tvm) = self.tips_view_model.lock() {
 //                println!(2);
                 if approvers.len() == 0 {

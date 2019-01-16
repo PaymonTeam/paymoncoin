@@ -2,7 +2,7 @@ extern crate futures;
 
 use std::io::Error;
 
-use model::config::{Configuration, ConfigurationSettings};
+use crate::model::config::{Configuration, ConfigurationSettings};
 use std::sync::{Arc, Weak, Mutex};
 use mio::tcp::TcpStream;
 use std::collections::VecDeque;
@@ -10,7 +10,7 @@ use serde::{Serialize, Deserialize};
 use serde_pm::{SerializedBuffer, to_buffer, Identifiable};
 use std::net::{SocketAddr, IpAddr};
 //use network::replicator::*;
-use network::replicator_new::*;
+use crate::network::replicator_new::*;
 use std::fmt::{Debug, Formatter};
 use std::fmt;
 use futures::Stream;
@@ -75,7 +75,7 @@ impl Neighbor {
         self.addr.clone()
     }
 
-    pub fn send_packets<S, T>(&mut self, stream: S) where S: Stream<Item=T, Error=()>, T: Serialize + Identifiable {
+    pub fn send_packets<S, T>(&mut self, _stream: S) where S: Stream<Item=T, Error=()>, T: Serialize + Identifiable {
 //        stream.map(|p| {
 //
 //        });

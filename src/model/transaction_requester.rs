@@ -1,12 +1,12 @@
 extern crate linked_hash_set;
 
 use self::linked_hash_set::LinkedHashSet;
-use model::transaction::*;
+use crate::model::transaction::*;
 use std::time::{Duration, SystemTime};
 use std::time;
 use rand::{Rng, thread_rng};
-use storage::Hive;
-use utils::*;
+use crate::storage::Hive;
+use crate::utils::*;
 
 const MAX_TX_REQ_QUEUE_SIZE: usize = 10000usize;
 
