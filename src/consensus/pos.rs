@@ -28,7 +28,7 @@ use tokio;
 use tokio_timer::{self, Timer};
 use serde::Serialize;
 
-use network::{
+use crate::network::{
     Neighbor,
     node::{PacketData, Pair},
     rpc::{self, ConsensusValue},

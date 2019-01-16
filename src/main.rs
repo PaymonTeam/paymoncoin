@@ -113,11 +113,11 @@ fn main() {
             drop(api);
         });
 
-        thread::sleep(Duration::from_secs(10));
+//        thread::sleep(Duration::from_secs(10));
 //            if let Ok(n) = node_arc.lock() {
 //                n.neighbors.lock().pu
 //            }
-        thread::sleep(Duration::from_secs(10000));
+//        thread::sleep(Duration::from_secs(10000));
 
         {
             //            api_running.store(false, Ordering::SeqCst);

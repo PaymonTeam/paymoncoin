@@ -409,6 +409,24 @@ impl Node {
         }
     }
 
+    fn bft_thread(running: Weak<AtomicBool>, neighbors: AWM<Vec<AM<Neighbor>>>, mut bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>) {
+        struct S {
+            bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>,
+        };
+        impl Future for S {
+            type Item = ();
+            type Error = ();
+
+            fn poll(&mut self) -> Result<Async<<Self as Future>::Item>, <Self as Future>::Error> {
+                tokio::spawn(self.bft_in.for_each(|(i, c)| {
+                    println!("{}", i);
+                }));
+                Ok(Async::NotReady)
+            }
+        }
+        tokio::run(S{bft_in});
+    }
+
     fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>, tr: AWM<TransactionRequester>, mut bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>) {
         loop {
 
@@ -424,6 +442,9 @@ impl Node {
 //                    debug!("bft_in returned something wrong");
 //                }
 //            }
+            bft_in.for_each(|(i, c)| {
+                println!("{}", i);
+            }).wait();
 
             if let Some(arc) = running.upgrade() {
                 let b = arc.load(Ordering::SeqCst);
@@ -443,15 +464,15 @@ impl Node {
                 }
             }
 
-            async {
-                let s = await!(bft_in.map(|(_, v)| v).collect());
-            }
+//            async {
+//                let s = await!(bft_in.map(|(_, v)| v).collect());
+//            }
             for packet in to_send {
                 if let Some(arc) = neighbors.upgrade() {
                     if let Ok(neighbors) = arc.lock() {
                         for n in neighbors.iter() {
                             if let Ok(mut n) = n.lock() {
-                                n.send_packets(s.clone());
+//                                n.send_packets(s.clone());
                                 // TODO: make delay and clone neighbors list
                                 info!("sending to {:?}", n.addr);
                                 n.send_packet(packet.clone());
