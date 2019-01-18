@@ -7,19 +7,26 @@ use super::serializable::SerializedBuffer;
 
 use utils::{safe_uint_cast};
 
-pub struct Deserializer<'ids> {
-    buff: &'ids mut SerializedBuffer,
+pub struct Deserializer<'de> {
+    buff: &'de mut SerializedBuffer,
 }
 
-impl<'ids> Deserializer<'ids> {
-    pub fn new(stream: &'ids mut SerializedBuffer,) -> Self {
+impl<'de> Deserializer<'de> {
+    pub fn new(stream: &'de mut SerializedBuffer) -> Self {
         Deserializer {
             buff: stream,
         }
     }
 }
 
-impl<'de, 'ids, 'a> de::Deserializer<'de> for &'a mut Deserializer<'ids> {
+//#[derive(Debug)]
+struct SeqAccess<'a, 'ids: 'a> {
+    de: &'a mut Deserializer<'ids>,
+    len: u32,
+    next_index: u32,
+}
+
+impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value> where
@@ -118,7 +125,11 @@ impl<'de, 'ids, 'a> de::Deserializer<'de> for &'a mut Deserializer<'ids> {
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_bytes");
-        visitor.visit_bytes(&self.buff.read_byte_array()?)
+//        visitor.visit_byte_buf(self.buff.read_byte_array()?)
+        let vec = &self.buff.buffer; //.as_ref();
+//        let vec = self.buff.read_byte_array()?;
+//        visitor.visit_bytes(vec)
+        visitor.visit_borrowed_bytes(vec)
     }
 
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value> where
@@ -217,20 +228,13 @@ impl<'de, 'ids, 'a> de::Deserializer<'de> for &'a mut Deserializer<'ids> {
     }
 }
 
-//#[derive(Debug)]
-struct SeqAccess<'a, 'ids: 'a> {
-    de: &'a mut Deserializer<'ids>,
-    len: u32,
-    next_index: u32,
-}
-
-impl<'a, 'ids> SeqAccess<'a, 'ids> {
-    fn new(de: &'a mut Deserializer<'ids>, len: u32) -> SeqAccess<'a, 'ids> {
+impl<'a, 'de> SeqAccess<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>, len: u32) -> SeqAccess<'a, 'de> {
         SeqAccess { de, len, next_index: 0 }
     }
 }
 
-impl<'de, 'a, 'ids> de::SeqAccess<'de> for SeqAccess<'a, 'ids> {
+impl<'de, 'a> de::SeqAccess<'de> for SeqAccess<'a, 'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
@@ -253,17 +257,17 @@ impl<'de, 'a, 'ids> de::SeqAccess<'de> for SeqAccess<'a, 'ids> {
     }
 }
 
-struct EnumVariantAccess<'a, 'ids: 'a> {
-    de: &'a mut Deserializer<'ids>,
+struct EnumVariantAccess<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
 }
 
-impl<'a, 'ids> EnumVariantAccess<'a, 'ids> {
-    fn new(de: &'a mut Deserializer<'ids>) -> EnumVariantAccess<'a, 'ids> {
+impl<'a, 'de> EnumVariantAccess<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>) -> EnumVariantAccess<'a, 'de> {
         EnumVariantAccess { de }
     }
 }
 
-impl<'de, 'a, 'ids> de::EnumAccess<'de> for EnumVariantAccess<'a, 'ids>
+impl<'de, 'a> de::EnumAccess<'de> for EnumVariantAccess<'a, 'de>
 {
     type Error = Error;
     type Variant = Self;
@@ -282,7 +286,7 @@ impl<'de, 'a, 'ids> de::EnumAccess<'de> for EnumVariantAccess<'a, 'ids>
     }
 }
 
-impl<'de, 'a, 'ids> de::VariantAccess<'de> for EnumVariantAccess<'a, 'ids>
+impl<'de, 'a> de::VariantAccess<'de> for EnumVariantAccess<'a, 'de>
 {
     type Error = Error;
 
