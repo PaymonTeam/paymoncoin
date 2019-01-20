@@ -1,0 +1,988 @@
+// Copyright 2017 Parity Technologies (UK) Ltd.
+// This file is part of Rhododendron
+
+// Rhododendron is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// Rhododendron is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with Rhododendron  If not, see <http://www.gnu.org/licenses/>.
+
+//! BFT Agreement based on a rotating proposer in different rounds, generic futures-based implementation.
+//!
+//! Attempt to reach BFT agreement on a candidate. Not ready for production.
+//!
+//! Agreement is between `n` nodes, `max_faulty` of whom are faulty.
+//! `max_faulty` should be less than 1/3 of `nodes`, otherwise agreement may never be reached.
+//!
+//! Initiate agreement by calling `agree` with a generic `Context`, an input stream, and an
+//! output sink. The input should never logically conclude and contain messages from all other nodes,
+//! while the output sink
+//!
+//! Note that it is possible to witness agreement being reached without ever
+//! seeing the candidate. Any candidates seen will be checked for validity.
+//!
+//! Although technically the agreement will always complete (given the eventual
+//! delivery of messages), in practice it is possible for this future to
+//! conclude without having witnessed the conclusion.
+//!
+//! Users of the `Agreement` future should schedule it to be pre-empted
+//! by an external import of an agreed value.
+
+#[cfg_attr(test, macro_use)]
+extern crate futures;
+
+#[macro_use]
+extern crate log;
+
+#[macro_use]
+extern crate serde_pm_derive;
+extern crate serde_pm;
+
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
+
+#[cfg(test)]
+extern crate tokio_timer;
+
+#[cfg(any(test, feature="codec"))]
+extern crate parity_codec as codec;
+#[cfg(any(test, feature="codec"))]
+#[macro_use]
+extern crate parity_codec_derive;
+
+use std::collections::{HashMap, BTreeMap, VecDeque};
+use std::collections::hash_map;
+use std::fmt::Debug;
+use std::hash::Hash;
+use serde::{Serialize, Deserialize};
+use futures::{future, Future, Stream, Sink, Poll, Async, AsyncSink};
+
+use self::accumulator::State;
+
+pub use self::accumulator::{Accumulator, Justification, PrepareJustification, UncheckedJustification, Misbehavior};
+
+pub mod accumulator;
+
+#[cfg(test)]
+mod tests;
+
+/// Votes during a round.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature="codec"), derive(Encode, Decode))]
+pub enum Vote<D> {
+	/// Prepare to vote for proposal with digest D.
+	Prepare(u32, D),
+	/// Commit to proposal with digest D..
+	Commit(u32, D),
+	/// Propose advancement to a new round.
+	AdvanceRound(u32),
+}
+
+impl<D> Vote<D> {
+	/// Extract the round number.
+	pub fn round_number(&self) -> u32 {
+		match *self {
+			Vote::Prepare(round, _) => round,
+			Vote::Commit(round, _) => round,
+			Vote::AdvanceRound(round) => round,
+		}
+	}
+}
+
+/// Messages over the proposal.
+/// Each message carries an associated round number.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature="codec"), derive(Encode, Decode))]
+pub enum Message<C, D> {
+	/// A proposal itself.
+	Propose(u32, C),
+	/// A vote of some kind, localized to a round number.
+	Vote(Vote<D>),
+}
+
+impl<C, D> From<Vote<D>> for Message<C, D> {
+	fn from(vote: Vote<D>) -> Self {
+		Message::Vote(vote)
+	}
+}
+
+/// A localized proposal message. Contains two signed pieces of data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature="codec"), derive(Encode, Decode))]
+pub struct LocalizedProposal<C, D, V, S> {
+	/// The round number.
+	pub round_number: u32,
+	/// The proposal sent.
+	pub proposal: C,
+	/// The digest of the proposal.
+	pub digest: D,
+	/// The sender of the proposal
+	pub sender: V,
+	/// The signature on the message (propose, round number, digest)
+	pub digest_signature: S,
+	/// The signature on the message (propose, round number, proposal)
+	pub full_signature: S,
+}
+
+/// A localized vote message, including the sender.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature="codec"), derive(Encode, Decode))]
+pub struct LocalizedVote<D, V, S> {
+	/// The message sent.
+	pub vote: Vote<D>,
+	/// The sender of the message
+	pub sender: V,
+	/// The signature of the message.
+	pub signature: S,
+}
+
+/// A localized message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature="codec"), derive(Encode, Decode))]
+pub enum LocalizedMessage<C, D, V, S> {
+	/// A proposal.
+	Propose(LocalizedProposal<C, D, V, S>),
+	/// A vote.
+	Vote(LocalizedVote<D, V, S>),
+}
+
+impl<C, D, V, S> LocalizedMessage<C, D, V, S> {
+	/// Extract the sender.
+	pub fn sender(&self) -> &V {
+		match *self {
+			LocalizedMessage::Propose(ref proposal) => &proposal.sender,
+			LocalizedMessage::Vote(ref vote) => &vote.sender,
+		}
+	}
+
+	/// Extract the round number.
+	pub fn round_number(&self) -> u32 {
+		match *self {
+			LocalizedMessage::Propose(ref proposal) => proposal.round_number,
+			LocalizedMessage::Vote(ref vote) => vote.vote.round_number(),
+		}
+	}
+}
+
+impl<C, D, V, S> From<LocalizedVote<D, V, S>> for LocalizedMessage<C, D, V, S> {
+	fn from(vote: LocalizedVote<D, V, S>) -> Self {
+		LocalizedMessage::Vote(vote)
+	}
+}
+
+/// A reason why we are advancing round.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature="codec"), derive(Encode, Decode))]
+pub enum AdvanceRoundReason {
+	/// We received enough `AdvanceRound` messages to advance to the next round.
+	Timeout,
+	/// We got enough `Prepare` messages for a future round to fast-forward to it.
+	WasBehind,
+}
+
+/// Context necessary for agreement.
+///
+/// Provides necessary types for protocol messages, and functions necessary for a
+/// participant to evaluate and create those messages.
+pub trait Context {
+	/// Errors which can occur from the futures in this context.
+	type Error: From<InputStreamConcluded>;
+	/// Candidate proposed.
+	type Candidate: Debug + Eq + Clone + Serialize;
+	/// Candidate digest.
+	type Digest: Debug + Hash + Eq + Clone + Serialize;
+	/// Authority ID.
+	type AuthorityId: Debug + Hash + Eq + Clone + Serialize;
+	/// Signature.
+	type Signature: Debug + Eq + Clone + Serialize;
+	/// A future that resolves when a round timeout is concluded.
+	type RoundTimeout: Future<Item=(), Error=Self::Error>;
+	/// A future that resolves when a proposal is ready.
+	type CreateProposal: Future<Item=Self::Candidate, Error=Self::Error>;
+	/// A future that resolves when a proposal has been evaluated.
+	type EvaluateProposal: Future<Item=bool, Error=Self::Error>;
+
+	/// Get the local authority ID.
+	fn local_id(&self) -> Self::AuthorityId;
+
+	/// Get the best proposal.
+	fn proposal(&self) -> Self::CreateProposal;
+
+	/// Get the digest of a candidate.
+	fn candidate_digest(&self, candidate: &Self::Candidate) -> Self::Digest;
+
+	/// Sign a message using the local authority ID.
+	/// In the case of a proposal message, it should sign on the hash and
+	/// the bytes of the proposal.
+	fn sign_local(&self, message: Message<Self::Candidate, Self::Digest>)
+		-> LocalizedMessage<Self::Candidate, Self::Digest, Self::AuthorityId, Self::Signature>;
+
+	/// Get the proposer for a given round of consensus.
+	fn round_proposer(&self, round: u32) -> Self::AuthorityId;
+
+	/// Whether the proposal is valid.
+	fn proposal_valid(&self, proposal: &Self::Candidate) -> Self::EvaluateProposal;
+
+	/// Create a round timeout. The context will determine the correct timeout
+	/// length, and create a future that will resolve when the timeout is
+	/// concluded.
+	fn begin_round_timeout(&self, round: u32) -> Self::RoundTimeout;
+
+	/// This hook is called when we advance from current `round` to `next_round`. `proposal` is
+	/// `Some` if there was one on the current `round`.
+	fn on_advance_round(
+		&self, 
+		accumulator: &Accumulator<Self::Candidate, Self::Digest, Self::AuthorityId, Self::Signature>,
+		round: u32, 
+		next_round: u32,
+		reason: AdvanceRoundReason,
+	) {
+		// The awkward let _ is used to suppress the unused variables
+		// warning (https://github.com/rust-lang/rust/issues/26487)
+		let _ = (accumulator, round, next_round, reason);
+	}
+}
+
+fn deserialize_bytes<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+	where
+		D: serde::de::Deserializer<'de>,
+{
+	struct BytesVisitor;
+
+	impl<'de> serde::de::Visitor<'de> for BytesVisitor {
+		type Value = Vec<u8>;
+
+		fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+			formatter.write_str("an seq of bytes")
+		}
+
+		fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error> where
+			S: serde::de::SeqAccess<'de> {
+			let mut vec = Vec::<u8>::new();
+			while let Some(v) = seq.next_element()? {
+				vec.push(v);
+			}
+			Ok(vec)
+		}
+	}
+
+	let visitor = BytesVisitor{};
+	deserializer.deserialize_seq(visitor)
+}
+
+/// Communication that can occur between participants in consensus.
+#[derive(Debug, Clone, Serialize, Deserialize, PMIdentifiable)]
+#[cfg_attr(any(test, feature="codec"), derive(Encode, Decode))]
+#[pm_identifiable(id = "0x7dc71247")]
+pub enum Communication<C, D, V, S> where C: Serialize, D: Serialize, V: Serialize, S: Serialize {
+	/// A consensus message (proposal or vote)
+	Consensus(LocalizedMessage<C, D, V, S>),
+	/// Auxiliary communication (just proof-of-lock for now).
+	Auxiliary(PrepareJustification<D, S>),
+}
+
+/// Hack to get around type alias warning.
+pub trait TypeResolve {
+	/// Communication type.
+	type Communication;
+}
+
+impl<C: Context> TypeResolve for C {
+	type Communication = Communication<C::Candidate, C::Digest, C::AuthorityId, C::Signature>;
+}
+
+#[derive(Debug)]
+struct Sending<T> {
+	items: VecDeque<T>,
+	flushing: bool,
+}
+
+impl<T> Sending<T> {
+	fn with_capacity(n: usize) -> Self {
+		Sending {
+			items: VecDeque::with_capacity(n),
+			flushing: false,
+		}
+	}
+
+	fn push(&mut self, item: T) {
+		self.items.push_back(item);
+	}
+
+	// process all the sends into the sink.
+	fn process_all<S: Sink<SinkItem=T>>(&mut self, sink: &mut S) -> Poll<(), S::SinkError> {
+		loop {
+			while let Some(item) = self.items.pop_front() {
+				match sink.start_send(item) {
+					Err(e) => return Err(e),
+					Ok(AsyncSink::NotReady(item)) => {
+						self.items.push_front(item);
+						break;
+					}
+					Ok(AsyncSink::Ready) => {
+						// At least one item is buffered into the sink so we must ensure
+						// that at some point we will call `poll_complete`.
+						self.flushing = true;
+					}
+				}
+			}
+
+			if self.flushing {
+				if let Async::Ready(()) = sink.poll_complete()? {
+					self.flushing = false;
+				}
+			}
+
+			match (self.flushing, self.items.len()) {
+				// Still flushing, schedule to poll later.
+				(true, _) => return Ok(Async::NotReady),
+				// Return `Ready` only if all items have been sent and flushed.
+				(false, pending) if pending == 0 => return Ok(Async::Ready(())),
+				// Flushing is complete, however there are still pending items left.
+				(false, _) => continue,
+			}
+		}
+	}
+}
+
+/// Error returned when the input stream concludes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InputStreamConcluded;
+
+impl ::std::fmt::Display for InputStreamConcluded {
+	fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+		write!(f, "{}", ::std::error::Error::description(self))
+	}
+}
+
+impl ::std::error::Error for InputStreamConcluded {
+	fn description(&self) -> &str {
+		"input stream of messages concluded prematurely"
+	}
+}
+
+// get the "full BFT" threshold based on an amount of nodes and
+// a maximum faulty. if nodes == 3f + 1, then threshold == 2f + 1.
+fn bft_threshold(nodes: usize, max_faulty: usize) -> usize {
+	nodes - max_faulty
+}
+
+/// Committed successfully.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature="codec"), derive(Encode, Decode))]
+pub struct Committed<C, D, S> {
+	/// The candidate committed for. This will be unknown if
+	/// we never witnessed the proposal of the last round.
+	pub candidate: Option<C>,
+	/// The round number we saw the commit in.
+	pub round_number: u32,
+	/// A justification for the candidate.
+	pub justification: Justification<D, S>,
+}
+
+struct Locked<D, S> {
+	justification: PrepareJustification<D, S>,
+}
+
+impl<D, S> Locked<D, S> {
+	fn digest(&self) -> &D {
+		&self.justification.digest
+	}
+}
+
+// the state of the local node during the current state of consensus.
+//
+// behavior is different when locked on a proposal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalState {
+	Start,
+	Proposed,
+	Prepared(bool), // whether we thought it valid.
+	Committed,
+	VoteAdvance,
+}
+
+// This structure manages a single "view" of consensus.
+//
+// We maintain two message accumulators: one for the round we are currently in,
+// and one for a future round.
+//
+// We advance the round accumulators when one of two conditions is met:
+//   - we witness consensus of advancement in the current round. in this case we
+//     advance by one.
+//   - a higher threshold-prepare is broadcast to us. in this case we can
+//     advance to the round of the threshold-prepare. this is an indication
+//     that we have experienced severe asynchrony/clock drift with the remainder
+//     of the other authorities, and it is unlikely that we can assist in
+//     consensus meaningfully. nevertheless we make an attempt.
+struct Strategy<C: Context> {
+	nodes: usize,
+	max_faulty: usize,
+	fetching_proposal: Option<C::CreateProposal>,
+	evaluating_proposal: Option<C::EvaluateProposal>,
+	round_timeout: Option<future::Fuse<C::RoundTimeout>>,
+	local_state: LocalState,
+	locked: Option<Locked<C::Digest, C::Signature>>,
+	notable_candidates: HashMap<C::Digest, C::Candidate>,
+	current_accumulator: Accumulator<C::Candidate, C::Digest, C::AuthorityId, C::Signature>,
+	future_accumulators: BTreeMap<u32, Accumulator<C::Candidate, C::Digest, C::AuthorityId, C::Signature>>,
+	local_id: C::AuthorityId,
+	misbehavior: HashMap<C::AuthorityId, Misbehavior<C::Digest, C::Signature>>,
+	earliest_lock_round: u32,
+}
+
+impl<C: Context> Strategy<C> {
+	fn create(context: &C, nodes: usize, max_faulty: usize) -> Self {
+		let threshold = bft_threshold(nodes, max_faulty);
+
+		let current_accumulator = Accumulator::new(
+			0,
+			threshold,
+			context.round_proposer(0),
+		);
+
+		Strategy {
+			nodes,
+			max_faulty,
+			current_accumulator,
+			future_accumulators: BTreeMap::new(),
+			fetching_proposal: None,
+			evaluating_proposal: None,
+			local_state: LocalState::Start,
+			locked: None,
+			notable_candidates: HashMap::new(),
+			round_timeout: None,
+			local_id: context.local_id(),
+			misbehavior: HashMap::new(),
+			earliest_lock_round: 0,
+		}
+	}
+
+	fn current_round(&self) -> u32 {
+		self.current_accumulator.round_number()
+	}
+
+	fn import_message(
+		&mut self,
+		context: &C,
+		msg: LocalizedMessage<C::Candidate, C::Digest, C::AuthorityId, C::Signature>
+	) {
+		let round_number = msg.round_number();
+
+		let sender = msg.sender().clone();
+		let current_round = self.current_round();
+		let misbehavior = if round_number == current_round {
+			self.current_accumulator.import_message(msg)
+		} else if round_number > current_round {
+			let threshold = bft_threshold(self.nodes, self.max_faulty);
+
+			let mut future_acc = self.future_accumulators.entry(round_number).or_insert_with(|| {
+				Accumulator::new(
+					round_number,
+					threshold,
+					context.round_proposer(round_number),
+				)
+			});
+
+			future_acc.import_message(msg)
+		} else {
+			Ok(())
+		};
+
+		if let Err(misbehavior) = misbehavior {
+			self.misbehavior.insert(sender, misbehavior);
+		}
+	}
+
+	fn import_lock_proof(
+		&mut self,
+		context: &C,
+		justification: PrepareJustification<C::Digest, C::Signature>,
+	) {
+		// TODO: find a way to avoid processing of the signatures if the sender is
+		// not the primary or the round number is low.
+		if justification.round_number > self.current_round() {
+			// jump ahead to the prior round as this is an indication of a supermajority
+			// good nodes being at least on that round.
+			self.advance_to_round(context, justification.round_number, AdvanceRoundReason::WasBehind);
+		}
+
+		let lock_to_new = justification.round_number >= self.earliest_lock_round; 
+
+		if lock_to_new {
+			self.earliest_lock_round = justification.round_number;
+			self.locked = Some(Locked { justification })
+		}
+	}
+
+	// poll the strategy: this will queue messages to be sent and advance
+	// rounds if necessary.
+	//
+	// only call within the context of a `Task`.
+	fn poll(
+		&mut self,
+		context: &C,
+		sending: &mut Sending<<C as TypeResolve>::Communication>
+	)
+		-> Poll<Committed<C::Candidate, C::Digest, C::Signature>, C::Error>
+	{
+		let mut last_watermark = (self.current_round(), self.local_state);
+
+		// poll until either completion or state doesn't change.
+		loop {
+			trace!(target: "bft", "Polling BFT logic. State={:?}", last_watermark);
+			match self.poll_once(context, sending)? {
+				Async::Ready(x) => return Ok(Async::Ready(x)),
+				Async::NotReady => {
+					let new_watermark = (self.current_round(), self.local_state);
+
+					if new_watermark == last_watermark {
+						return Ok(Async::NotReady)
+					} else {
+						last_watermark = new_watermark;
+					}
+				}
+			}
+		}
+	}
+
+	// perform one round of polling: attempt to broadcast messages and change the state.
+	// if the round or internal round-state changes, this should be called again.
+	fn poll_once(
+		&mut self,
+		context: &C,
+		sending: &mut Sending<<C as TypeResolve>::Communication>
+	)
+		-> Poll<Committed<C::Candidate, C::Digest, C::Signature>, C::Error>
+	{
+		self.propose(context, sending)?;
+		self.prepare(context, sending)?;
+		self.commit(context, sending);
+		self.vote_advance(context, sending)?;
+
+		let advance = match self.current_accumulator.state() {
+			&State::Advanced(ref p_just) => {
+				// lock to any witnessed prepare justification.
+				if let Some(p_just) = p_just.as_ref() {
+					self.locked = Some(Locked { justification: p_just.clone() });
+				}
+
+				let round_number = self.current_round();
+				Some(round_number + 1)
+			}
+			&State::Committed(ref just) => {
+				// fetch the agreed-upon candidate:
+				//   - we may not have received the proposal in the first place
+				//   - there is no guarantee that the proposal we got was agreed upon
+				//     (can happen if faulty primary)
+				//   - look in the candidates of prior rounds just in case.
+				let candidate = self.current_accumulator
+					.proposal()
+					.and_then(|c| if context.candidate_digest(c) == just.digest {
+						Some(c.clone())
+					} else {
+						None
+					})
+					.or_else(|| self.notable_candidates.get(&just.digest).cloned());
+
+				let committed = Committed {
+					candidate,
+					round_number: self.current_accumulator.round_number(),
+					justification: just.clone()
+				};
+
+				return Ok(Async::Ready(committed))
+			}
+			_ => None,
+		};
+
+		if let Some(new_round) = advance {
+			self.advance_to_round(context, new_round, AdvanceRoundReason::Timeout);
+		}
+
+		Ok(Async::NotReady)
+	}
+
+	fn propose(
+		&mut self,
+		context: &C,
+		sending: &mut Sending<<C as TypeResolve>::Communication>
+	)
+		-> Result<(), C::Error>
+	{
+		if let LocalState::Start = self.local_state {
+			let mut propose = false;
+			if let &State::Begin = self.current_accumulator.state() {
+				let round_number = self.current_round();
+				let primary = context.round_proposer(round_number);
+				propose = self.local_id == primary;
+			};
+
+			if !propose { return Ok(()) }
+
+			// obtain the proposal to broadcast.
+			let proposal = match self.locked {
+				Some(ref locked) => {
+					// TODO: it's possible but very unlikely that we don't have the
+					// corresponding proposal for what we are locked to.
+					//
+					// since this is an edge case on an edge case, it is fine
+					// to eat the round timeout for now, but it can be optimized by
+					// broadcasting an advance vote.
+					self.notable_candidates.get(locked.digest()).cloned()
+				}
+				None => {
+					let res = self.fetching_proposal
+						.get_or_insert_with(|| context.proposal())
+						.poll()?;
+
+					match res {
+						Async::Ready(p) => Some(p),
+						Async::NotReady => None,
+					}
+				}
+			};
+
+			if let Some(proposal) = proposal {
+				self.fetching_proposal = None;
+
+				let message = Message::Propose(
+					self.current_round(),
+					proposal
+				);
+
+				self.import_and_send_message(message, context, sending);
+
+				// broadcast the justification along with the proposal if we are locked.
+				if let Some(ref locked) = self.locked {
+					sending.push(
+						Communication::Auxiliary(locked.justification.clone())
+					);
+				}
+
+				self.local_state = LocalState::Proposed;
+			}
+		}
+
+		Ok(())
+	}
+
+	fn prepare(
+		&mut self,
+		context: &C,
+		sending: &mut Sending<<C as TypeResolve>::Communication>
+	)
+		-> Result<(), C::Error>
+	{
+		// prepare only upon start or having proposed.
+		match self.local_state {
+			LocalState::Start | LocalState::Proposed => {},
+			_ => return Ok(())
+		};
+
+		let mut prepare_for = None;
+
+		// we can't prepare until something was proposed.
+		if let &State::Proposed(ref candidate) = self.current_accumulator.state() {
+			let digest = context.candidate_digest(candidate);
+
+			// vote to prepare only if we believe the candidate to be valid and
+			// we are not locked on some other candidate.
+			match &mut self.locked {
+				&mut Some(ref locked) if locked.digest() != &digest => {}
+				locked => {
+					let res = self.evaluating_proposal
+						.get_or_insert_with(|| context.proposal_valid(candidate))
+						.poll()?;
+
+					if let Async::Ready(valid) = res {
+						self.evaluating_proposal = None;
+						self.local_state = LocalState::Prepared(valid);
+
+						if valid {
+							prepare_for = Some(digest);
+						} else {
+							// if the locked block is bad, unlock from it and
+							// refuse to lock to anything prior to it.
+							if locked.as_ref().map_or(false, |locked| locked.digest() == &digest) {
+								*locked = None;
+								self.earliest_lock_round = ::std::cmp::max(
+									self.current_accumulator.round_number(),
+									self.earliest_lock_round,
+								);
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if let Some(digest) = prepare_for {
+			let message = Vote::Prepare(
+				self.current_round(),
+				digest
+			).into();
+
+			self.import_and_send_message(message, context, sending);
+		}
+
+		Ok(())
+	}
+
+	fn commit(
+		&mut self,
+		context: &C,
+		sending: &mut Sending<<C as TypeResolve>::Communication>
+	) {
+		// commit only if we haven't voted to advance or committed already
+		match self.local_state {
+			LocalState::Committed | LocalState::VoteAdvance => return,
+			_ => {}
+		}
+
+		let mut commit_for = None;
+
+		let thought_good = match self.local_state {
+			LocalState::Prepared(good) => good,
+			_ => true, // assume true.
+		};
+
+		if let &State::Prepared(ref p_just) = self.current_accumulator.state() {
+			// we are now locked to this prepare justification.
+			// refuse to lock if the thing is bad.
+			self.earliest_lock_round = self.current_accumulator.round_number();
+			if thought_good {
+				let digest = p_just.digest.clone();
+				self.locked = Some(Locked { justification: p_just.clone() });
+				commit_for = Some(digest);
+			}
+		}
+
+		if let Some(digest) = commit_for {
+			let message = Vote::Commit(
+				self.current_round(),
+				digest
+			).into();
+
+			self.import_and_send_message(message, context, sending);
+			self.local_state = LocalState::Committed;
+		}
+	}
+
+	fn vote_advance(
+		&mut self,
+		context: &C,
+		sending: &mut Sending<<C as TypeResolve>::Communication>
+	)
+		-> Result<(), C::Error>
+	{
+		// we can vote for advancement under all circumstances unless we have already.
+		if let LocalState::VoteAdvance = self.local_state { return Ok(()) }
+
+		// if we got f + 1 advance votes, or the timeout has fired, and we haven't
+		// sent an AdvanceRound message yet, do so.
+		let mut attempt_advance = self.current_accumulator.advance_votes() > self.max_faulty;
+
+		// if we evaluated the proposal and it was bad, vote to advance round.
+		if let LocalState::Prepared(false) = self.local_state {
+			attempt_advance = true;
+		}
+
+		// if the timeout has fired, vote to advance round.
+		let round_number = self.current_accumulator.round_number();
+		let timer_res = self.round_timeout
+			.get_or_insert_with(|| context.begin_round_timeout(round_number).fuse())
+			.poll()?;
+
+		if let Async::Ready(_) = timer_res { attempt_advance = true }
+
+		if attempt_advance {
+			let message = Vote::AdvanceRound(
+				self.current_round(),
+			).into();
+
+			self.import_and_send_message(message, context, sending);
+			self.local_state = LocalState::VoteAdvance;
+		}
+
+		Ok(())
+	}
+
+	fn advance_to_round(&mut self, context: &C, round: u32, reason: AdvanceRoundReason) {
+		assert!(round > self.current_round());
+		trace!(target: "bft", "advancing to round {}", round);
+
+		self.fetching_proposal = None;
+		self.evaluating_proposal = None;
+		self.round_timeout = None;
+		self.local_state = LocalState::Start;
+
+		// notify the context that we are about to advance round.
+		context.on_advance_round(
+			&self.current_accumulator,
+			self.current_round(),
+			round,
+			reason,
+		);
+
+		// when advancing from a round, store away the witnessed proposal.
+		//
+		// if we or other participants end up locked on that candidate,
+		// we will have it.
+		if let Some(proposal) = self.current_accumulator.proposal() {
+			let digest = context.candidate_digest(proposal);
+			self.notable_candidates.entry(digest).or_insert_with(|| proposal.clone());
+		}
+
+		// if we jump ahead more than one round, get rid of the ones in between.
+		for irrelevant in (self.current_round() + 1)..round {
+			self.future_accumulators.remove(&irrelevant);
+		}
+
+		// use stored future accumulator for given round or create if it doesn't exist.
+		self.current_accumulator = match self.future_accumulators.remove(&round) {
+			Some(x) => x,
+			None => Accumulator::new(
+				round,
+				bft_threshold(self.nodes, self.max_faulty),
+				context.round_proposer(round),
+			),
+		};
+	}
+
+	fn import_and_send_message(
+		&mut self,
+		message: Message<C::Candidate, C::Digest>,
+		context: &C,
+		sending: &mut Sending<<C as TypeResolve>::Communication>
+	) {
+		let signed_message = context.sign_local(message);
+		self.import_message(context, signed_message.clone());
+		sending.push(Communication::Consensus(signed_message));
+	}
+}
+
+/// Future that resolves upon BFT agreement for a candidate.
+#[must_use = "futures do nothing unless polled"]
+pub struct Agreement<C: Context, I, O> {
+	context: C,
+	input: I,
+	output: O,
+	concluded: Option<Committed<C::Candidate, C::Digest, C::Signature>>,
+	sending: Sending<<C as TypeResolve>::Communication>,
+	strategy: Strategy<C>,
+}
+
+impl<C, I, O> Future for Agreement<C, I, O>
+	where
+		C: Context,
+		I: Stream<Item=<C as TypeResolve>::Communication,Error=C::Error>,
+		O: Sink<SinkItem=<C as TypeResolve>::Communication,SinkError=C::Error>,
+{
+	type Item = Committed<C::Candidate, C::Digest, C::Signature>;
+	type Error = C::Error;
+
+	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+		// even if we've observed the conclusion, wait until all
+		// pending outgoing messages are flushed.
+		if let Some(just) = self.concluded.take() {
+			return Ok(match self.sending.process_all(&mut self.output)? {
+				Async::Ready(()) => Async::Ready(just),
+				Async::NotReady => {
+					self.concluded = Some(just);
+					Async::NotReady
+				}
+			})
+		}
+
+		// drive state machine as long as there are new messages.
+		let mut driving = true;
+		while driving {
+			driving = match self.input.poll()? {
+				Async::Ready(msg) => {
+					match msg.ok_or(InputStreamConcluded)? {
+						Communication::Consensus(message) => self.strategy.import_message(&self.context, message),
+						Communication::Auxiliary(lock_proof)
+							=> self.strategy.import_lock_proof(&self.context, lock_proof),
+					}
+
+					true
+				}
+				Async::NotReady => false,
+			};
+
+			// drive state machine after handling new input.
+			if let Async::Ready(just) = self.strategy.poll(&self.context, &mut self.sending)? {
+				self.concluded = Some(just);
+				return self.poll();
+			}
+		}
+
+		// make progress on flushing all pending messages.
+		let _ = self.sending.process_all(&mut self.output)?;
+		Ok(Async::NotReady)
+	}
+}
+
+impl<C: Context, I, O> Agreement<C, I, O> {
+	/// Get a reference to the underlying context.
+	pub fn context(&self) -> &C {
+		&self.context
+	}
+
+	/// Drain the misbehavior vector.
+	pub fn drain_misbehavior(&mut self) -> hash_map::Drain<C::AuthorityId, Misbehavior<C::Digest, C::Signature>> {
+		self.strategy.misbehavior.drain()
+	}
+
+	/// Fast-foward the round to the given number.
+	pub fn fast_forward(&mut self, round: u32) {
+		if round > self.strategy.current_round() {
+			self.strategy.advance_to_round(&self.context, round, AdvanceRoundReason::WasBehind);
+			self.strategy.earliest_lock_round = round;
+		}
+	}
+}
+
+/// Attempt to reach BFT agreement on a candidate.
+///
+/// `nodes` is the number of nodes in the system.
+/// `max_faulty` is the maximum number of faulty nodes. Should be less than
+/// 1/3 of `nodes`, otherwise agreement may never be reached.
+///
+/// The input stream should never logically conclude. The logic here assumes
+/// that messages flushed to the output stream will eventually reach other nodes.
+///
+/// Note that it is possible to witness agreement being reached without ever
+/// seeing the candidate. Any candidates seen will be checked for validity.
+///
+/// Although technically the agreement will always complete (given the eventual
+/// delivery of messages), in practice it is possible for this future to
+/// conclude without having witnessed the conclusion.
+/// In general, this future should be pre-empted by the import of a justification
+/// set for this block height.
+pub fn agree<C: Context, I, O>(context: C, nodes: usize, max_faulty: usize, input: I, output: O)
+	-> Agreement<C, I, O>
+	where
+		C: Context,
+		I: Stream<Item=<C as TypeResolve>::Communication,Error=C::Error>,
+		O: Sink<SinkItem=<C as TypeResolve>::Communication,SinkError=C::Error>,
+{
+	let strategy = Strategy::create(&context, nodes, max_faulty);
+	Agreement {
+		context,
+		input,
+		output,
+		concluded: None,
+		sending: Sending::with_capacity(4),
+		strategy: strategy,
+	}
+}
