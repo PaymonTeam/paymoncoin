@@ -127,16 +127,17 @@ impl Neighbor {
         buffer.rewind();
         buff.rewind();
 
-        vec![]
-//        buffer.as_ref().iter().chain(buff.as_ref().iter()).collect()
+        let mut vec = buffer.as_ref().to_vec();
+        vec.extend_from_slice(buff.as_ref());
+        vec
     }
 
     pub fn send_packet<T>(&mut self, packet: Box<T>) where T: Serialize + Identifiable {
         if let Some(ref mut o) = self.sink {
             let data = Self::prepare_data(packet);
+            // FIXME: (maybe)
             o.tx.send(data);
         }
-
 //            o.tx.clone()
 //                .send((&buffer).to_vec()).wait().unwrap()
 //                .send((&buff).to_vec()).wait().unwrap()
