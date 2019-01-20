@@ -1,3 +1,5 @@
 /.idea/
 /target/
+/serde_pm/target/
 **/*.rs.bk
+**/*.lock
