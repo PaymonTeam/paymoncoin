@@ -176,7 +176,7 @@ pub struct ReplicatorNew {
 
 impl ReplicatorNew {
     pub fn new(config: &Configuration, node: Weak<Mutex<Node>>) -> Self {
-        let host = "0.0.0.0".parse::<IpAddr>().expect("Failed to parse host string");
+        let host = "127.0.0.1".parse::<IpAddr>().expect("Failed to parse host string");
         let port = config.get_int(ConfigurationSettings::Port).unwrap_or(PORT as i32) as u16;
         let addr = SocketAddr::new(host, port);
 
@@ -232,14 +232,13 @@ impl ReplicatorNew {
                         tokio::spawn({
                             stdout.for_each(move |_chunk| {
                                 Ok(())
+                            }).map_err(move |e| {
+                                let mut neighbor = neighbor_cc.lock().unwrap();
+                                neighbor.sink = None;
+                                neighbor.source = None;
+                                neighbor.connecting = false;
+                                error!("error reading stdout; error = {:?}", e)
                             })
-                                .map_err(move |e| {
-                                    let mut neighbor = neighbor_cc.lock().unwrap();
-                                    neighbor.sink = None;
-                                    neighbor.source = None;
-                                    neighbor.connecting = false;
-                                    error!("error reading stdout; error = {:?}", e)
-                                })
                         });
                     }
                 }
@@ -277,7 +276,6 @@ impl ReplicatorNew {
                             if let Ok(ref mut neighbor) = n.lock() {
                                 if neighbor.source.is_none() {
                                     neighbor.source = Some(ReplicatorSource {
-
                                     });
                                     //self.add_replicator(sock);
                                 } else {
@@ -296,8 +294,9 @@ impl ReplicatorNew {
                     let iter = stream::iter_ok::<_, io::Error>(iter::repeat(()));
 
                     let socket_reader = iter.fold(reader, move |reader, _| {
-                        let line = read_packet(reader, Vec::new());
-                        let line = line.and_then(|(reader, vec)| {
+                        let line =
+                            read_packet(reader, Vec::new())
+                            .and_then(|(reader, vec)| {
                             if vec.len() == 0 {
                                 Err(io::Error::new(io::ErrorKind::BrokenPipe, "broken pipe"))
                             } else {
@@ -323,7 +322,10 @@ impl ReplicatorNew {
                     });
 
                     let connections = connections.clone();
-                    let socket_reader = socket_reader.map_err(|_| ());
+                    let socket_reader = socket_reader.map_err(|e| {
+                        error!("socket_reader error: {:?}", e);
+                        ()
+                    });
                     let connection = socket_reader.map(|_| ()).select(socket_writer.map(|_| ()));
 
 //                    let connection_jh = scope(|scope| {
@@ -383,7 +385,7 @@ mod tcp {
                 neighbor.connecting = false;
             }
 
-            let (sink, stream) = Bytes.framed(stream).split();//stream.split();//
+            let (sink, stream) = Bytes.framed(stream).split();
             let neighbor_c = neighbor.clone();
             tokio::spawn(stdin.forward(sink).then(move |result| {
                 if let Err(e) = result {
