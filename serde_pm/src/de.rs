@@ -20,8 +20,8 @@ impl<'de> Deserializer<'de> {
 }
 
 //#[derive(Debug)]
-struct SeqAccess<'a, 'ids: 'a> {
-    de: &'a mut Deserializer<'ids>,
+struct SeqAccess<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
     len: u32,
     next_index: u32,
 }
@@ -125,11 +125,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_bytes");
-//        visitor.visit_byte_buf(self.buff.read_byte_array()?)
-        let vec = &self.buff.buffer; //.as_ref();
-//        let vec = self.buff.read_byte_array()?;
-//        visitor.visit_bytes(vec)
-        visitor.visit_borrowed_bytes(vec)
+        visitor.visit_bytes(&self.buff.read_byte_array()?)
     }
 
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value> where

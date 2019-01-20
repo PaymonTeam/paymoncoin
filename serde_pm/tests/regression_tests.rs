@@ -16,12 +16,13 @@ use serde_pm_other_name::identifiable::Identifiable;
 
 /// Doesn't work perfectly now
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, PMIdentifiable, PMSized)]
+#[pm_identifiable(id = "0xbbbbbbbb")]
 enum Algebraic {
-    #[pm_identifiable(id = "0xbbbbbbbb")]
+//    #[pm_identifiable(id = "0xbbbbbbbb")]
     A,
-    #[pm_identifiable(id = "0xbbbbbbbb")]
+//    #[pm_identifiable(id = "0xbbbbbbbb")]
     B(u32),
-    #[pm_identifiable(id = "0xcccccccc")]
+//    #[pm_identifiable(id = "0xcccccccc")]
     C(String)
 }
 
@@ -29,6 +30,12 @@ impl Default for Algebraic {
     fn default() -> Self {
         Algebraic::A
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, PMIdentifiable)]
+#[pm_identifiable(id = "0xaeaeaeae")]
+struct PackWithBorrowedData<'a> {
+    a_b: &'a [u8],
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, PMIdentifiable, PMSized, Default)]
@@ -40,6 +47,7 @@ struct Pack {
     vec: Vec<bool>,
     b_a: [u8; 5],
     variant: Algebraic,
+    variant_box: Boxed<Algebraic>,
 //    variant: Boxed<Algebraic>,
 }
 
@@ -74,6 +82,24 @@ fn init_log() {
     builder.init().unwrap();
 }
 
+//#[test]
+//fn serde_serialized_buffer_with_borrowed_data() {
+//    init_log();
+//
+//    let mut pack = PackWithBorrowedData {
+//        a_b: &[1, 2],
+//    };
+//
+//    let mut b0 = to_buffer(&pack).expect("failed to serialize data");
+//    debug!("b0={:?}", b0.as_ref());
+//    let mut b1 = SerializedBuffer::from_slice(&[2, 0, 0, 0, 1, 2]);
+//
+//    assert_eq!(b0.as_ref(), b1.as_ref());
+//    let pack2 = from_owned_stream::<PackWithBorrowedData>(&mut b0).expect("failed to deserealize data");
+//    assert_eq!(pack, pack2);
+//    debug!("{:?}", pack2);
+//}
+
 #[test]
 fn serde_serialized_buffer() {
     init_log();
@@ -85,10 +111,11 @@ fn serde_serialized_buffer() {
     pack.vec.append(&mut vec![true, false]);
     pack.b_a = [1u8, 2, 3, 4, 5];
     pack.variant = Algebraic::C("kek".into());
+    pack.variant_box = Boxed::new(Algebraic::B(1));
 
     let mut b0 = to_buffer(&pack).expect("failed to serialize data");
     debug!("b0={:?}", b0.as_ref());
-    let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 3, 107, 101, 107]);
+    let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 3, 107, 101, 107, 187, 187, 187, 187, 1, 1, 0, 0, 0]);
 
     assert_eq!(b0.as_ref(), b1.as_ref());
     let pack2 = from_stream::<Pack>(&mut b0).expect("failed to deserealize data");
@@ -108,10 +135,11 @@ fn serde_serialized_buffer_with_type_id() {
     pack.vec.append(&mut vec![true, false]);
     pack.b_a = [1u8, 2, 3, 4, 5];
     pack.variant = Algebraic::C("kek".into());
+    pack.variant_box = Boxed::new(Algebraic::B(1));
 
     let mut b0 = to_boxed_buffer(&pack).expect("failed to serialize data");
     debug!("b0={:?}", b0.as_ref());
-    let mut b1 = SerializedBuffer::from_slice(&[172, 172, 172, 172, 3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 3, 107, 101, 107]);
+    let mut b1 = SerializedBuffer::from_slice(&[172, 172, 172, 172, 3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 3, 107, 101, 107, 187, 187, 187, 187, 1, 1, 0, 0, 0]);
 
     assert_eq!(b0.as_ref(), b1.as_ref());
 
@@ -135,10 +163,11 @@ fn serde_serialized_buffer_padded() {
     pack.b = 42;
     pack.vec.append(&mut vec![true, false]);
     pack.b_a = [1u8, 2, 3, 4, 5];
+    pack.variant_box = Boxed::new(Algebraic::B(1));
 
     let mut b0 = to_buffer_with_padding(&pack).expect("failed to serialize data");
     debug!("b0={:?}", b0.as_ref());
-    let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 0, 0]);
+    let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 0, 187, 187, 187, 187, 1, 1, 0, 0, 0]);
 
     assert_eq!(b0.as_ref(), b1.as_ref());
 

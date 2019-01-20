@@ -19,24 +19,24 @@ pub(crate) fn impl_pm_identifiable(container: ast::Container) -> proc_macro2::To
     let dummy_const = ident!("_IMPL_PM_IDENTIFIABLE_FOR_{}", item_name);
 
     let all_type_ids_value = match container.data {
-        ast::Data::Struct(_) => {
+        ast::Data::Enum(_) | ast::Data::Struct(_) => {
             let id = get_id_from_attrs(&container.attrs);
 
             quote!(&[#id])
         },
-        ast::Data::Enum(ref data_enum) => {
-            let ids = data_enum.variants
-                .iter()
-                .map(|v| get_id_from_attrs(&v.attrs));
-            let names = data_enum.variants
-                .iter()
-                .map(|v| proc_macro2::Literal::string(&v.ident.to_string()));
-
-            let mut enum_idents = ENUM_IDENTS.lock().unwrap();
-            enum_idents.insert(1337, "kek".into());
-
-            quote!(&[#(#ids),*])
-        },
+//        ast::Data::Enum(ref data_enum) => {
+//            let ids = data_enum.variants
+//                .iter()
+//                .map(|v| get_id_from_attrs(&v.attrs));
+//            let names = data_enum.variants
+//                .iter()
+//                .map(|v| proc_macro2::Literal::string(&v.ident.to_string()));
+//
+////            let mut enum_idents = ENUM_IDENTS.lock().unwrap();
+////            enum_idents.insert(1337, "kek".into());
+//
+//            quote!(&[#(#ids),*])
+//        },
     };
 
     let all_enum_variant_names_value = match container.data {
@@ -53,27 +53,27 @@ pub(crate) fn impl_pm_identifiable(container: ast::Container) -> proc_macro2::To
     };
 
     let type_id_body = match container.data {
-        ast::Data::Struct(_) => {
+        ast::Data::Enum(_) | ast::Data::Struct(_) => {
             let id = get_asserted_id_from_attrs(&container.attrs);
 
             quote!(#id)
         },
-        ast::Data::Enum(ref data_enum) => {
-            let variants = data_enum.variants.iter().map(|variant| {
-                let variant_name = &variant.ident;
-                let id = get_asserted_id_from_attrs(&variant.attrs);
-
-                quote! {
-                    #item_name::#variant_name { .. } => #id,
-                }
-            });
-
-            quote! {
-                match *self {
-                    #(#variants)*
-                }
-            }
-        },
+//        ast::Data::Enum(ref data_enum) => {
+//            let variants = data_enum.variants.iter().map(|variant| {
+//                let variant_name = &variant.ident;
+//                let id = get_asserted_id_from_attrs(&variant.attrs);
+//
+//                quote! {
+//                    #item_name::#variant_name { .. } => #id,
+//                }
+//            });
+//
+//            quote! {
+//                match *self {
+//                    #(#variants)*
+//                }
+//            }
+//        },
     };
 
     let enum_variant_id_body = match container.data {
