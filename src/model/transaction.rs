@@ -174,15 +174,10 @@ impl FromStr for Address {
 }
 
 impl Serialize for Address {
-    // FIXME:
-    fn serialize<S>(&self, _serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
         S: Serializer {
-        unimplemented!()
+        serializer.serialize_str(&format!("{:?}", self))
     }
-//    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-//        s.emit_str(&format!("{:?}", self))
-//    }
-
 }
 
 impl<'de> Deserialize<'de> for Address {
