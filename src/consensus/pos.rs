@@ -182,15 +182,18 @@ pub trait SignatureScheme {
     fn get_index(&self) -> usize;
 }
 
-pub struct Secp256k1Signature<'a> {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Secp256k1Signature(pub Vec<u8>);
+
+pub struct Secp256k1SignatureScheme<'a> {
     _phantom: PhantomData<&'a ()>,
     context: secp256k1::Secp256k1<secp256k1::All>,
     secret_key: secp256k1::key::SecretKey,
 }
 
-impl<'a> SignatureScheme for Secp256k1Signature<'a> {
+impl<'a> SignatureScheme for Secp256k1SignatureScheme<'a> {
     type Hash = [u8; 32];
-    type Signature = secp256k1::Signature; //SignatureDef; //
+    type Signature = Secp256k1Signature; //secp256k1::Signature;
     type Message = secp256k1::Message;
     type SecretKey = secp256k1::key::SecretKey;
     type PublicKey = secp256k1::key::PublicKey;
@@ -208,7 +211,9 @@ impl<'a> SignatureScheme for Secp256k1Signature<'a> {
     fn calculate_signature(&self, data: &[u8]) -> <Self as SignatureScheme>::Signature {
         let hash = Self::calculate_hash(data);
         let msg = secp256k1::Message::from_slice(&hash).expect("32 bytes");
-        self.context.sign(&msg, &self.secret_key)
+        let secp256k1_signature = self.context.sign(&msg, &self.secret_key);
+        let signature = Secp256k1Signature(secp256k1_signature.serialize_der());
+        signature
     }
 
     fn get_index(&self) -> usize {
@@ -216,12 +221,12 @@ impl<'a> SignatureScheme for Secp256k1Signature<'a> {
     }
 }
 
-impl<'a> Secp256k1Signature<'a> {
+impl<'a> Secp256k1SignatureScheme<'a> {
     pub fn new(sk: <Self as SignatureScheme>::SecretKey) -> Self {
         use rand::{Rng, thread_rng};
         let _k1 = secp256k1::Secp256k1::new();
 
-        Secp256k1Signature {
+        Secp256k1SignatureScheme {
             context: secp256k1::Secp256k1::new(),
             _phantom: PhantomData {},
             secret_key: sk,
@@ -554,7 +559,7 @@ pub fn pos_test() {
         .map(|(i, (tx, rx))| {
             let sk = Secp256k1::new().generate_keypair(&mut thread_rng()).0;//unwrap().0;
             let ctx = TestContext {
-                signature: Secp256k1Signature::new(sk),
+                signature: Secp256k1SignatureScheme::new(sk),
                 local_id: i,
                 proposal: Mutex::new(Some(rpc::ConsensusValue { value: i as u32 })),
                 current_round: Arc::new(AtomicUsize::new(0)),
