@@ -23,7 +23,7 @@ enum Algebraic {
 //    #[pm_identifiable(id = "0xbbbbbbbb")]
     B(u32),
 //    #[pm_identifiable(id = "0xcccccccc")]
-    C(String)
+    C(i8, String)
 }
 
 impl Default for Algebraic {
@@ -110,12 +110,12 @@ fn serde_serialized_buffer() {
     pack.b = 42;
     pack.vec.append(&mut vec![true, false]);
     pack.b_a = [1u8, 2, 3, 4, 5];
-    pack.variant = Algebraic::C("kek".into());
+    pack.variant = Algebraic::C(4, "kek".into());
     pack.variant_box = Boxed::new(Algebraic::B(1));
 
     let mut b0 = to_buffer(&pack).expect("failed to serialize data");
     debug!("b0={:?}", b0.as_ref());
-    let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 3, 107, 101, 107, 187, 187, 187, 187, 1, 1, 0, 0, 0]);
+    let mut b1 = SerializedBuffer::from_slice(&[3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 4, 3, 107, 101, 107, 187, 187, 187, 187, 1, 1, 0, 0, 0]);
 
     assert_eq!(b0.as_ref(), b1.as_ref());
     let pack2 = from_stream::<Pack>(&mut b0).expect("failed to deserealize data");
@@ -134,12 +134,12 @@ fn serde_serialized_buffer_with_type_id() {
     pack.b = 42;
     pack.vec.append(&mut vec![true, false]);
     pack.b_a = [1u8, 2, 3, 4, 5];
-    pack.variant = Algebraic::C("kek".into());
+    pack.variant = Algebraic::C(4, "kek".into());
     pack.variant_box = Boxed::new(Algebraic::B(1));
 
     let mut b0 = to_boxed_buffer(&pack).expect("failed to serialize data");
     debug!("b0={:?}", b0.as_ref());
-    let mut b1 = SerializedBuffer::from_slice(&[172, 172, 172, 172, 3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 3, 107, 101, 107, 187, 187, 187, 187, 1, 1, 0, 0, 0]);
+    let mut b1 = SerializedBuffer::from_slice(&[172, 172, 172, 172, 3, 0, 0, 0, 5, 104, 101, 108, 108, 111, 0, 0, 42, 2, 0, 0, 0, 179, 100, 74, 110, 195, 41, 93, 63, 1, 2, 3, 4, 5, 2, 4, 3, 107, 101, 107, 187, 187, 187, 187, 1, 1, 0, 0, 0]);
 
     assert_eq!(b0.as_ref(), b1.as_ref());
 

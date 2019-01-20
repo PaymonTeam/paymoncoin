@@ -40,13 +40,17 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_bool");
-        visitor.visit_bool(self.buff.read_bool()?)
+        let v = self.buff.read_bool()?;
+        debug!(" = {}", v);
+        visitor.visit_bool(v)
     }
 
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_i8");
-        visitor.visit_i8(self.buff.read_i8()?)
+        let v = self.buff.read_i8()?;
+        debug!(" = {}", v);
+        visitor.visit_i8(v)
     }
 
     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value> where
@@ -58,19 +62,25 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_i32");
-        visitor.visit_i32(self.buff.read_i32()?)
+        let v = self.buff.read_i32()?;
+        debug!(" = {}", v);
+        visitor.visit_i32(v)
     }
 
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_i64");
-        visitor.visit_i64(self.buff.read_i64()?)
+        let v = self.buff.read_i64()?;
+        debug!(" = {}", v);
+        visitor.visit_i64(v)
     }
 
     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_u8");
-        visitor.visit_u8(self.buff.read_u8()?)
+        let v = self.buff.read_u8()?;
+        debug!(" = {}", v);
+        visitor.visit_u8(v)
 
     }
 
@@ -83,55 +93,73 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_u32");
-        visitor.visit_u32(self.buff.read_u32()?)
+        let v = self.buff.read_u32()?;
+        debug!(" = {}", v);
+        visitor.visit_u32(v)
     }
 
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_u64");
-        visitor.visit_u64(self.buff.read_u64()?)
+        let v = self.buff.read_u64()?;
+        debug!(" = {}", v);
+        visitor.visit_u64(v)
     }
 
     fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_f32");
-        visitor.visit_f32(self.buff.read_f32()?)
+        let v = self.buff.read_f32()?;
+        debug!(" = {}", v);
+        visitor.visit_f32(v)
     }
 
     fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_f64");
-        visitor.visit_f64(self.buff.read_f64()?)
+        let v = self.buff.read_f64()?;
+        debug!(" = {}", v);
+        visitor.visit_f64(v)
     }
 
     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_char");
-        visitor.visit_char(self.buff.read_byte()? as char)
+        let v = self.buff.read_byte()? as char;
+        debug!(" = {}", v);
+        visitor.visit_char(v)
     }
 
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_str");
-        visitor.visit_str(&self.buff.read_string()?)
+        let v = self.buff.read_string()?;
+        debug!(" = {}", v);
+        visitor.visit_str(&v)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_string");
-        visitor.visit_string(self.buff.read_string()?)
+        let v = self.buff.read_string()?;
+        debug!(" = {}", v);
+        visitor.visit_string(v)
     }
 
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_bytes");
-        visitor.visit_bytes(&self.buff.read_byte_array()?)
+        let v = self.buff.read_byte_array()?;
+        debug!(" = {:?}", v);
+        visitor.visit_bytes(&v)
     }
 
     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_byte_buf");
-        visitor.visit_byte_buf(self.buff.read_byte_array()?)
+        let v = self.buff.read_byte_array()?;
+        debug!(" = {:?}", v);
+        visitor.visit_byte_buf(v)
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value> where
@@ -168,13 +196,13 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
-        debug!("deserialize_tuple");
+        debug!("deserialize_tuple with len={}", len);
         visitor.visit_seq(SeqAccess::new(self, safe_uint_cast(len)?))
     }
 
     fn deserialize_tuple_struct<V>(self, name: &'static str, len: usize, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
-        debug!("deserialize_tuple_struct");
+        debug!("deserialize_tuple_struct with len={}", len);
         visitor.visit_seq(SeqAccess::new(self, safe_uint_cast(len)?))
     }
 
@@ -205,6 +233,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         debug!("deserialize_identifier");
         // TODO: make right error type
         let variant_id = self.buff.read_u8()?;
+        debug!(" = {}", variant_id);
 //
 //        let (variant_id, rest) = self.enum_variant_ids.split_first()
 //            .ok_or_else(|| SerializationError::UnserializableType)?;
@@ -276,6 +305,7 @@ impl<'de, 'a> de::EnumAccess<'de> for EnumVariantAccess<'a, 'de>
         debug!("Deserializing enum variant");
 
         let index: u8 = Deserialize::deserialize(&mut *self.de)?;
+        debug!(" index = {}", index);
         let value: Result<_> = seed.deserialize(index.into_deserializer());
 
         Ok((value?, self))
@@ -301,7 +331,7 @@ impl<'de, 'a> de::VariantAccess<'de> for EnumVariantAccess<'a, 'de>
     fn tuple_variant<V>(self, len: usize, visitor: V) -> Result<V::Value>
         where V: de::Visitor<'de>
     {
-        debug!("Deserializing tuple variant");
+        debug!("Deserializing tuple variant with len = {}", len);
         de::Deserializer::deserialize_tuple_struct(self.de, "", len, visitor)
     }
 
@@ -317,6 +347,8 @@ pub fn from_stream<'de, T>(stream: &'de mut SerializedBuffer) -> Result<T>
     where
         T: de::Deserialize<'de>,
 {
+    debug!("deserializing buffer = {:?}", stream.as_ref());
+
     let mut de = Deserializer::new(stream);
     let value = T::deserialize(&mut de)?;
 
