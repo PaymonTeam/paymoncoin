@@ -9,6 +9,7 @@ pub mod transaction_validator;
 pub mod ledger_validator;
 pub mod snapshot;
 pub mod state_diff;
+pub mod contract;
 
 pub use self::transaction::{Transaction, TransactionObject, TransactionType};
 pub use self::tips_view_model::TipsViewModel;

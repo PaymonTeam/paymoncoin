@@ -4,12 +4,13 @@ extern crate serde_pm;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate serde_json as json;
 extern crate byteorder;
 extern crate mio;
 extern crate rand;
 extern crate slab;
 extern crate env_logger;
-extern crate serde_json;
 extern crate iron;
 extern crate ntrumls;
 extern crate linked_hash_set;
@@ -63,9 +64,11 @@ use log::{LogRecord, LogLevelFilter};
 use crate::storage::Hive;
 use crate::network::api::API;
 
-fn main() {
+fn init_log() {
     let format = |record: &LogRecord| {
-        format!("[{}]: {}", record.level(), record.args())
+        use chrono::Local;
+        let time = Local::now().format("%H:%M:%S");
+        format!("[{} {}]: {}", record.level(), time, record.args())
 //        format!("[{} {:?}]: {}", record.level(), thread::current().id(), record.args())
     };
 
@@ -76,13 +79,20 @@ fn main() {
         .filter(Some("tokio"), LogLevelFilter::Error)
         .filter(Some("tokio-io"), LogLevelFilter::Error)
         .filter(Some("hyper"), LogLevelFilter::Error)
-        .filter(Some("iron"), LogLevelFilter::Error);
+        .filter(Some("iron"), LogLevelFilter::Error)
+        .filter(Some("serde_pm"), LogLevelFilter::Error)
+        .filter(Some("bft"), LogLevelFilter::Trace)
+    ;
 
     if env::var("RUST_LOG").is_ok() {
         builder.parse(&env::var("RUST_LOG").unwrap());
     }
 
     builder.init().unwrap();
+}
+
+fn main() {
+    init_log();
 
     let mut jhs = VecDeque::new();
 
