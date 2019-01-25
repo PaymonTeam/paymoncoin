@@ -91,6 +91,7 @@ impl Hive {
                 snapshot: 1,
                 solid: true,
                 height: 1,
+                data: String::default(),
             };
             let mut genesis = Transaction::from_object(genesis);
             genesis.object.nonce = 518;
@@ -129,6 +130,7 @@ impl Hive {
                 snapshot: 1,
                 solid: true,
                 height: 1,
+                data: String::default(),
             };
             let mut genesis = Transaction::from_object(genesis);
             genesis.object.nonce = 456;
@@ -168,6 +170,7 @@ impl Hive {
                 snapshot: 1,
                 solid: true,
                 height: 1,
+                data: String::default(),
             };
             let mut ms = Transaction::from_object(ms);
             ms.object.nonce = 46;
@@ -211,6 +214,7 @@ impl Hive {
                 snapshot: 1,
                 solid: true,
                 height: 2,
+                data: String::default(),
             };
             let mut genesis = Transaction::from_object(genesis);
             genesis.object.nonce = 46;
@@ -249,6 +253,7 @@ impl Hive {
                 snapshot: 1,
                 solid: true,
                 height: 3,
+                data: String::default(),
             };
             let mut genesis = Transaction::from_object(genesis);
             genesis.object.nonce = 134;
@@ -288,6 +293,7 @@ impl Hive {
                 snapshot: 1,
                 solid: true,
                 height: 4,
+                data: String::default(),
             };
             let mut ms = Transaction::from_object(ms);
             ms.object.nonce =152;

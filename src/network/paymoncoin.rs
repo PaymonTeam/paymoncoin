@@ -59,7 +59,6 @@ impl PaymonCoin {
         let milestone = Milestone::new(hive.clone(), coordinator.clone(), snapshot,
                                            transaction_validator.clone(), true,
                                            num_keys_milestone, milestone_start_index, true);
-        debug!("s3={}", config.get_string(ConfigurationSettings::Neighbors).unwrap());
 
         let node = Arc::new(Mutex::new(Node::new(Arc::downgrade(&hive.clone()), config.clone(),
                                                      replicator_tx, pmnc_rx,
