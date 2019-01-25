@@ -24,7 +24,7 @@ use std::thread;
 use crate::network::Node;
 use crate::model::config::{Configuration, ConfigurationSettings, PORT};
 use futures::sync::mpsc;
-use futures::sync::mpsc::{Sender, UnboundedSender};
+use futures::sync::mpsc::{Sender, UnboundedSender, UnboundedReceiver};
 use crossbeam::scope;
 
 use crate::utils::AM;
@@ -159,12 +159,11 @@ impl<A> Future for ReadPacket<A>
 }
 
 pub struct ReplicatorSink {
-//    sock: TcpStream,
     pub tx: UnboundedSender<Vec<u8>>
 }
 
 pub struct ReplicatorSource {
-//    sock: TcpStream,
+//    pub rx: UnboundedReceiver<Vec<u8>>
 }
 
 pub struct ReplicatorNew {
@@ -211,14 +210,16 @@ impl ReplicatorNew {
 
             let neighbors_c = neighbors.clone();
 
+            // outgoing connections
             let connector = Interval::new(Instant::now(), Duration::from_millis(5000)).for_each(move |_instant| {
                 let mut neighbors = neighbors.lock().unwrap();
-//                debug!("neighbors count={}", neighbors.len());
+
                 for n in neighbors.iter_mut() {
                     let mut neighbor_c = n.clone();
                     let mut neighbor_cc = n.clone();
                     let mut neighbor = n.lock().unwrap();
                     if neighbor.sink.is_none() && !neighbor.connecting {
+                        debug!("[neighbor:{:?}] connecting to...", neighbor.addr);
                         neighbor.connecting = true;
 
                         let (stdin_tx, stdin_rx) = mpsc::unbounded();
@@ -229,7 +230,7 @@ impl ReplicatorNew {
                                                   neighbor_c,
                                                   stdin_tx);
 
-                        tokio::spawn({
+                        tokio::spawn(
                             stdout.for_each(move |_chunk| {
                                 Ok(())
                             }).map_err(move |e| {
@@ -237,15 +238,16 @@ impl ReplicatorNew {
                                 neighbor.sink = None;
                                 neighbor.source = None;
                                 neighbor.connecting = false;
-                                error!("error reading stdout; error = {:?}", e)
+                                error!("[neighbor:{:?}] tcp connect error: {:?}", neighbor.addr, e)
                             })
-                        });
+                        );
                     }
                 }
 
                 Ok(())
             }).map_err(|e| panic!("interval error reading stdoutrrored; err={:?}", e));
 
+            // incoming connections
             let srv = socket.incoming()
                 .map_err(|e| error!("failed to accept socket; error = {:?}", e))
                 .for_each(move |stream| {
@@ -260,31 +262,19 @@ impl ReplicatorNew {
                     let (tx, rx) = mpsc::unbounded::<Vec<u8>>();
                     connections.lock().unwrap().insert(addr, tx);
 
-                    let mut founded_neighbor: Option<AM<Neighbor>> = None;
-
-                    if let Ok(mut neighbors) = neighbors_c.lock() {
-                        for neighbor_arc in neighbors.iter() {
-                            if let Ok(neighbor) = neighbor_arc.lock() {
-                                if addr.ip() == neighbor.addr.ip() {
-                                    founded_neighbor = Some(neighbor_arc.clone());
-                                    break;
-                                }
-                            }
-                        }
-
-                        if let Some(n) = founded_neighbor {
-                            if let Ok(ref mut neighbor) = n.lock() {
-                                if neighbor.source.is_none() {
-                                    neighbor.source = Some(ReplicatorSource {
-                                    });
-                                    //self.add_replicator(sock);
-                                } else {
-                                    warn!("Neighbor source already exists");
-                                }
-                            }
-                        } else {
+                    let source = ReplicatorSource {};
+                    let mut neighbors = neighbors_c.lock().unwrap();
+                    let mut found = neighbors.iter()
+                        .map(|m| m.lock().unwrap())
+                        .find(|n| n.source.is_none() && addr.ip() == n.addr.ip());
+                    match found {
+                        Some(ref mut n) => {
+                            n.source = Some(source);
+                        },
+                        None => {
                             debug!("Unknown neighbor connected");
-                            neighbors.push(Arc::new(Mutex::new(Neighbor::from_replicator_source(ReplicatorSource {}, addr.clone()))))
+                            drop(found);
+                            neighbors.push(Arc::new(Mutex::new(Neighbor::from_replicator_source(source, addr.clone()))))
                         }
                     }
 
@@ -328,17 +318,14 @@ impl ReplicatorNew {
                     });
                     let connection = socket_reader.map(|_| ()).select(socket_writer.map(|_| ()));
 
-//                    let connection_jh = scope(|scope| {
-                        tokio::spawn(connection.then(move |_| {
-                            connections.lock().unwrap().remove(&addr);
-                            info!("Connection {} closed.", addr);
-                            Ok(())
-                        }));
-//                    });
+                    tokio::spawn(connection.then(move |_| {
+                        connections.lock().unwrap().remove(&addr);
+                        info!("Connection {} closed.", addr);
+                        Ok(())
+                    }));
 
                     Ok(())
                 })
-//              .map_err(|e| println!("failed to accept socket; error = {:?}", e))
             ;
 
             tokio::spawn(connector);

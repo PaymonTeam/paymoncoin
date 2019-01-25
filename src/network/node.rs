@@ -185,10 +185,11 @@ impl Node {
                         if let Ok(mut neighbors) = self.neighbors.lock() {
                             if neighbors.iter().find(|arc| {
                                 if let Ok(n) = arc.lock() {
-                                    return n.addr.ip() == addr.ip();
+                                    return n.addr == addr;
                                 }
                                 false
                             }).is_none() {
+                                debug!("Added new neighbor ({:?})", addr);
                                 neighbors.push(Arc::new(Mutex::new(Neighbor::from_address(addr))));
                             }
                         }
@@ -250,7 +251,8 @@ impl Node {
 
             use secp256k1::*;
 
-            let local_id = 0;
+            let port: usize = ::std::env::var("API_PORT").unwrap().parse().unwrap();
+            let local_id = port - 7000usize;
             let ctx = Secp256k1::<All>::new();
             let sk = ctx.generate_keypair(&mut thread_rng()).0;
             //            let ctx = Context::new(rpc::ConsensusValue{ value: i as u32 }, Secp256k1Signature::new(sk), i, node_count);
@@ -271,8 +273,8 @@ impl Node {
                 out_rx.map_err(|_| Error),
                 in_tx.sink_map_err(|_| Error).with(move |t| Ok((local_id, t))),
             )
-                .map_err(|e| println!("error {:?}", e))
-                .map(|r| println!("committed = {:?}", r));
+                .map_err(|e| warn!("error on consensus {:?}", e))
+                .map(|r| info!("committed = {:?}", r));
             tokio::run(f);
         });
     }
@@ -294,8 +296,8 @@ impl Node {
                                 if let Some(arc) = tr.upgrade() {
                                     if let Ok(mut transaction_requester) = arc.lock() {
                                         // TODO: make P independent var
-                                        if transaction_requester.num_transactions_to_request() >
-                                            0 && thread_rng().gen::<f64>() < 0.66 {
+                                        if transaction_requester.num_transactions_to_request() > 0 &&
+                                            thread_rng().gen::<f64>() < 0.66 {
                                             let tip;
                                             if thread_rng().gen::<f64>() < 0.02 {
                                                 if let Some(arc) = milestone.upgrade() {
@@ -426,27 +428,27 @@ impl Node {
 //                    println!("should send {} {:?}", i, c);
 //                    futures::future::ok(())
 //                }));
+                thread::sleep(Duration::from_millis(100));
                 Ok(Async::NotReady)
             }
         }
-        let timer = tokio_timer::wheel().build();
-        tokio::run(timer.sleep(Duration::from_secs(20))
-            .map(|_| ()).map_err(|_| ())
-            .and_then(|_| bft_in.for_each(move |(i, c)| {
-                println!("should send {} {:?}", i, c);
-                if let Some(arc) = neighbors.upgrade() {
-                    if let Ok(neighbors) = arc.lock() {
-                        for n in neighbors.iter() {
-                            if let Ok(mut n) = n.lock() {
-                                info!("sending to {:?}", n.addr);
-                                n.send_packet(Box::new(c.clone()));
-                            }
+
+        thread::sleep(Duration::from_secs(20));
+
+        tokio::run(bft_in.for_each(move |(i, c)| {
+            debug!("sending {} {:?}", i, c);
+            if let Some(arc) = neighbors.upgrade() {
+                if let Ok(neighbors) = arc.lock() {
+                    for n in neighbors.iter() {
+                        if let Ok(mut n) = n.lock() {
+                            info!("sending to {:?}", n.addr);
+                            n.send_packet(Box::new(c.clone()));
                         }
                     }
                 }
-                futures::future::ok(())
-            }))
-        );
+            }
+            futures::future::ok(())
+        }));
     }
 
     fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>, tr: AWM<TransactionRequester>/*, bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>*/) {
@@ -535,22 +537,23 @@ impl Node {
     }
 
     pub fn on_connection_data_received(&mut self, mut data: SerializedBuffer, addr: SocketAddr) {
-        let neighbor;
-        if let Ok(neighbors) = self.neighbors.lock() {
-            neighbor = match neighbors.iter().find(
-                |arc| {
-                    if let Ok(n) = arc.lock() { return n.addr.ip() == addr.ip() }
-                    false
-                }) {
-                Some(arc) => arc.clone(),
-                None => {
-                    info!("Received data from unknown neighbor {:?}", addr);
-                    return;
-                }
-            };
-        } else {
-            panic!("broken neighbors mutex");
-        }
+//        let neighbor;
+//        if let Ok(neighbors) = self.neighbors.lock() {
+//            neighbor = match neighbors.iter().find(
+//                |arc| {
+//                    if let Ok(n) = arc.lock() { return n.addr.ip() == addr.ip() }
+//                    false
+//                }) {
+//                Some(arc) => arc.clone(),
+//                None => {
+//                    info!("Received data from unknown neighbor {:?}", addr);
+//                    return;
+//                }
+//            };
+//        } else {
+//            panic!("broken neighbors mutex");
+//        }
+
         let _length = data.limit();
 
 //        if length == 4 {
@@ -562,7 +565,7 @@ impl Node {
         let _message_id = data.read_i64().unwrap();
         let message_length = data.read_i32().unwrap();
 
-        if message_length != data.remaining() as i32 {
+        if message_length > data.remaining() as i32 {
             warn!("Received incorrect message length");
 //            return;
         }
@@ -606,6 +609,7 @@ impl Node {
 //        else if svuid == rpc::ConsensusValue::primary_type_id() {
         else if svuid == ConsensusType::primary_type_id() {
             let v = from_stream(&mut data).unwrap();
+            info!("received communication {:?}", v);
             self.bft_out.unbounded_send(v);
         } else {
             warn!("Unknown SVUID {:X}", svuid);
