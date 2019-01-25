@@ -2,9 +2,9 @@ use std::collections::{HashMap, hash_map::Keys};
 use super::transaction::{Hash, Account, Address, AddressError};
 use std::hash;
 use std::str::FromStr;
-use std::ops::{IndexMut, Index};
 use std::marker::PhantomData;
 //use serde_json as json;
+
 #[derive(Debug)]
 pub enum Error {
     JsonParse(String),
@@ -73,39 +73,25 @@ impl FromStr for KeyBuilder<String> {
     }
 }
 
-impl<T> Index<&str> for KeyBuilder<T> where T: AsRef<[u8]> {
-    type Output = Self;
-
-    fn index(&self, index: &str) -> &<Self as Index<&str>>::Output {
-        self
-    }
-}
-impl<T> IndexMut<&str> for KeyBuilder<T> where T: AsRef<[u8]> {
-    fn index_mut(&mut self, index: &str) -> &mut <Self as Index<&str>>::Output {
-        self
-    }
-}
-
 pub trait Export<K, R> where K: AsRef<[u8]> {
     fn save(&self, key: K) -> R;
 }
 
-impl Export<String, Vec<StorageValue<String>>> for String {
-    fn save(&self, key: String) -> Vec<StorageValue<String>> {
+impl<K: AsRef<[u8]>> Export<K, Vec<StorageValue<String>>> for String {
+    fn save(&self, key: K) -> Vec<StorageValue<String>> {
         let digest = Hash::sha3_160(key.as_ref());
         vec![(digest, (*self).clone())]
     }
 }
 
-impl<K, V: ToString> Export<String, Vec<StorageValue<String>>> for HashMap<K, V>
+impl<K, V: ToString> Export<K, Vec<StorageValue<String>>> for HashMap<K, V>
     where K: AsRef<[u8]> + Eq + hash::Hash
 {
-    fn save(&self, key: String) -> Vec<StorageValue<String>> {
+    fn save(&self, key: K) -> Vec<StorageValue<String>> {
         let mut vec = vec![];
 
         for (k, v) in self.iter() {
-            // FIXME: may cause panic
-            for (d, sv) in v.to_string().save(String::from_utf8(Vec::from(k.as_ref())).unwrap()) {
+            for (d, sv) in v.to_string().save(k.as_ref()) {
                 let digest = Hash::sha3_160(d.as_ref());
                 vec.push((digest, sv))
             }
