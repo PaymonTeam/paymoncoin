@@ -5,12 +5,13 @@ use std::str::FromStr;
 use std::ops::{IndexMut, Index};
 use std::marker::PhantomData;
 //use serde_json as json;
-
+#[derive(Debug)]
 pub enum Error {
     JsonParse(String),
     UnknownStorageKey,
     Unknown(String),
     UnknownContractType,
+    UnknownContract,
 }
 
 pub enum StorageAction<T> {
@@ -19,7 +20,6 @@ pub enum StorageAction<T> {
     Remove(T),
 }
 
-//pub struct StorageValue(pub Hash, pub String);
 pub type StorageValue<T> = (Hash, T);
 
 fn string_hash_function<T>(data: T) -> Hash where T: AsRef<[u8]> {
@@ -97,6 +97,23 @@ impl Export<String, Vec<StorageValue<String>>> for String {
     }
 }
 
+impl<K, V: ToString> Export<String, Vec<StorageValue<String>>> for HashMap<K, V>
+    where K: AsRef<[u8]> + Eq + hash::Hash
+{
+    fn save(&self, key: String) -> Vec<StorageValue<String>> {
+        let mut vec = vec![];
+
+        for (k, v) in self.iter() {
+            // FIXME: may cause panic
+            for (d, sv) in v.to_string().save(String::from_utf8(Vec::from(k.as_ref())).unwrap()) {
+                let digest = Hash::sha3_160(d.as_ref());
+                vec.push((digest, sv))
+            }
+        }
+        vec
+    }
+}
+
 impl Export<String, Vec<StorageValue<StorageAction<String>>>> for StorageAction<String> {
     fn save(&self, key: String) -> Vec<StorageValue<StorageAction<String>>> {
         let digest = Hash::sha3_160(key.as_ref());
@@ -159,7 +176,6 @@ impl Storage<String> for ContractStorage<String> { //where T: Export<String, Vec
 impl Storage<StorageAction<String>> for ContractStorage<StorageAction<String>> {
     type Hash = Hash;
     type Key = String;
-//    type Item = StorageAction<String>;
 
     fn insert(&mut self, key: <Self as Storage<StorageAction<String>>>::Key, value: StorageAction<String>) {
         for (digest, v) in value.save(key) {
@@ -169,7 +185,6 @@ impl Storage<StorageAction<String>> for ContractStorage<StorageAction<String>> {
 
     fn get(&self, key: &<Self as Storage<StorageAction<String>>>::Hash) -> Option<&StorageAction<String>> {
         self.inner.get(key)
-//        self.inner.get(key)
     }
 
     fn keys(&self) -> Keys<<Self as Storage<StorageAction<String>>>::Hash, StorageAction<String>> {
@@ -179,6 +194,7 @@ impl Storage<StorageAction<String>> for ContractStorage<StorageAction<String>> {
 
 pub type StorageDiff = ContractStorage<StorageAction<String>>;
 
+#[derive(Default)]
 pub struct ContractsStorage {
     storages: HashMap<Hash, ContractStorage<String>>,
     contracts: HashMap<Hash, Box<dyn Contract<String>>>,
@@ -191,12 +207,15 @@ pub struct ContractOutput {
 }
 
 impl ContractsStorage {
-    pub fn call(&mut self, hash: &Hash, caller: &Account, input: &str) {
+    pub fn call(&mut self, hash: &Hash, caller: &Account, input: &json::Map<String, json::Value>) -> Result<ContractOutput, Error> {
+        debug!("request for contract {:?} call with input data {:?}", hash, input);
+
         if let Some(ref mut contract) = self.contracts.get_mut(hash) {
             if let Some(ref mut storage) = self.storages.get_mut(hash) {
-                contract.call(caller, input, storage);
+                return contract.call(caller, input, storage);
             }
         }
+        Err(Error::UnknownContract)
     }
 
     pub fn create(&mut self, creator: &Account, input: &json::Value) -> Result<(), Error> {
@@ -207,7 +226,10 @@ impl ContractsStorage {
         let mut output: ContractOutput;
 
         if contract_type == "token" {
-            let (output_c, new_contract_c) = TokenContract::create(creator, input)?;
+            let params = obj.get("params").ok_or(Error::JsonParse("expected field 'params'".into()))?
+                .as_object().ok_or(Error::JsonParse("expected object".into()))?;
+
+            let (output_c, new_contract_c) = TokenContract::create(creator, params)?;
             new_contract = new_contract_c;
             output = output_c;
         } else {
@@ -216,15 +238,28 @@ impl ContractsStorage {
 
         let hash = Hash::sha3_160(input.to_string().as_bytes());
         if !self.contracts.contains_key(&hash) {
-            self.contracts.insert(hash, new_contract);
+            self.contracts.insert(hash.clone(), new_contract);
+
+            let mut storage = ContractStorage::<String>::new();
+            if let Some(storage_diff) = output.storage_diff {
+                for (k, v) in &storage_diff.inner {
+                    if let StorageAction::Insert(ref v) = v {
+                        storage.inner.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            self.storages.insert(hash, storage);
         }
+
+
+        info!("created contract {:?} with input {}", hash, input.to_string());
 
         Ok(())
     }
 }
 
 pub trait Contract<T> where T: Export<String, Vec<StorageValue<String>>> {
-    fn call(&mut self, caller: &Account, input: &str, storage: &mut ContractStorage<T>) -> Result<ContractOutput, Error>;
+    fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &mut ContractStorage<T>) -> Result<ContractOutput, Error>;
 //    fn create(caller: &Account, input: &json::Value) -> Result<(ContractOutput, TokenContract), Error>;
 }
 
@@ -275,15 +310,28 @@ impl TokenContract {
         })
     }
 
-    fn create(owner: &Account, input: &json::Value) -> Result<(ContractOutput, Box<dyn Contract<String>>), Error> {
+    pub fn name(&self, storage: &mut ContractStorage<String>) -> Result<ContractOutput, Error> {
+        let name = storage.get(&KeyBuilder::from_str("name").unwrap().finalize()).ok_or(Error::UnknownStorageKey)?;
+        let output = json!( {
+            "name": name
+        } );
+
+        Ok(ContractOutput {
+            storage_diff: None,
+            balance_diff: 0,
+            output,
+        })
+    }
+
+    fn create(owner: &Account, params: &json::Map<String, json::Value>) -> Result<(ContractOutput, Box<dyn Contract<String>>), Error> {
         use self::StorageAction::*;
 
-        let obj = input.as_object().ok_or(Error::JsonParse("expected object".into()))?;
-        let name = obj.get("name").ok_or(Error::JsonParse("expected field 'name'".into()))?
+//        let params = input.as_object().ok_or(Error::JsonParse("expected object".into()))?;
+        let name = params.get("name").ok_or(Error::JsonParse("expected field 'name'".into()))?
             .as_str().ok_or(Error::JsonParse("expected string".into()))?;
-        let symbol = obj.get("symbol").ok_or(Error::JsonParse("expected field 'symbol'".into()))?
+        let symbol = params.get("symbol").ok_or(Error::JsonParse("expected field 'symbol'".into()))?
             .as_str().ok_or(Error::JsonParse("expected string".into()))?;
-        let decimals = obj.get("decimals").ok_or(Error::JsonParse("expected field 'decimals'".into()))?
+        let decimals = params.get("decimals").ok_or(Error::JsonParse("expected field 'decimals'".into()))?
             .as_u64().ok_or(Error::JsonParse("expected u32".into()))?;
         // rust 1.32 doesn't support 'pow' function of two u64's,
         // so we need to cast it to u32
@@ -310,15 +358,15 @@ impl TokenContract {
 }
 
 impl Contract<String> for TokenContract {
-    fn call(&mut self, caller: &Account, input: &str, storage: &mut ContractStorage<String>) -> Result<ContractOutput, Error> {
-        use json::Value;
-        let json_val: Value = json::from_str(input)?;
-        let json_obj = json_val.as_object().ok_or(Error::JsonParse("expected object".into()))?;
+    fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &mut ContractStorage<String>) -> Result<ContractOutput, Error> {
+//        use json::Value;
+//        let json_val: Value = json::from_str(input)?;
+//        let input = json_val.as_object().ok_or(Error::JsonParse("expected object".into()))?;
 
-        let method = json_obj
+        let method = input
             .get("method").ok_or(Error::JsonParse("expected field 'method'".into()))?
             .as_str().ok_or(Error::JsonParse("expected string".into()))?;
-        let args = json_obj
+        let args = input
             .get("arguments").ok_or(Error::JsonParse("expected field 'arguments'".into()))?
             .as_object().ok_or(Error::JsonParse("expected object".into()))?;
 
@@ -328,8 +376,53 @@ impl Contract<String> for TokenContract {
                 .as_str().ok_or(Error::JsonParse("expected string".into()))?)?;
 
             return self.balance_of(&address, storage);
+        } if method == "name" {
+            return self.name(storage);
         }
 
         Err(Error::JsonParse("unknown method".into()))
+    }
+}
+
+mod tests {
+    use super::*;
+    use crate::init_log;
+
+    #[test]
+    fn storage_test() {
+        init_log();
+
+        let acc1 = Account(Address::from_str("P111111111111111111111111111111111111111111").unwrap(), 1000);
+        let acc2 = Account(Address::from_str("P222222222222222222222222222222222222222222").unwrap(), 2000);
+
+        let mut contracts_storage = ContractsStorage::default();
+        let create_contract_json: json::Value = json!({
+            "type": "token",
+            "params": {
+                "name": "Test Token",
+                "symbol": "TEST",
+                "decimals": 10
+            }
+        });
+
+        let contract_hash = string_hash_function(create_contract_json.to_string().as_bytes());
+        contracts_storage.create(&acc1, &create_contract_json).expect("failed to create contract");
+
+        let call_contract_json = json!({
+            "method": "name",
+            "arguments": {}
+        });
+//        let call_contract_json = json!({
+//            "method": "balance_of",
+//            "arguments": {
+//                "address": "P111111111111111111111111111111111111111111"
+//            }
+//        });
+        let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
+
+        let out = contracts_storage.call(&contract_hash, &acc2, call_contract_json_obj).expect("failed to call contract");
+        assert!(out.storage_diff.is_none());
+        assert_eq!(out.balance_diff, 0);
+        assert_eq!(out.output, json!({ "name": "Test Token" }));
     }
 }

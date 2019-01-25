@@ -24,6 +24,7 @@ use serde_pm::{SerializedBuffer, to_buffer, to_boxed_buffer, from_stream};
 use std::time;
 use std::str::FromStr;
 use hex;
+use std::env;
 
 static CF_NAMES: [&str; 7] = ["transaction", "transaction-metadata", "address",
     "address_transactions", "approvee", "milestone", "state_diff"];
@@ -34,6 +35,7 @@ pub enum Error {
     Parse(num::ParseIntError),
     Str(String),
 }
+//use crate::env;
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug, Hash)]
 pub enum CFType {
@@ -662,7 +664,7 @@ impl Hive {
         }).collect::<Vec<_>>();
 
         use std::thread;
-        let path = format!("db/data{}", env!("API_PORT"));
+        let path = format!("db/data{}", env::var("API_PORT").unwrap());
 
         match DB::open_cf(&opts, &path, &CF_NAMES, cfs_v.as_slice()) {
             Ok(mut db) => {

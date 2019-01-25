@@ -64,7 +64,7 @@ use log::{LogRecord, LogLevelFilter};
 use crate::storage::Hive;
 use crate::network::api::API;
 
-fn init_log() {
+pub fn init_log() {
     let format = |record: &LogRecord| {
         use chrono::Local;
         let time = Local::now().format("%H:%M:%S");
