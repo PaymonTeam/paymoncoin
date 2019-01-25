@@ -4,6 +4,7 @@ extern crate base64;
 
 use serde_pm_derive;
 use std::fmt;
+use std::hash;
 use crate::model::approvee::*;
 use serde_pm::{Identifiable, SerializedBuffer, from_stream, to_buffer};
 use self::crypto::digest::Digest;
@@ -27,10 +28,18 @@ pub const TRANSACTION_SIZE: usize = 173 + 4; // HASH_SIZE + 1 (checksum byte)
 pub const HASH_NULL: Hash = Hash([0u8; HASH_SIZE]);
 pub const ADDRESS_NULL: Address = Address([0u8; ADDRESS_SIZE]);
 
-#[derive(PartialEq, Clone, Copy, Eq, Hash)]
+#[derive(PartialEq, Clone, Copy, Eq)]
 pub struct Hash(pub [u8; HASH_SIZE]);
 
 impl Hash {
+    pub fn sha3_160(bytes: &[u8]) -> Self {
+        let mut sha = Sha3::sha3_256();
+        sha.input(bytes);
+        let mut buf = [0u8; HASH_SIZE];
+        sha.result(&mut buf);
+        Hash(buf)
+    }
+
     pub fn trailing_zeros(&self) -> u16 {
         let mut zeros = 0u16;
         for i in 0..HASH_SIZE as usize {
@@ -70,16 +79,15 @@ impl DerefMut for Hash {
     }
 }
 
-//impl Serializable for Hash {
-//    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-//        stream.write_i32(0);
-//        stream.write_bytes(&self.0);
-//    }
-//
-//    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-//        stream.read_bytes(&mut self.0, HASH_SIZE);
-//    }
-//}
+impl hash::Hash for Hash {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        state.write(&self.0);
+    }
+
+    fn hash_slice<H: hash::Hasher>(data: &[Self], state: &mut H) where Self: Sized {
+        unimplemented!()
+    }
+}
 
 impl Serialize for Hash {
     // FIXME:
@@ -294,7 +302,7 @@ pub struct TransactionObject {
     pub snapshot: u32,
     pub solid: bool,
     pub height: u64,
-//    pub data: String,
+    pub data: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, PMIdentifiable)]
@@ -538,7 +546,8 @@ impl TransactionObject {
             signature_pubkey: PublicKey(vec![]),
             snapshot: 0u32,
             solid: false,
-            height: 0
+            height: 0,
+            data: String::default(),
         }
     }
 
@@ -586,7 +595,8 @@ impl TransactionObject {
             data_type: TransactionType::Full,
             snapshot,
             solid: false,
-            height: 0
+            height: 0,
+            data: String::default(),
         }
     }
 
