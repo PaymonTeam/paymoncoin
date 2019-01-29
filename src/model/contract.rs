@@ -6,7 +6,8 @@ use std::marker::PhantomData;
 use crypto::sha3;
 use crypto::digest::Digest;
 use crate::model::transaction::HASH_NULL;
-//use serde_json as json;
+use std::num;
+use std::fmt::Debug;
 
 #[derive(Debug)]
 pub enum Error {
@@ -15,38 +16,31 @@ pub enum Error {
     Unknown(String),
     UnknownContractType,
     UnknownContract,
+    Overflow,
+    KeyExists,
+    KeyDoesntExist,
 }
 
-#[derive(Clone)]
-pub enum StorageAction<T> where T: Clone {
-    Insert(T),
-    Update(T),
-    Remove(T),
-}
-
-impl<T> StorageAction<T> where T: Clone {
-    pub fn map<B: Clone, F: FnOnce(T) -> B>(mut self, f: F) -> StorageAction<B> {
-        match self {
-            StorageAction::Insert(v) => StorageAction::Insert(f(v)),
-            StorageAction::Update(v) => StorageAction::Update(f(v)),
-            StorageAction::Remove(v) => StorageAction::Remove(f(v)),
-        }
+impl From<json::Error> for Error {
+    fn from(e: json::Error) -> Self {
+        Error::JsonParse("failed to parse json".into())
     }
+}
 
-    pub fn take(self) -> T {
-        match self {
-            StorageAction::Insert(v) => v,
-            StorageAction::Update(v) => v,
-            StorageAction::Remove(v) => v,
-        }
+impl From<AddressError> for Error {
+    fn from(e: AddressError) -> Self {
+        Error::Unknown("invalid address".into())
+    }
+}
+
+impl From<num::ParseIntError> for Error {
+    fn from(e: num::ParseIntError) -> Self {
+        Error::Unknown("can't parse integer".into())
     }
 }
 
 pub type StorageValue<T> = (Hash, T);
-
-fn string_hash_function<T>(data: T) -> Hash where T: AsRef<[u8]> {
-    Hash::sha3_160(data.as_ref())
-}
+pub type StorageDiff = ContractStorage<StorageAction<String>>;
 
 struct KeyBuilder {
     state: sha3::Sha3,
@@ -98,37 +92,71 @@ impl FromStr for KeyBuilder {
     }
 }
 
-pub trait Export<K, R> where K: AsRef<[u8]> {
-    fn save(&self, key: K) -> R;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageAction<T> where T: Clone + PartialEq + Eq + Debug {
+    Insert(T),
+    Update(T),
+    Remove(T),
 }
 
-impl<K: AsRef<[u8]>> Export<K, Vec<StorageValue<String>>> for String {
-    fn save(&self, key: K) -> Vec<StorageValue<String>> {
-        let digest = Hash::sha3_160(key.as_ref());
+impl<T> StorageAction<T> where T: Clone + PartialEq + Eq + Debug {
+    pub fn map<B: Clone + PartialEq + Eq + Debug, F: FnOnce(T) -> B>(mut self, f: F) -> StorageAction<B> {
+        match self {
+            StorageAction::Insert(v) => StorageAction::Insert(f(v)),
+            StorageAction::Update(v) => StorageAction::Update(f(v)),
+            StorageAction::Remove(v) => StorageAction::Remove(f(v)),
+        }
+    }
+
+    pub fn take(self) -> T {
+        match self {
+            StorageAction::Insert(v) => v,
+            StorageAction::Update(v) => v,
+            StorageAction::Remove(v) => v,
+        }
+    }
+}
+
+pub trait Export<R> {
+    fn save<S, K>(&self, mut state: S, key: &K) -> R where
+        S: crypto::digest::Digest + Clone,
+        K: AsRef<[u8]>;
+}
+
+impl Export<Vec<StorageValue<String>>> for String {
+    fn save<S, K>(&self, mut state: S, key: &K) -> Vec<StorageValue<String>> where
+        S: crypto::digest::Digest + Clone,
+        K: AsRef<[u8]>
+    {
+        state.input(key.as_ref());
+        let digest = digest_result(state);
         vec![(digest, (*self).clone())]
     }
 }
 
-impl<K, V: ToString> Export<K, Vec<StorageValue<String>>> for HashMap<K, V>
-    where K: AsRef<[u8]> + Eq + hash::Hash
+impl<K, V> Export<Vec<StorageValue<String>>> for HashMap<K, V>
+    where K: AsRef<[u8]> + Eq + hash::Hash,
+          V: Export<Vec<StorageValue<String>>> + Eq,
 {
-    fn save(&self, key: K) -> Vec<StorageValue<String>> {
-        unimplemented!();
-//        let mut vec = vec![];
-//
-//        for (k, v) in self.iter() {
-//            for (d, sv) in v.to_string().save(k.as_ref()) {
-//                let digest = Hash::sha3_160(d.as_ref());
-//                vec.push((digest, sv))
-//            }
-//        }
-//        vec
+    fn save<S, T>(&self, mut state: S, key: &T) -> Vec<StorageValue<String>> where
+        S: crypto::digest::Digest + Clone,
+        T: AsRef<[u8]> {
+        let mut vec = vec![];
+        for (k, v) in self {
+            let mut sub_vec = v.save(state.clone(), k);
+            vec.append(&mut sub_vec);
+        }
+        vec
     }
 }
 
-impl Export<String, Vec<StorageValue<StorageAction<String>>>> for StorageAction<String> {
-    fn save(&self, key: String) -> Vec<StorageValue<StorageAction<String>>> {
-        let digest = Hash::sha3_160(key.as_ref());
+impl Export<Vec<StorageValue<StorageAction<String>>>> for StorageAction<String> {
+    fn save<S, K>(&self, mut state: S, key: &K) -> Vec<StorageValue<StorageAction<String>>> where
+        S: crypto::digest::Digest + Clone,
+        K: AsRef<[u8]>
+    {
+        state.input(key.as_ref());
+        let digest = digest_result(state);
         let v = match self {
             StorageAction::Insert(ref v) => (digest, StorageAction::Insert(v.clone())),
             StorageAction::Update(ref v) => (digest, StorageAction::Update(v.clone())),
@@ -138,78 +166,36 @@ impl Export<String, Vec<StorageValue<StorageAction<String>>>> for StorageAction<
     }
 }
 
-impl<K, KK, V: ToString + Clone> Export<K, Vec<StorageValue<StorageAction<String>>>> for StorageAction<HashMap<KK, V>>
-    where K: AsRef<[u8]>,
-          KK: AsRef<[u8]> + Eq + hash::Hash + Clone
+impl<K, V> Export<Vec<StorageValue<StorageAction<String>>>> for HashMap<K, StorageAction<V>>
+    where K: AsRef<[u8]> + Eq + hash::Hash + Clone + Debug,
+          V: Export<Vec<StorageValue<String>>> + Clone + Eq + Debug,
 {
-    fn save(&self, key: K) -> Vec<StorageValue<StorageAction<String>>> {
-        let t = match self {
-            StorageAction::Insert(_) => StorageAction::Insert(()),
-            StorageAction::Update(_) => StorageAction::Update(()),
-            StorageAction::Remove(_) => StorageAction::Remove(()),
-        };
-        let mut sha = sha3::Sha3::sha3_256();
-        sha.input(key.as_ref());
-        let map = self.clone().take();
+    fn save<S, T>(&self, mut state: S, key: &T) -> Vec<StorageValue<StorageAction<String>>> where
+        S: crypto::digest::Digest + Clone,
+        T: AsRef<[u8]> {
+        state.input(key.as_ref());
+
         let mut vec = vec![];
-        for (k, v) in map.iter() {
-            let mut sha_cloned = sha.clone();
-            sha_cloned.input(k.as_ref());
-            let mut digest = HASH_NULL;
-            sha_cloned.result(&mut digest);
-            vec.push((digest, v.to_string()));
+        for (k, v) in self.iter() {
+            let mut sub_vec = v.clone().take().save(state.clone(), k)
+                .into_iter().map(|(d, s)| match v {
+                StorageAction::Insert(_) => (d, StorageAction::Insert(s)),
+                StorageAction::Update(_) => (d, StorageAction::Update(s)),
+                StorageAction::Remove(_) => (d, StorageAction::Remove(s)),
+            }).collect();
+            vec.append(&mut sub_vec);
         }
 
-        match t {
-            StorageAction::Insert(_) => vec.into_iter().map(|(d, v)| (d, StorageAction::Insert(v))).collect(),
-            StorageAction::Update(_) => vec.into_iter().map(|(d, v)| (d, StorageAction::Update(v))).collect(),
-            StorageAction::Remove(_) => vec.into_iter().map(|(d, v)| (d, StorageAction::Remove(v))).collect(),
-        }
+        vec
     }
 }
-/*
-impl<K, KK, KKK, V: ToString + Clone> Export<K, Vec<StorageValue<StorageAction<String>>>> for StorageAction<HashMap<KK, HashMap<KKK, V>>>
-    where K: AsRef<[u8]>,
-          KK: AsRef<[u8]> + Eq + hash::Hash + Clone,
-          KKK: AsRef<[u8]> + Eq + hash::Hash + Clone,
-{
-    fn save(&self, key: K) -> Vec<StorageValue<StorageAction<String>>> {
-        let t = match self {
-            StorageAction::Insert(_) => StorageAction::Insert(()),
-            StorageAction::Update(_) => StorageAction::Update(()),
-            StorageAction::Remove(_) => StorageAction::Remove(()),
-        };
 
-        let mut sha = sha3::Sha3::sha3_256();
-        sha.input(key.as_ref());
-
-        let map = self.clone().take();
-        let mut vec = vec![];
-        for (k, m) in map.iter() {
-            for (kk, v) in m.iter() {
-                let mut sha_cloned = sha.clone();
-                sha_cloned.input(k.as_ref());
-                sha_cloned.input(kk.as_ref());
-                let mut digest = HASH_NULL;
-                sha_cloned.result(&mut digest);
-                vec.push((digest, v.to_string()));
-            }
-        }
-
-        match t {
-            StorageAction::Insert(_) => vec.into_iter().map(|(d, v)| (d, StorageAction::Insert(v))).collect(),
-            StorageAction::Update(_) => vec.into_iter().map(|(d, v)| (d, StorageAction::Update(v))).collect(),
-            StorageAction::Remove(_) => vec.into_iter().map(|(d, v)| (d, StorageAction::Remove(v))).collect(),
-        }
-    }
-}
-*/
 pub trait Storage<I> {
     type Hash: hash::Hash;
 //    type Key: AsRef<[u8]>;
 //    type Item;
 
-    fn insert<K: AsRef<[u8]>, T: Export<K, Vec<StorageValue<I>>>>(&mut self, key: K, value: T);
+    fn insert<K: AsRef<[u8]>, T: Export<Vec<StorageValue<I>>>>(&mut self, key: K, value: T);
     fn get(&self, key: &Self::Hash) -> Option<&I>;
     fn keys(&self) -> Keys<Self::Hash, I>;
 //    fn insert_storage<S: Storage>(&mut self, key: Self::Key, value: S);
@@ -231,8 +217,9 @@ impl Storage<String> for ContractStorage<String> {
     type Hash = Hash;
 //    type Key = String;
 
-    fn insert<K: AsRef<[u8]>, T: Export<K, Vec<StorageValue<String>>>>(&mut self, key: K, value: T) {
-        for (digest, v) in value.save(key) {
+    fn insert<K: AsRef<[u8]>, T: Export<Vec<StorageValue<String>>>>(&mut self, key: K, value: T) {
+        let state = crypto::sha3::Sha3::sha3_256();
+        for (digest, v) in value.save(state, &key) {
             self.inner.insert(digest, v);
         }
     }
@@ -250,8 +237,9 @@ impl Storage<StorageAction<String>> for ContractStorage<StorageAction<String>> {
     type Hash = Hash;
 //    type Key = String;
 
-    fn insert<K: AsRef<[u8]>, T: Export<K, Vec<StorageValue<StorageAction<String>>>>>(&mut self, key: K, value: T) {
-        for (digest, v) in value.save(key) {
+    fn insert<K: AsRef<[u8]>, T: Export<Vec<StorageValue<StorageAction<String>>>>>(&mut self, key: K, value: T) {
+        let state = crypto::sha3::Sha3::sha3_256();
+        for (digest, v) in value.save(state, &key) {
             self.inner.insert(digest, v);
         }
     }
@@ -264,8 +252,6 @@ impl Storage<StorageAction<String>> for ContractStorage<StorageAction<String>> {
         self.inner.keys()
     }
 }
-
-pub type StorageDiff = ContractStorage<StorageAction<String>>;
 
 #[derive(Default)]
 pub struct ContractsStorage {
@@ -280,12 +266,62 @@ pub struct ContractOutput {
 }
 
 impl ContractsStorage {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn call(&mut self, hash: &Hash, caller: &Account, input: &json::Map<String, json::Value>) -> Result<ContractOutput, Error> {
+        use self::StorageAction::*;
+
         debug!("request for contract {:?} call with input data {:?}", hash, input);
 
         if let Some(ref mut contract) = self.contracts.get_mut(hash) {
             if let Some(ref mut storage) = self.storages.get_mut(hash) {
-                return contract.call(caller, input, storage);
+                let output = contract.call(caller, input, storage)?;
+
+                if let Some(ref diff) = output.storage_diff {
+                    for (k, act) in &diff.inner {
+                        match act {
+                            Insert(v) => {
+                                if !storage.inner.contains_key(k) {
+                                    storage.inner.insert(k.clone(), v.clone());
+                                } else {
+                                    error!("attempt to insert value, but key exists");
+                                    return Err(Error::KeyExists);
+                                }
+                            },
+                            Update(v) => {
+                                if storage.inner.contains_key(k) {
+                                    storage.inner.insert(k.clone(), v.clone());
+                                } else {
+                                    error!("attempt to update value, but key doesn't exist");
+                                    return Err(Error::KeyDoesntExist);
+                                }
+                            },
+                            Remove(v) => {
+                                if storage.inner.contains_key(k) {
+                                    storage.inner.remove(k);
+                                } else {
+                                    error!("attempt to remove value, but key doesn't exist");
+                                    return Err(Error::KeyDoesntExist);
+                                }
+                            },
+                        }
+                    }
+                }
+
+                let diff = output.balance_diff;
+                let balance = caller.1 as usize;
+                if diff != 0 {
+                    let out_balance = if diff > 0 {
+                        balance.checked_add(diff as usize).ok_or(Error::Overflow)?;
+                    } else {
+                        balance.checked_sub((-diff) as usize).ok_or(Error::Overflow)?;
+                    };
+                }
+
+                return Ok(output);
             }
         }
         Err(Error::UnknownContract)
@@ -330,21 +366,9 @@ impl ContractsStorage {
     }
 }
 
-pub trait Contract<T> where T: Export<String, Vec<StorageValue<String>>> {
+pub trait Contract<T> where T: Export<Vec<StorageValue<String>>> {
     fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &mut ContractStorage<T>) -> Result<ContractOutput, Error>;
 //    fn create(caller: &Account, input: &json::Value) -> Result<(ContractOutput, TokenContract), Error>;
-}
-
-impl From<json::Error> for Error {
-    fn from(e: json::Error) -> Self {
-        Error::JsonParse("failed to parse json".into())
-    }
-}
-
-impl From<AddressError> for Error {
-    fn from(e: AddressError) -> Self {
-        Error::Unknown("invalid address".into())
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -377,6 +401,44 @@ impl TokenContract {
 
         Ok(ContractOutput {
             storage_diff: None,
+            balance_diff: 0,
+            output,
+        })
+    }
+
+    pub fn transfer(&self, caller: &Account, to: &Address, amount: u64, storage: &mut ContractStorage<String>) -> Result<ContractOutput, Error> {
+        use self::StorageAction::*;
+        let from = caller.0;
+
+        let sender_balance_key = KeyBuilder::new("balances").chain(from).finalize();
+        let sender_balance = u64::from_str(storage.get(&sender_balance_key).ok_or(Error::UnknownStorageKey)?)?;
+        let out_sender_balance: u64 = sender_balance.checked_sub(amount).ok_or(Error::Overflow)?;
+        let recipient_balance_key = KeyBuilder::new("balances").chain(to).finalize();
+
+        // do we need to check this?
+        let (is_new, recipient_balance) = match storage.get(&recipient_balance_key) {
+            Some(ref s) => (false, u64::from_str(s)?),
+            None => (true, 0)
+        };
+        let out_recipient_balance: u64 = recipient_balance.checked_add(amount).ok_or(Error::Overflow)?;
+        let mut storage_diff = StorageDiff::new();
+        let mut map = HashMap::<Address, StorageAction<String>>::new();
+
+        let val = if is_new {
+            Insert(out_recipient_balance.to_string())
+        } else {
+            Update(out_recipient_balance.to_string())
+        };
+        map.insert(to.clone(), val);
+        map.insert(from, Update(out_sender_balance.to_string()));
+        storage_diff.insert("balances", map);
+
+        let output = json!( {
+            "success": true
+        } );
+
+        Ok(ContractOutput {
+            storage_diff: Some(storage_diff),
             balance_diff: 0,
             output,
         })
@@ -416,10 +478,9 @@ impl TokenContract {
         storage.insert("symbol".to_string(), Insert(symbol.to_string()));
         storage.insert("decimals".to_string(), Insert(decimals.to_string()));
         storage.insert("total_supply".to_string(), Insert(total_supply.to_string()));
-//        let address_string = format!("{:?}", owner.0);
-        let mut map = HashMap::<Address, u64>::new();
-        map.insert(owner.0.clone(), total_supply);
-        storage.insert("balances".to_string(), Insert(map));
+        let mut map = HashMap::<Address, StorageAction<String>>::new();
+        map.insert(owner.0.clone(), Insert(total_supply.to_string()));
+        storage.insert("balances".to_string(), map);
 
         let out = ContractOutput {
             output: json!({}),
@@ -451,12 +512,33 @@ impl Contract<String> for TokenContract {
                 .as_str().ok_or(Error::JsonParse("expected string".into()))?)?;
 
             return self.balance_of(&address, storage);
+        } else if method == "transfer" {
+            let to = Address::from_str(args.get("to")
+                .ok_or(Error::JsonParse("expected field 'to'".into()))?
+                .as_str().ok_or(Error::JsonParse("expected string".into()))?)?;
+
+            let amount = args.get("amount")
+                .ok_or(Error::JsonParse("expected field 'amount'".into()))?
+                .as_u64().ok_or(Error::JsonParse("expected u64".into()))?;
+
+            return self.transfer(caller, &to, amount, storage);
         } else if method == "name" {
             return self.name(storage);
         }
 
         Err(Error::JsonParse("unknown method".into()))
     }
+}
+
+fn string_hash_function<T>(data: T) -> Hash where T: AsRef<[u8]> {
+    Hash::sha3_160(data.as_ref())
+}
+
+#[inline]
+fn digest_result<D: crypto::digest::Digest>(mut digest: D) -> Hash {
+    let mut hash = HASH_NULL;
+    digest.result(&mut hash);
+    hash
 }
 
 mod tests {
@@ -466,6 +548,8 @@ mod tests {
     #[test]
     fn storage_test() {
         init_log();
+
+        use super::StorageAction::*;
 
         let acc1 = Account(Address::from_str("P111111111111111111111111111111111111111111").unwrap(), 1000);
         let acc2 = Account(Address::from_str("P222222222222222222222222222222222222222222").unwrap(), 2000);
@@ -500,10 +584,43 @@ mod tests {
                 "address": "P111111111111111111111111111111111111111111"
             }
         });
+
         let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
         let out = contracts_storage.call(&contract_hash, &acc2, call_contract_json_obj).expect("failed to call contract");
         assert!(out.storage_diff.is_none());
         assert_eq!(out.balance_diff, 0);
         assert_eq!(out.output, json!({ "balance": "1000000" }));
+
+        let call_contract_json = json!({
+            "method": "transfer",
+            "arguments": {
+                "to": "P222222222222222222222222222222222222222222",
+                "amount": 500_000
+            }
+        });
+
+        let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
+        let mut out = contracts_storage.call(&contract_hash, &acc1, call_contract_json_obj).expect("failed to call contract");
+        assert!(out.storage_diff.is_some());
+
+        let sender_balance_key = KeyBuilder::new("balances").chain(acc1.0).finalize();
+        let recipient_balance_key = KeyBuilder::new("balances").chain(acc2.0).finalize();
+        let diff = out.storage_diff.take().unwrap();
+        assert_eq!(diff.get(&sender_balance_key), Some(&Update(500_000.to_string())));
+        assert_eq!(diff.get(&recipient_balance_key), Some(&Insert(500_000.to_string())));
+        assert_eq!(out.balance_diff, 0);
+        assert_eq!(out.output, json!({ "success": true }));
+
+        let call_contract_json = json!({
+            "method": "transfer",
+            "arguments": {
+                "to": "P222222222222222222222222222222222222222222",
+                "amount": 500_001
+            }
+        });
+
+        let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
+        let mut out = contracts_storage.call(&contract_hash, &acc1, call_contract_json_obj);
+        assert!(out.is_err());
     }
 }

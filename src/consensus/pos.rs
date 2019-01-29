@@ -27,10 +27,11 @@ use secp256k1;
 use tokio;
 use tokio_timer::{self, Timer};
 use serde::Serialize;
+use crate::model::transaction::Address;
 
 use crate::network::{
     Neighbor,
-    node::{PacketData, Pair},
+    node::{PacketData},
     rpc::{self, ConsensusValue},
 };
 use serde_pm::{to_boxed_buffer, to_buffer, SerializedBuffer, Identifiable};
@@ -605,16 +606,16 @@ fn timeout_in(t: Duration) -> oneshot::Receiver<()> {
 #[derive(Debug)]
 pub struct Validator {
     index: ValidatorIndex,
-    loyal: bool,
     node: Neighbor,
+    address: Address,
 }
 
 impl Validator {
-    pub fn from_index(index: ValidatorIndex, loyal: bool) -> Self {
+    pub fn from_index(index: ValidatorIndex, address: Address) -> Self {
         Validator {
             index,
-            loyal,
             node: Neighbor::from_address("127.0.0.1".parse::<SocketAddr>().unwrap()),
+            address,
         }
     }
 }

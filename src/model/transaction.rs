@@ -17,13 +17,10 @@ use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
 use crate::utils::defines::AM;
 use std::str::FromStr;
 use hex;
-use serde::{
-    Serialize, Serializer, Deserialize, Deserializer
-};
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+
 pub const HASH_SIZE: usize = 20;
 pub const ADDRESS_SIZE: usize = 21;
-// FIXME: do something with this value
-pub const TRANSACTION_SIZE: usize = 173 + 4; // HASH_SIZE + 1 (checksum byte)
 
 pub const HASH_NULL: Hash = Hash([0u8; HASH_SIZE]);
 pub const ADDRESS_NULL: Address = Address([0u8; ADDRESS_SIZE]);
@@ -209,12 +206,8 @@ impl<'de> Deserialize<'de> for Address {
 
 impl fmt::Debug for Address {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//        use self::rustc_serialize::hex::ToHex;
-        let strs: Vec<String> = self.0.iter()
-            .map(|b| format!("{:02X}", b))
-            .collect();
+        let strs: Vec<String> = self.0.iter().map(|b| format!("{:02X}", b)).collect();
         write!(f, "P{}", strs.join(""))
-//        write!(f, "P{}", self.0.to_hex())
     }
 }
 
