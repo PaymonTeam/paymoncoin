@@ -148,9 +148,35 @@ impl Default for Hash {
     }
 }
 
+impl FromStr for Hash {
+    type Err = HashError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match hex::decode(s.to_string()) {
+            Err(_) => return Err(HashError::InvalidHash),
+            Ok(vec) => {
+                let bytes: &[u8] = vec.as_ref();
+                let mut ret_bytes = [0u8; HASH_SIZE];
+
+                if bytes.len() == HASH_SIZE {
+                    ret_bytes.copy_from_slice(&bytes);
+                    return Ok(Hash(ret_bytes))
+                } else {
+                    return Err(HashError::InvalidHash);
+                }
+            }
+        };
+    }
+}
+
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum AddressError {
     InvalidAddress,
+}
+
+#[derive(Copy, PartialEq, Eq, Clone, Debug)]
+pub enum HashError {
+    InvalidHash,
 }
 
 #[derive(PartialEq, Copy, Clone, Eq, Hash)]
@@ -182,9 +208,9 @@ impl FromStr for Address {
             Err(_) => return Err(AddressError::InvalidAddress),
             Ok(vec) => {
                 let bytes:&[u8] = vec.as_ref();
-                let mut ret_bytes = [0u8; 21];
+                let mut ret_bytes = [0u8; ADDRESS_SIZE];
 
-                if bytes.len() == 21 {
+                if bytes.len() == ADDRESS_SIZE {
                     ret_bytes.copy_from_slice(&bytes);
                     return Ok(Address(ret_bytes))
                 } else {

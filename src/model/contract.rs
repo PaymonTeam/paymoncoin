@@ -29,7 +29,13 @@ impl From<json::Error> for Error {
 
 impl From<AddressError> for Error {
     fn from(e: AddressError) -> Self {
-        Error::Unknown("invalid address".into())
+        Error::Unknown("invalid address value".into())
+    }
+}
+
+impl From<HashError> for Error {
+    fn from(e: AddressError) -> Self {
+        Error::Unknown("invalid hash value".into())
     }
 }
 
@@ -198,11 +204,11 @@ pub trait Storage<I> {
     fn keys(&self) -> Keys<Self::Hash, I>;
 }
 
-pub struct ContractStorage<T> {//where T: Export<String, Vec<StorageValue>> {
+pub struct ContractStorage<T> {
     inner: HashMap<Hash, T>,
 }
 
-impl<T> ContractStorage<T> {//where T: Export<String, Vec<StorageValue>> {
+impl<T> ContractStorage<T> {
     pub fn new() -> Self {
         Self {
             inner: HashMap::new(),
@@ -360,6 +366,10 @@ impl ContractsStorage {
         info!("created contract {:?} with input {}", hash, input.to_string());
 
         Ok(())
+    }
+
+    pub fn get_value(&self, contract_hash: &Hash, key: &Hash) -> Option<&String> {
+        self.storages.get(contract_hash).and_then(|s| s.get(key))
     }
 }
 
