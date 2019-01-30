@@ -1,5 +1,4 @@
 extern crate crypto;
-extern crate ntrumls;
 extern crate base64;
 
 use serde_pm_derive;
@@ -13,13 +12,19 @@ use std::ops::{Deref, DerefMut};
 use crate::storage::hive::Hive;
 use std::collections::HashSet;
 use std::clone::Clone;
-use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
+use crate::secp256k1;
+//use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
 use crate::utils::defines::AM;
 use std::str::FromStr;
 use hex;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 
-pub const HASH_SIZE: usize = 20;
+pub type PublicKey = secp256k1::PublicKey;
+pub type PrivateKey = secp256k1::SecretKey;
+pub type Signature = secp256k1::Signature;
+pub type Message = secp256k1::Message;
+
+pub const HASH_SIZE: usize = 32;
 pub const ADDRESS_SIZE: usize = 21;
 
 pub const HASH_NULL: Hash = Hash([0u8; HASH_SIZE]);
@@ -29,7 +34,7 @@ pub const ADDRESS_NULL: Address = Address([0u8; ADDRESS_SIZE]);
 pub struct Hash(pub [u8; HASH_SIZE]);
 
 impl Hash {
-    pub fn sha3_160(bytes: &[u8]) -> Self {
+    pub fn sha3_256(bytes: &[u8]) -> Self {
         let mut sha = Sha3::sha3_256();
         sha.input(bytes);
         let mut buf = [0u8; HASH_SIZE];
@@ -53,6 +58,12 @@ impl Hash {
 
     pub fn is_null(&self) -> bool {
         *self == HASH_NULL
+    }
+}
+
+impl From<Hash> for Message {
+    fn from(h: Hash) -> Self {
+        Message::from_slice(&h.0).unwrap()
     }
 }
 
@@ -128,6 +139,12 @@ impl fmt::Debug for Hash {
             .collect();
         write!(f, "Hash({})", strs.join(""))
 //        write!(f, "P{}", self.0.to_hex())
+    }
+}
+
+impl Default for Hash {
+    fn default() -> Hash {
+        HASH_NULL
     }
 }
 
@@ -211,6 +228,12 @@ impl fmt::Debug for Address {
     }
 }
 
+impl Default for Address {
+    fn default() -> Address {
+        ADDRESS_NULL
+    }
+}
+
 impl Address {
     pub fn is_null(&self) -> bool {
         self.0 == [0u8; ADDRESS_SIZE]
@@ -235,14 +258,13 @@ impl Address {
 
     // TODO: may cause panic?
     pub fn from_public_key(pk: &PublicKey) -> Self {
-        let mut buf = [0u8; 32];
-        let mut sha = Sha3::sha3_256();
-        sha.input(&[0u8, 12]);
-        sha.result(&mut buf);
-//        println!("{}", buf[..].to_hex());
+//        let mut buf = [0u8; 32];
+//        let mut sha = Sha3::sha3_256();
+//        sha.input(&[0u8, 12]);
+//        sha.result(&mut buf);
 
         let mut sha = Sha3::sha3_256();
-        sha.input(&pk.0);
+        sha.input(&pk.serialize_uncompressed());
 
         let mut buf = [0u8; 32];
         sha.result(&mut buf);
@@ -252,8 +274,8 @@ impl Address {
         let checksum_byte = Address::calculate_checksum(&buf[offset..]);
 
         let mut addr = ADDRESS_NULL;
-        addr[..20].copy_from_slice(&buf[offset..32]);
-        addr[20] = checksum_byte;
+        addr[..(ADDRESS_SIZE-1)].copy_from_slice(&buf[offset..32]);
+        addr[ADDRESS_SIZE-1] = checksum_byte;
         addr
     }
 }
@@ -428,26 +450,24 @@ impl Transaction {
         }
     }
 
-    pub fn calculate_signature(&mut self, sk: &PrivateKey, pk: &PublicKey) -> Option<Signature> {
-        let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+    pub fn calculate_signature(&mut self, sk: &PrivateKey, _pk: &PublicKey) -> Signature {
+        use secp256k1::*;
+        let mut secp = Secp256k1::<All>::new();
         debug!("signing {:?}", self.object.hash);
-//        println!("signing {:?} {:?} {:?}", self.object.hash, sk, pk);
-        ntrumls.sign(&self.object.hash, sk, pk)
+        secp.sign(&Message::from_slice(&self.object.hash).unwrap(), sk)
     }
 
-    pub fn new_random() -> Self {
-        let transaction = TransactionObject::new_random();
-        let bytes = to_buffer(&transaction).unwrap();
-//        let mut bytes = SerializedBuffer::new_with_size(TRANSACTION_SIZE);
-//        transaction.serialize_to_stream(&mut bytes);
-
-        Transaction {
-            weight_magnitude: transaction.hash.trailing_zeros(),
-            object: transaction,
-            bytes,
-            approvers: None,
-        }
-    }
+//    pub fn new_random() -> Self {
+//        let transaction = TransactionObject::new_random();
+//        let bytes = to_buffer(&transaction).unwrap();
+//
+//        Transaction {
+//            weight_magnitude: transaction.hash.trailing_zeros(),
+//            object: transaction,
+//            bytes,
+//            approvers: None,
+//        }
+//    }
 
     pub fn calculate_hash(&mut self) -> Hash {
         if self.bytes.position() == 0 {
@@ -456,11 +476,12 @@ impl Transaction {
 //            self.object.serialize_to_stream(&mut self.bytes);
         }
 
-        let mut sb = SerializedBuffer::new_with_size(ADDRESS_SIZE + 4 + 8 + HASH_SIZE);
+        let mut sb = SerializedBuffer::new_with_size(ADDRESS_SIZE + 4 + 8 + HASH_SIZE + self.object.data.len());
         sb.write_bytes(&self.object.address);
         sb.write_u32(self.object.value);
         sb.write_u64(self.object.timestamp);
         sb.write_bytes(&self.object.tag);
+        sb.write_bytes(self.object.data.as_bytes());
 
         let mut sha = Sha3::sha3_256();
         sha.input(&sb.buffer);
@@ -541,8 +562,8 @@ impl TransactionObject {
             timestamp: 0u64,
             value: 0u32,
             data_type: TransactionType::HashOnly,
-            signature: Signature(vec![]),
-            signature_pubkey: PublicKey(vec![]),
+            signature: Signature::from_der(&[0; 65]).unwrap(),
+            signature_pubkey: PublicKey::from_slice(&[0; 32]).unwrap(),
             snapshot: 0u32,
             solid: false,
             height: 0,
@@ -550,54 +571,54 @@ impl TransactionObject {
         }
     }
 
-    pub fn new_random() -> Self {
-        use rand::Rng;
-        use rand::thread_rng;
-
-        let mut signature = Signature(Vec::new());
-        let signature_pubkey = PublicKey(Vec::new());
-        let mut address = ADDRESS_NULL;
-        let mut branch_transaction = HASH_NULL;
-        let mut trunk_transaction = HASH_NULL;
-        let mut bundle = HASH_NULL;
-        let hash = HASH_NULL;
-
-        let attachment_timestamp = 0u64;
-        let attachment_timestamp_lower_bound = 0u64;
-        let attachment_timestamp_upper_bound = 0u64;
-        let timestamp = 0u64;
-        let nonce = 0u64;
-        let _current_index = 0u32;
-        let _last_index = 0u32;
-        let value = 0u32;
-        let snapshot = 0u32;
-        thread_rng().fill_bytes(&mut signature.0);
-        thread_rng().fill_bytes(&mut branch_transaction);
-        thread_rng().fill_bytes(&mut address);
-        thread_rng().fill_bytes(&mut trunk_transaction);
-        thread_rng().fill_bytes(&mut bundle);
-
-        TransactionObject {
-            signature,
-            signature_pubkey,
-            address,
-            attachment_timestamp,
-            attachment_timestamp_lower_bound,
-            attachment_timestamp_upper_bound,
-            branch_transaction,
-            trunk_transaction,
-            hash,
-            nonce,
-            tag: HASH_NULL,
-            timestamp,
-            value,
-            data_type: TransactionType::Full,
-            snapshot,
-            solid: false,
-            height: 0,
-            data: String::default(),
-        }
-    }
+//    pub fn new_random() -> Self {
+//        use rand::Rng;
+//        use rand::thread_rng;
+//
+//        let mut signature = Signature(Vec::new());
+//        let signature_pubkey = PublicKey(Vec::new());
+//        let mut address = ADDRESS_NULL;
+//        let mut branch_transaction = HASH_NULL;
+//        let mut trunk_transaction = HASH_NULL;
+//        let mut bundle = HASH_NULL;
+//        let hash = HASH_NULL;
+//
+//        let attachment_timestamp = 0u64;
+//        let attachment_timestamp_lower_bound = 0u64;
+//        let attachment_timestamp_upper_bound = 0u64;
+//        let timestamp = 0u64;
+//        let nonce = 0u64;
+//        let _current_index = 0u32;
+//        let _last_index = 0u32;
+//        let value = 0u32;
+//        let snapshot = 0u32;
+//        thread_rng().fill_bytes(&mut signature.0);
+//        thread_rng().fill_bytes(&mut branch_transaction);
+//        thread_rng().fill_bytes(&mut address);
+//        thread_rng().fill_bytes(&mut trunk_transaction);
+//        thread_rng().fill_bytes(&mut bundle);
+//
+//        TransactionObject {
+//            signature,
+//            signature_pubkey,
+//            address,
+//            attachment_timestamp,
+//            attachment_timestamp_lower_bound,
+//            attachment_timestamp_upper_bound,
+//            branch_transaction,
+//            trunk_transaction,
+//            hash,
+//            nonce,
+//            tag: HASH_NULL,
+//            timestamp,
+//            value,
+//            data_type: TransactionType::Full,
+//            snapshot,
+//            solid: false,
+//            height: 0,
+//            data: String::default(),
+//        }
+//    }
 
     pub fn get_snapshot_index(&self) -> u32{
         return self.snapshot;
@@ -614,7 +635,6 @@ pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
     }
 
     // check nonce
-    let _nonce = 0;
     let mut sha = Sha3::sha3_256();
     let mut buf = [0u8; 32];
 
@@ -640,10 +660,10 @@ pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
     // check signature
     let sign = &transaction.object.signature;
     let pk = &transaction.object.signature_pubkey;
-    let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-//    let pk = PublicKey(address_from.0.to_vec());
-//    println!("{:?}", pk);
-//    println!("{:?}", transaction.object.hash);
-//    println!("{:?}", transaction.object.signature);
-    ntrumls.verify(&transaction.object.hash, sign, &pk)
+//    let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
+//    ntrumls.verify(&transaction.object.hash, sign, &pk)
+    use secp256k1::*;
+
+    let mut secp = Secp256k1::<All>::new();
+    secp.verify(&transaction.object.hash.into(), sign, pk).map(|_| true).map_err(|_| false).unwrap()
 }

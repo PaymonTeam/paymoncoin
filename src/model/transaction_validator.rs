@@ -30,6 +30,7 @@ pub struct TransactionValidator {
     new_solid_transaction_list_one: AM<LinkedHashSet<Hash>>,
     new_solid_transaction_list_two: AM<LinkedHashSet<Hash>>,
     transaction_requester: AM<TransactionRequester>,
+
 }
 
 pub fn has_invalid_timestamp(transaction: &Transaction) -> bool {
@@ -361,14 +362,12 @@ impl TransactionValidator {
             }
 
             if solid {
-                transaction.update_solidity(solid);
-                // println!("hive lock 30");
+                transaction.update_solidity(true);
                 if let Ok(mut hive) = self.hive.lock() {
                     hive.update_heights(transaction.clone());
                 } else {
                     panic!("hive mutex is broken")
                 }
-                // println!("hive unlock 30");
 
                 return Ok(true);
             }
@@ -386,10 +385,8 @@ impl TransactionValidator {
         }
 
         let approvers = transaction.get_approvers(&self.hive);
-        // println!("hive lock 31");
         if let Ok(_hive) = self.hive.lock() {
             if let Ok(mut tvm) = self.tips_view_model.lock() {
-//                println!(2);
                 if approvers.len() == 0 {
                     tvm.add_tip(transaction.get_hash());
                 }
@@ -397,10 +394,9 @@ impl TransactionValidator {
                 tvm.remove_tip(&transaction.get_branch_transaction_hash());
             }
         }
-        // println!("hive unlock 31");
 
-//        println!(3);
         if self.quick_set_solid(transaction)? {
+
             self.add_solid_transaction(transaction.get_hash());
         }
 

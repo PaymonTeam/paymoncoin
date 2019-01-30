@@ -1,7 +1,8 @@
 #[macro_use]
 use serde_derive;
-use serde::Serialize;
-use serde_pm::SerializedBuffer;
+use serde::{Serialize, Deserialize};
+use serde_pm::{SerializedBuffer, Boxed, Identifiable};
+use std::fmt::Debug;
 
 use crate::model::{
     Transaction, TransactionObject,
@@ -26,10 +27,6 @@ pub struct NodeInfo {
     pub name: String,
 }
 
-impl NodeInfo {
-    pub const SVUID : i32 = 3;
-}
-
 /**
     AttachTransaction
 */
@@ -38,8 +35,6 @@ pub struct AttachTransaction {
     pub transaction: TransactionObject,
 }
 
-impl AttachTransaction { pub const SVUID : i32 = 4; }
-
 /**
     BroadcastTransaction
 */
@@ -47,8 +42,6 @@ impl AttachTransaction { pub const SVUID : i32 = 4; }
 pub struct BroadcastTransaction {
     pub transaction: TransactionObject,
 }
-
-impl BroadcastTransaction { pub const SVUID : i32 = 15235324; }
 
 /**
     GetTransactionsToApprove
@@ -59,8 +52,6 @@ pub struct GetTransactionsToApprove {
     pub num_walks: u32,
     pub reference: Hash
 }
-
-impl GetTransactionsToApprove { pub const SVUID : i32 = 5; }
 
 //impl Serializable for GetTransactionsToApprove {
 //    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
@@ -97,8 +88,6 @@ pub struct TransactionsToApprove {
     pub branch: Hash,
 }
 
-impl TransactionsToApprove { pub const SVUID : i32 = 6; }
-
 /**
     RequestTransaction
 */
@@ -107,8 +96,6 @@ impl TransactionsToApprove { pub const SVUID : i32 = 6; }
 pub struct RequestTransaction {
     pub hash: Hash,
 }
-
-impl RequestTransaction { pub const SVUID : i32 = 17; }
 
 /**
     GetBalances
@@ -120,8 +107,6 @@ pub struct GetBalances {
     pub threshold: u8,
 }
 
-impl GetBalances { pub const SVUID : i32 = 7; }
-
 /**
     Balances
 */
@@ -130,35 +115,25 @@ pub struct Balances {
     pub balances: Vec<u64>,
 }
 
-impl Balances { pub const SVUID : i32 = 8; }
-
 #[derive(Serialize, Deserialize)]
 pub struct GetInclusionStates {
     pub transactions: Vec<Hash>,
     pub tips: Vec<Hash>
 }
 
-impl GetInclusionStates { pub const SVUID : i32 = 12; }
-
 #[derive(Serialize, Deserialize)]
 pub struct InclusionStates {
     pub booleans: Vec<bool>
 }
 
-impl InclusionStates { pub const SVUID : i32 = 13; }
-
 #[derive(Serialize, Deserialize)]
 pub struct GetTips {
 }
-
-impl GetTips { pub const SVUID : i32 = 14; }
 
 #[derive(Serialize, Deserialize)]
 pub struct Tips {
     pub hashes: Vec<Hash>
 }
-
-impl Tips { pub const SVUID : i32 = 15; }
 
 #[derive(Serialize, Deserialize)]
 pub struct FindTransactions {
@@ -167,36 +142,26 @@ pub struct FindTransactions {
     pub approvees: Vec<Hash>,
 }
 
-impl FindTransactions { pub const SVUID : i32 = 16; }
-
 #[derive(Serialize, Deserialize)]
 pub struct FoundedTransactions {
     pub hashes: Vec<Hash>
 }
-
-impl FoundedTransactions { pub const SVUID : i32 = 16; }
 
 #[derive(Serialize, Deserialize)]
 pub struct GetTransactionsData {
     pub hashes: Vec<Hash>,
 }
 
-impl GetTransactionsData { pub const SVUID : i32 = 16; }
-
 #[derive(Serialize, Deserialize)]
 pub struct TransactionsData {
     pub transactions: Vec<String>,
 }
 
-impl TransactionsData { pub const SVUID : i32 = 16; }
-
-#[derive(Serialize, Deserialize, Eq, Debug, Clone, PMIdentifiable)]
+#[derive(Serialize, Deserialize, Eq, Debug, Clone, PMIdentifiable, Default)]
 #[pm_identifiable(id = "0x183f2199")]
 pub struct ConsensusValue {
     pub value: u32,
 }
-
-impl ConsensusValue { pub const SVUID : i32 = 167; }
 
 use std::cmp::Ordering;
 
@@ -218,10 +183,27 @@ impl PartialEq for ConsensusValue {
     }
 }
 
-impl Default for ConsensusValue {
-    fn default() -> Self {
-        ConsensusValue {
-            value: u32::default(),
-        }
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, PMIdentifiable, Default)]
+#[pm_identifiable(id = "0xac73d2ff")]
+pub struct Signed
+//    where T: Serialize + PartialEq + Eq + Default + Debug + Clone + Identifiable
+{
+    pub signature: Vec<u8>,
+    pub hash: Hash,
+    pub data: SignedData,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Default)]
+pub enum SignedData {
+    ApplyForValidator {
+        stake: u64,
+        address: Address,
     }
 }
+
+//#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, PMIdentifiable, Default)]
+//#[pm_identifiable(id = "0x24e88fca")]
+//pub struct ApplyForValidator {
+//    stake: u64,
+//    address: Address,
+//}

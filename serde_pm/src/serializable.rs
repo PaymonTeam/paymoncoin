@@ -264,7 +264,7 @@ impl SerializedBuffer {
         Ok(())
     }
 
-    pub fn write_bytes(&mut self, b:&[u8]/*, length:usize*/) -> Result<()> {
+    pub fn write_bytes(&mut self, b:&[u8]) -> Result<()> {
         let length = b.len();
         if !self.calculated_size_only {
             if self.position + length > self.limit {

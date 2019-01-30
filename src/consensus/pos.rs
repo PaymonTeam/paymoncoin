@@ -506,6 +506,7 @@ impl<T, S> bft::Context for Context<T, S>
         _next_round: u32,
         _reason: bft::AdvanceRoundReason,
     ) {
+        debug!("[bft] on_advance_round");
     }
 }
 

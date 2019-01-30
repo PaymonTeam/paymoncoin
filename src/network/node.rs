@@ -6,14 +6,14 @@ use std::net::{TcpStream, SocketAddr, IpAddr};
 use std::sync::mpsc::{Sender, Receiver};
 use std::collections::{VecDeque, BTreeSet};
 use crate::model::{TransactionObject, Transaction, TransactionType};
-use ntrumls::{NTRUMLS, PQParamSetID, PublicKey, PrivateKey};
+use crate::model::contract::{ContractStorage, ContractsStorage, ContractOutput};
 use crate::storage::Hive;
 use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 use crate::model::transaction;
-use crate::model::transaction::{Hash, HASH_NULL};
+use crate::model::transaction::{Address, Hash, HASH_NULL};
 use rand::{Rng, thread_rng};
 use crate::utils::{AM, AWM};
 use crate::network::{rpc};
@@ -27,8 +27,8 @@ use crate::consensus::{self, Validator, pos::{
     Secp256k1SignatureScheme,
     ROUND_DURATION,
 }};
-use serde_pm::{SerializedBuffer, from_stream, to_buffer, Identifiable};
 
+use serde_pm::{SerializedBuffer, from_stream, to_buffer, Identifiable};
 use futures::{
     self,
     AndThen,
@@ -43,23 +43,7 @@ use futures::{
 use rhododendron as bft;
 use serde::Serialize;
 
-//#[repr(transparent)]
-//struct ConsensusType(bft::Communication<rpc::ConsensusValue, [u8; 32], usize, secp256k1::Signature>);
 type ConsensusType = bft::Communication<rpc::ConsensusValue, [u8; 32], usize, consensus::Secp256k1Signature>;
-
-pub struct Pair<U, V> {
-    pub low: U,
-    pub hi: V,
-}
-
-impl<U, V> Pair<U, V> {
-    pub fn new(low: U, hi: V) -> Self {
-        Pair {
-            low,
-            hi
-        }
-    }
-}
 
 pub struct Node {
     hive: AWM<Hive>,
@@ -79,6 +63,8 @@ pub struct Node {
     milestone: AM<Milestone>,
     bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>,
     bft_out: mpsc::UnboundedSender<(ConsensusType)>,
+    contracts_storage: ContractsStorage,
+    validators: Vec<Validator>,
 //    bft_network: consensus::pos::TestNetwork<rpc::ConsensusValue>,
 }
 
@@ -86,67 +72,6 @@ pub struct PacketData<T> {
     validator: Validator,
     data: T,
 }
-
-/*#[derive(Clone)]
-pub struct OutputStream<'a> {
-    pub queue: AM<Vec<PacketData<'a>>>,
-}
-
-impl<'a> OutputStream<'a> {
-    fn new() -> Self {
-        OutputStream {
-            queue: make_am!(Vec::new()),
-        }
-    }
-
-    pub fn send_packet(&mut self, packet: PacketData<'a>) {
-        let mut q = self.queue.lock().unwrap();
-        q.push(packet);
-    }
-
-    pub fn send_packet2(&mut self, b: Arc<dyn Serializable + 'a>) {
-        drop(b);
-    }
-}
-
-impl<'a> Stream for OutputStream<'a> {
-    type Item = PacketData<'a>;
-    type Error = Error;
-
-    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
-        let mut q = self.queue.lock().unwrap();
-        Ok(Async::Ready(q.pop()))
-    }
-}
-
-#[derive(Clone)]
-pub struct InputStream<'a> {
-    pub queue: AM<Vec<PacketData<'a>>>,
-}
-
-impl<'a> InputStream<'a> {
-    fn new() -> Self {
-        InputStream {
-            queue: make_am!(Vec::new()),
-        }
-    }
-
-    pub fn send_packet(&mut self, packet: PacketData<'a>) {
-        let mut q = self.queue.lock().unwrap();
-        q.push(packet);
-    }
-}
-
-impl<'a> Stream for InputStream<'a> {
-    type Item = PacketData<'a>;
-    type Error = Error;
-
-    fn poll(&mut self) -> Result<Async<Option<<Self as Stream>::Item>>, <Self as Stream>::Error> {
-        let mut q = self.queue.lock().unwrap();
-        Ok(Async::Ready(q.pop()))
-//        Ok(Async::NotReady)
-    }
-}*/
 
 impl Node {
     pub fn new(hive: Weak<Mutex<Hive>>, config: Configuration, node_tx: Sender<()>, pmnc_rx:
@@ -174,6 +99,8 @@ impl Node {
             milestone,
             bft_in: in_rx,
             bft_out: out_tx,
+            contracts_storage: ContractsStorage::new(),
+            validators: Vec::new(),
         }
     }
 
@@ -537,80 +464,83 @@ impl Node {
     }
 
     pub fn on_connection_data_received(&mut self, mut data: SerializedBuffer, addr: SocketAddr) {
-//        let neighbor;
-//        if let Ok(neighbors) = self.neighbors.lock() {
-//            neighbor = match neighbors.iter().find(
-//                |arc| {
-//                    if let Ok(n) = arc.lock() { return n.addr.ip() == addr.ip() }
-//                    false
-//                }) {
-//                Some(arc) => arc.clone(),
-//                None => {
-//                    info!("Received data from unknown neighbor {:?}", addr);
-//                    return;
-//                }
-//            };
-//        } else {
-//            panic!("broken neighbors mutex");
-//        }
+        use std::collections::HashMap;
+        use serde::{Serialize};
+        use serde_pm::Identifiable;
+
+        let neighbor;
+        if let Ok(neighbors) = self.neighbors.lock() {
+            neighbor = match neighbors.iter().find(
+                |arc| {
+                    if let Ok(n) = arc.lock() { return n.addr.ip() == addr.ip() }
+                    false
+                }) {
+                Some(arc) => arc.clone(),
+                None => {
+                    info!("Received data from unknown neighbor {:?}", addr);
+                    return;
+                }
+            };
+        } else {
+            panic!("broken neighbors mutex");
+        }
 
         let _length = data.limit();
-
-//        if length == 4 {
-//            connection.close();
-//            return;
-//        }
-
         let _mark = data.position();
         let _message_id = data.read_i64().unwrap();
         let message_length = data.read_i32().unwrap();
 
         if message_length > data.remaining() as i32 {
             warn!("Received incorrect message length");
-//            return;
         }
 
         let svuid = data.read_u32().unwrap();
-
-        use std::collections::HashMap;
-        use serde::{Serialize};
-        use serde_pm::Identifiable;
 
         debug!("received svuid {:X}", svuid);
 
         if svuid == TransactionObject::primary_type_id() {
             let mut transaction_object = from_stream(&mut data).expect("failed to deserialize tx");
-//                let mut transaction_object = TransactionObject::new();
-//                transaction_object.read_params(&mut data);
-//
             let mut transaction = Transaction::from_object(transaction_object);
             if let Ok(mut queue) = self.receive_queue.lock() {
                 queue.push_back(transaction);
             }
-        }
-//            rpc::AttachTransaction::SVUID => {
-//                let mut transaction_object = TransactionObject::new();
-//                transaction_object.read_params(&mut data);
-//
-//                let mut transaction = Transaction::from_object(transaction_object);
-//                if let Ok(mut queue) = self.receive_queue.lock() {
-//                    queue.push_back(transaction);
-//                }
-//            }
-//            rpc::RequestTransaction::SVUID => {
-//                let mut tx_request = rpc::RequestTransaction { hash: HASH_NULL };
-//                tx_request.read_params(&mut data);
-//
-//                let mut hash = tx_request.hash;
-//                if let Ok(mut queue) = self.reply_queue.lock() {
-//                    queue.push_back((hash, neighbor.clone()));
-//                }
-//            },
-//        else if svuid == rpc::ConsensusValue::primary_type_id() {
-        else if svuid == ConsensusType::primary_type_id() {
+        } else if svuid == rpc::RquestTransaction::primary_type_id() {
+            let tx_request: rpc::RequestTransaction = from_stream(&mut data).unwrap();
+
+            let mut hash = tx_request.hash;
+            if let Ok(mut queue) = self.reply_queue.lock() {
+                queue.push_back((hash, neighbor.clone()));
+            }
+        } else if svuid == ConsensusType::primary_type_id() {
             let v = from_stream(&mut data).unwrap();
             info!("received communication {:?}", v);
             self.bft_out.unbounded_send(v);
+        } else if svuid == rpc::Signed::primary_type_id() {
+//            use std::str::FromStr;
+//            use crate::network::rpc::SignedData;
+//
+//            static ALLOWED_VALIDATOR_ADRESSES: [Address; 1] = [
+//                Address::from_str("asdasd").unwrap(),
+//            ];
+//            static MINIMUM_STAKE: u64 = 100;
+//
+//            let signed: rpc::Signed = from_stream(&mut data).unwrap();
+//            match signed.data {
+//                SignedData::ApplyForValidator { address, stake } => {
+//                    if address.verify() {
+//                        let hive = self.hive.upgrade().unwrap().lock().unwrap();
+//                        match hive.storage_get_address(&address) {
+//                            Some(b) => {
+//                                if b >= stake && stake >= MINIMUM_STAKE {
+//                                    self.contracts_storage.call()
+//                                } else {
+//                                    warn!("{:?} attempted to be a validator")
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
+//            }
         } else {
             warn!("Unknown SVUID {:X}", svuid);
         }

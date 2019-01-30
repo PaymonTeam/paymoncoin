@@ -192,13 +192,10 @@ impl<K, V> Export<Vec<StorageValue<StorageAction<String>>>> for HashMap<K, Stora
 
 pub trait Storage<I> {
     type Hash: hash::Hash;
-//    type Key: AsRef<[u8]>;
-//    type Item;
 
     fn insert<K: AsRef<[u8]>, T: Export<Vec<StorageValue<I>>>>(&mut self, key: K, value: T);
     fn get(&self, key: &Self::Hash) -> Option<&I>;
     fn keys(&self) -> Keys<Self::Hash, I>;
-//    fn insert_storage<S: Storage>(&mut self, key: Self::Key, value: S);
 }
 
 pub struct ContractStorage<T> {//where T: Export<String, Vec<StorageValue>> {
@@ -256,7 +253,7 @@ impl Storage<StorageAction<String>> for ContractStorage<StorageAction<String>> {
 #[derive(Default)]
 pub struct ContractsStorage {
     storages: HashMap<Hash, ContractStorage<String>>,
-    contracts: HashMap<Hash, Box<dyn Contract<String>>>,
+    contracts: HashMap<Hash, Box<dyn Contract<String> + Send>>,
 }
 
 pub struct ContractOutput {
@@ -271,13 +268,13 @@ impl ContractsStorage {
         Self::default()
     }
 
-    pub fn call(&mut self, hash: &Hash, caller: &Account, input: &json::Map<String, json::Value>) -> Result<ContractOutput, Error> {
+    pub fn call(&mut self, contract_hash: &Hash, caller: &Account, input: &json::Map<String, json::Value>) -> Result<ContractOutput, Error> {
         use self::StorageAction::*;
 
-        debug!("request for contract {:?} call with input data {:?}", hash, input);
+        debug!("request for contract {:?} call with input data {:?}", contract_hash, input);
 
-        if let Some(ref mut contract) = self.contracts.get_mut(hash) {
-            if let Some(ref mut storage) = self.storages.get_mut(hash) {
+        if let Some(ref mut contract) = self.contracts.get_mut(contract_hash) {
+            if let Some(ref mut storage) = self.storages.get_mut(contract_hash) {
                 let output = contract.call(caller, input, storage)?;
 
                 if let Some(ref diff) = output.storage_diff {
@@ -331,7 +328,7 @@ impl ContractsStorage {
         let obj = input.as_object().ok_or(Error::JsonParse("expected object".into()))?;
         let contract_type = obj.get("type").ok_or(Error::JsonParse("expected field 'type'".into()))?
             .as_str().ok_or(Error::JsonParse("expected string".into()))?;
-        let mut new_contract: Box<dyn Contract<String>>;
+        let mut new_contract: Box<dyn Contract<String> + Send>;
         let mut output: ContractOutput;
 
         if contract_type == "token" {
@@ -345,7 +342,7 @@ impl ContractsStorage {
             return Err(Error::UnknownContractType);
         }
 
-        let hash = Hash::sha3_160(input.to_string().as_bytes());
+        let hash = Hash::sha3_256(input.to_string().as_bytes());
         if !self.contracts.contains_key(&hash) {
             self.contracts.insert(hash.clone(), new_contract);
 
@@ -369,6 +366,32 @@ impl ContractsStorage {
 pub trait Contract<T> where T: Export<Vec<StorageValue<String>>> {
     fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &mut ContractStorage<T>) -> Result<ContractOutput, Error>;
 //    fn create(caller: &Account, input: &json::Value) -> Result<(ContractOutput, TokenContract), Error>;
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct POSContract {
+    validators_stakes: HashMap<Address, u64>,
+}
+
+impl Contract<String> for POSContract {
+    fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &mut ContractStorage<String>) -> Result<ContractOutput, Error> {
+        let method = input
+            .get("method").ok_or(Error::JsonParse("expected field 'method'".into()))?
+            .as_str().ok_or(Error::JsonParse("expected string".into()))?;
+        let args = input
+            .get("arguments").ok_or(Error::JsonParse("expected field 'arguments'".into()))?
+            .as_object().ok_or(Error::JsonParse("expected object".into()))?;
+
+        if method == "balance_of" {
+            let address = Address::from_str(args.get("address")
+                .ok_or(Error::JsonParse("expected field 'address'".into()))?
+                .as_str().ok_or(Error::JsonParse("expected string".into()))?)?;
+
+            return self.balance_of(&address, storage);
+        }
+
+        Err(Error::JsonParse("unknown method".into()))
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -457,7 +480,7 @@ impl TokenContract {
         })
     }
 
-    fn create(owner: &Account, params: &json::Map<String, json::Value>) -> Result<(ContractOutput, Box<dyn Contract<String>>), Error> {
+    fn create(owner: &Account, params: &json::Map<String, json::Value>) -> Result<(ContractOutput, Box<dyn Contract<String> + Send>), Error> {
         use self::StorageAction::*;
 
         let name = params.get("name").ok_or(Error::JsonParse("expected field 'name'".into()))?
@@ -531,7 +554,7 @@ impl Contract<String> for TokenContract {
 }
 
 fn string_hash_function<T>(data: T) -> Hash where T: AsRef<[u8]> {
-    Hash::sha3_160(data.as_ref())
+    Hash::sha3_256(data.as_ref())
 }
 
 #[inline]

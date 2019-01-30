@@ -38,7 +38,7 @@ impl TipsViewModel {
     pub fn set_solid(&mut self, hash: &Hash) {
         if self.tips.remove(hash) {
             let mut vacancy = MAX_TIPS as usize - self.solid_tips.len();
-            while vacancy <= 0 {
+            if vacancy == 0 {
                 self.solid_tips.pop_front();
                 vacancy += 1;
             }

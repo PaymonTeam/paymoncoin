@@ -12,7 +12,6 @@ extern crate rand;
 extern crate slab;
 extern crate env_logger;
 extern crate iron;
-extern crate ntrumls;
 extern crate linked_hash_set;
 extern crate crypto;
 #[macro_use]
