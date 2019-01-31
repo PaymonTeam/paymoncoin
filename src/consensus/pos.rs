@@ -39,10 +39,10 @@ use crate::utils::AM;
 
 use rhododendron as bft;
 
-type ValidatorIndex = usize;
+type ValidatorIndex = Address;
 type ValidatorDataType = u32;
 
-pub const ROUND_DURATION: Duration = Duration::from_millis(50);
+pub const ROUND_DURATION: Duration = Duration::from_millis(1000);
 
 pub struct TestNetwork<T> {
     endpoints: Vec<mpsc::UnboundedSender<T>>,
@@ -163,7 +163,6 @@ impl<T: Clone> Future for Network<T> {
 
 #[derive(Debug)]
 pub struct Error;
-unsafe impl Send for Error {}
 
 impl From<bft::InputStreamConcluded> for Error {
     fn from(_: bft::InputStreamConcluded) -> Error {
@@ -186,15 +185,14 @@ pub trait SignatureScheme {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Secp256k1Signature(pub Vec<u8>);
 
-pub struct Secp256k1SignatureScheme<'a> {
-    _phantom: PhantomData<&'a ()>,
+pub struct Secp256k1SignatureScheme {
     context: secp256k1::Secp256k1<secp256k1::All>,
     secret_key: secp256k1::key::SecretKey,
 }
 
-impl<'a> SignatureScheme for Secp256k1SignatureScheme<'a> {
+impl SignatureScheme for Secp256k1SignatureScheme {
     type Hash = [u8; 32];
-    type Signature = Secp256k1Signature; //secp256k1::Signature;
+    type Signature = Secp256k1Signature;
     type Message = secp256k1::Message;
     type SecretKey = secp256k1::key::SecretKey;
     type PublicKey = secp256k1::key::PublicKey;
@@ -222,14 +220,13 @@ impl<'a> SignatureScheme for Secp256k1SignatureScheme<'a> {
     }
 }
 
-impl<'a> Secp256k1SignatureScheme<'a> {
+impl Secp256k1SignatureScheme {
     pub fn new(sk: <Self as SignatureScheme>::SecretKey) -> Self {
         use rand::{Rng, thread_rng};
         let _k1 = secp256k1::Secp256k1::new();
 
         Secp256k1SignatureScheme {
             context: secp256k1::Secp256k1::new(),
-            _phantom: PhantomData {},
             secret_key: sk,
         }
     }
@@ -237,7 +234,7 @@ impl<'a> Secp256k1SignatureScheme<'a> {
 
 struct TestContext<T, S>
 {
-    local_id: ValidatorIndex,
+    local_id: usize,
     proposal: Mutex<Option<T>>,
     node_count: usize,
     current_round: Arc<AtomicUsize>,
@@ -272,7 +269,7 @@ impl<T, S> bft::Context for TestContext<T, S>
     type Error = Error;
     type Candidate = T;
     type Digest = S::Hash;
-    type AuthorityId = ValidatorIndex;
+    type AuthorityId = usize;
     type Signature = S::Signature;
     type RoundTimeout = Box<dyn Future<Item=(), Error=Self::Error> + Send>;
     type CreateProposal = FutureResult<Self::Candidate, Error>;
@@ -375,6 +372,8 @@ impl<T, S> bft::Context for TestContext<T, S>
 pub struct Context<T, S>
 {
     pub local_id: ValidatorIndex,
+    pub validators: HashMap<ValidatorIndex, Validator>,
+    pub queue: Vec<ValidatorIndex>,
     pub proposal: Mutex<Option<T>>,
     pub node_count: usize,
     pub current_round: Arc<AtomicUsize>,
@@ -387,10 +386,17 @@ impl<T, S> Context<T, S> where S: SignatureScheme,
                                    T: fmt::Debug + Eq + Clone + Ord + Serialize + Identifiable,
                                    S::Signature: fmt::Debug + Eq + Clone + Serialize,
                                    S::Hash: ::std::hash::Hash + fmt::Debug + Eq + Clone + Serialize {
-    pub fn new(proposal: T, signature: S, local_id: <Self as bft::Context>::AuthorityId, node_count: usize) -> Self where T: Ord {
+    pub fn new(proposal: T, signature: S, local_id: <Self as bft::Context>::AuthorityId, validators: HashMap<ValidatorIndex, Validator>) -> Self where T: Ord {
+        assert_eq!(validators.is_empty(), false);
+        let node_count = validators.len();
+        let mut queue = validators.iter().cloned().map(|k, _| k).collect();
+        queue.sort_unstable();
+
         Context {
             signature,
             local_id,
+            validators,
+            queue,
             proposal: Mutex::new(Some(proposal)),
             current_round: Arc::new(AtomicUsize::new(0)),
             timer: tokio_timer::wheel().tick_duration(ROUND_DURATION).build(),
@@ -466,25 +472,23 @@ impl<T, S> bft::Context for Context<T, S>
         }
     }
 
-    fn round_proposer(&self, round: u32) -> Self::AuthorityId {
-//        AuthorityId((round as usize) % self.node_count)
-        (round as usize) % self.node_count
+    fn round_proposer(&mut self, round: u32) -> Self::AuthorityId {
+        self.queue[round % self.queue.len()]
     }
 
     fn proposal_valid(&self, proposal: &Self::Candidate) -> FutureResult<bool, Error> {
-//        self.evaluated.lock().unwrap().insert(proposal.0);
-//
-//        Ok(proposal.get_index() % 3 != 0).into_future()
         self.evaluated.lock().unwrap().insert(proposal.clone());
         Ok(true).into_future()
     }
 
     fn begin_round_timeout(&self, round: u32) -> Self::RoundTimeout {
+        use std::cmp;
+
         if (round as usize) < self.current_round.load(Ordering::SeqCst) {
             Box::new(Ok(()).into_future())
         } else {
             let mut round_duration = ROUND_DURATION;
-            for _ in 0..round {
+            for _ in 0..cmp::min(round, 5) {
                 round_duration *= 2;
             }
 
@@ -619,4 +623,16 @@ impl Validator {
             address,
         }
     }
+}
+
+pub struct ConsensusParams<T, S>
+    where T: fmt::Debug + Eq + Clone + Ord + Serialize + Identifiable,
+          S: SignatureScheme,
+          S::Signature: fmt::Debug + Eq + Clone + Serialize,
+          S::Hash: std::hash::Hash + fmt::Debug + Eq + Clone + Serialize,
+{
+    proposal: T,
+    signature: S,
+    local_id: ValidatorIndex,
+    validators: HashMap<ValidatorIndex, Validator>,
 }
