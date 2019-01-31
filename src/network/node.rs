@@ -43,8 +43,15 @@ use futures::{
 };
 use rhododendron as bft;
 use serde::Serialize;
+use num_traits::real::Real;
 
 type ConsensusType = bft::Communication<rpc::ConsensusValue, [u8; 32], usize, consensus::Secp256k1Signature>;
+
+struct LocalValidator {
+    pub sk: secp256k1::SecretKey,
+    pub pk: secp256k1::PublicKey,
+    pub address: Address,
+}
 
 pub struct Node {
     hive: AWM<Hive>,
@@ -62,16 +69,10 @@ pub struct Node {
     transaction_requester: AM<TransactionRequester>,
     tips_vm: AM<TipsViewModel>,
     milestone: AM<Milestone>,
-    bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>,
-    bft_out: mpsc::UnboundedSender<(ConsensusType)>,
-    validators: Vec<Validator>,
+    bft_in: AM<mpsc::UnboundedReceiver<(usize, ConsensusType)>>,
+    bft_out: AM<mpsc::UnboundedSender<(ConsensusType)>>,
     contracts_manager: AM<ContractsManager>,
-//    bft_network: consensus::pos::TestNetwork<rpc::ConsensusValue>,
-}
-
-pub struct PacketData<T> {
-    validator: Validator,
-    data: T,
+    local_validator: AM<Option<LocalValidator>>,
 }
 
 impl Node {
@@ -101,7 +102,7 @@ impl Node {
             bft_in: in_rx,
             bft_out: out_tx,
             contracts_manager: make_am!(ContractsManager::new()),
-            validators: Vec::new(),
+            local_validator: make_am!(None),
         }
     }
 
@@ -130,6 +131,7 @@ impl Node {
 
         let (in_tx, in_rx) = mpsc::unbounded();
         let (out_tx, out_rx) = mpsc::unbounded();
+        let in_rx: AM<_> = make_am!(in_rx);
 
         let running_weak = Arc::downgrade(&self.running.clone());
         let broadcast_queue_weak = Arc::downgrade(&self.broadcast_queue.clone());
@@ -158,9 +160,12 @@ impl Node {
                                                      tr_weak, ms_weak, tvm_weak));
         self.thread_join_handles.push_back(jh);
 
+        let receiver_changed = Arc::new(AtomicBool::new(false));
         let running_weak = Arc::downgrade(&self.running.clone());
         let neighbors_weak = Arc::downgrade(&self.neighbors.clone());
-        let jh = thread::spawn(|| Node::bft_thread(running_weak, neighbors_weak, in_rx));
+        let receiver_changed_weak = Arc::downgrade(&receiver_changed.clone());
+        let in_rx_weak = Arc::downgrade(&in_rx.clone());
+        let jh = thread::spawn(|| Node::bft_thread(running_weak, neighbors_weak, in_rx_weak, receiver_changed_weak));
         self.thread_join_handles.push_back(jh);
 
         self.thread_join_handles.push_back(replicator_jh);
@@ -168,50 +173,94 @@ impl Node {
         use crossbeam::scope;
 
 //        self.bft_in = in_rx;
-        self.bft_out = out_tx;
+        self.bft_out = out_tx.into(); //make_am!(out_tx);
 
         let cm_weak = Arc::downgrade(&self.contracts_manager);
+//        let cm_weak = Arc::downgrade(&self.contracts_manager);
+        let in_rx_clone = Arc::downgrade(&in_rx);
+        let out_tx_clone = Arc::downgrade(&in_rx);
+        let running_clone = Arc::downgrade(&self.running);
+        let hive_weak = self.hive.clone();
+        let local_validator_weak = Arc::downgrade(&self.local_validator);
 
         thread::spawn(move || {
+            use secp256k1::*;
+            use std::collections::HashMap;
+
             let mut current_index = 0;
+            let running = running_clone.upgrade().unwrap();
+            while !running.load(Ordering::SeqCst) {
+                thread::sleep(Duration::from_secs(1));
+            }
+            drop(running);
 
             loop {
-//                let node_count = 4;
-//                let max_faulty = 1;
-                let cm = cm_weak.upgrade().unwrap().lock().unwrap();
-                cm.future_validators;
-                drop(cm);
+                let local_validator = local_validator_weak.upgrade().unwrap().lock().unwrap();
+                if let Some(local_validator) = local_validator {
+                    let (in_tx, in_rx) = mpsc::unbounded();
+                    let (out_tx, out_rx) = mpsc::unbounded();
+                    {
+                        let mut v = in_rx_clone.upgrade().unwrap().lock().unwrap();
+                        *v = in_rx;
+                        let mut v = out_tx_clone.upgrade().unwrap().lock().unwrap();
+                        *v = out_tx;
+                    }
+                    receiver_changed.store(false, Ordering::SeqCst);
 
-                let timer = tokio_timer::wheel().tick_duration(ROUND_DURATION).build();
-                let timer_copy = timer.clone();
+                    let mut cm = cm_weak.upgrade().unwrap().lock().unwrap();
+                    let validators_ids = cm.future_validators.clone();
+                    let node_count = validators_ids.len();
+                    let max_faulty = (node_count / 3.0).floor() as usize;
 
-                use secp256k1::*;
+                    let executed = cm.execute_contracts();
+                    drop(cm);
 
-                let port: usize = ::std::env::var("API_PORT").unwrap().parse().unwrap();
-                let local_id = port - 7000usize;
-                let ctx = Secp256k1::<All>::new();
-                let sk = ctx.generate_keypair(&mut thread_rng()).0;
+                    let timer = tokio_timer::wheel().tick_duration(ROUND_DURATION).build();
+                    let timer_copy = timer.clone();
 
-                let ctx = Context {
-                    signature: Secp256k1SignatureScheme::new(sk),
-                    local_id,
-                    proposal: Mutex::new(Some(rpc::ConsensusValue { value: 0 as u32 })),
-                    current_round: Arc::new(AtomicUsize::new(0)),
-                    timer: timer_copy,
-                    evaluated: Mutex::new(BTreeSet::new()),
-                    node_count,
-                };
+                    let local_id = local_validator.address;
+                    let mut validators = HashMap::new();
+                    for vid in &validators_ids {
+                        validators.insert(vid.clone(), Validator::from_index(vid.clone()))
+                    }
 
-                let f = bft::agree(
-                    ctx,
-                    node_count,
-                    max_faulty,
-                    out_rx.map_err(|_| Error),
-                    in_tx.sink_map_err(|_| Error).with(move |t| Ok((local_id, t))),
-                )
-                    .map_err(|e| warn!("error on consensus {:?}", e))
-                    .map(|r| info!("committed = {:?}", r));
-                tokio::run(f);
+                    let ctx = Context {
+                        signature: Secp256k1SignatureScheme::new(local_validator.sk.clone()),
+                        local_id,
+                        proposal: Mutex::new(Some(rpc::ContractsInputOutputs { vec: executed.clone() })),
+                        current_round: Arc::new(AtomicUsize::new(0)),
+                        timer: timer_copy,
+                        evaluated: Mutex::new(BTreeSet::new()),
+                        node_count,
+                        validators,
+                        queue: vec![]
+                    };
+
+                    let cm_weak_clone = cm_weak.clone();
+                    let hive_weak_clone = hive_weak.clone();
+                    let f = bft::agree(
+                        ctx,
+                        node_count,
+                        max_faulty,
+                        out_rx.map_err(|_| Error),
+                        in_tx.sink_map_err(|_| Error).with(move |t| Ok((local_id, t))),
+                    )
+                        .map_err(|e| warn!("error on consensus {:?}", e))
+                        .map(|r| {
+                            info!("committed = {:?}", r);
+                            match r.candidate {
+                                Some(c) => {
+                                    let mut cm = cm_weak_clone.upgrade().unwrap().lock().unwrap();
+                                    for call in executed {
+                                        cm.apply_state(call, hive_weak_clone);
+                                    }
+                                }
+                            }
+                        });
+                    tokio::run(f);
+
+                    receiver_changed.store(true, Ordering::SeqCst);
+                }
             }
         });
     }
@@ -352,40 +401,56 @@ impl Node {
         }
     }
 
-    fn bft_thread(running: Weak<AtomicBool>, neighbors: AWM<Vec<AM<Neighbor>>>, mut bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>) {
-        struct S {
-            bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>,
+    fn bft_thread(running: Weak<AtomicBool>, neighbors: AWM<Vec<AM<Neighbor>>>, bft_in: AWM<mpsc::UnboundedReceiver<(usize, ConsensusType)>>, receiver_changed: Weak<AtomicBool>) {
+        loop {
+            let r = running.upgrade().unwrap();
+            if r.load(Ordering::SeqCst) {
+                break;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        struct Trigger {
+            receiver_changed: Weak<AtomicBool>,
         };
-        impl Future for S {
+
+        impl Future for Trigger {
             type Item = ();
             type Error = ();
 
             fn poll(&mut self) -> Result<Async<<Self as Future>::Item>, <Self as Future>::Error> {
-//                tokio::spawn(self.bft_in.for_each(|(i, c)| {
-//                    println!("should send {} {:?}", i, c);
-//                    futures::future::ok(())
-//                }));
-                thread::sleep(Duration::from_millis(100));
-                Ok(Async::NotReady)
+                thread::sleep(Duration::from_millis(50));
+                let rc = self.receiver_changed.upgrade().unwrap();
+
+                if rc.load(Ordering::SeqCst) {
+                    return Ok(Async::Ready(()));
+                } else {
+                    return Ok(Async::NotReady);
+                }
             }
         }
 
-        thread::sleep(Duration::from_secs(20));
+        loop {
+            let trigger = Trigger { receiver_changed: receiver_changed.clone() };
+            let bft_in = bft_in.upgrade().unwrap().lock().unwrap();
 
-        tokio::run(bft_in.for_each(move |(i, c)| {
-            debug!("sending {} {:?}", i, c);
-            if let Some(arc) = neighbors.upgrade() {
-                if let Ok(neighbors) = arc.lock() {
-                    for n in neighbors.iter() {
-                        if let Ok(mut n) = n.lock() {
-                            info!("sending to {:?}", n.addr);
-                            n.send_packet(Box::new(c.clone()));
+            tokio::run(bft_in.for_each(move |(i, c)| {
+                debug!("sending {} {:?}", i, c);
+                if let Some(arc) = neighbors.upgrade() {
+                    if let Ok(neighbors) = arc.lock() {
+                        for n in neighbors.iter() {
+                            if let Ok(mut n) = n.lock() {
+                                info!("sending to {:?}", n.addr);
+                                n.send_packet(Box::new(c.clone()));
+                            }
                         }
                     }
                 }
-            }
-            futures::future::ok(())
-        }));
+                futures::future::ok(())
+            }).select(trigger));
+
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 
     fn broadcast_thread(running: Weak<AtomicBool>, broadcast_queue: AWM<VecDeque<Transaction>>, neighbors: AWM<Vec<AM<Neighbor>>>, tr: AWM<TransactionRequester>/*, bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>*/) {
@@ -524,7 +589,7 @@ impl Node {
         } else if svuid == ConsensusType::primary_type_id() {
             let v = from_stream(&mut data).unwrap();
             info!("received communication {:?}", v);
-            self.bft_out.unbounded_send(v);
+            self.bft_out.lock().unwrap().unbounded_send(v);
         } else if svuid == rpc::Signed::primary_type_id() {
 //            use std::str::FromStr;
 //            use crate::network::rpc::SignedData;

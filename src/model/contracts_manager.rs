@@ -6,15 +6,23 @@ use crate::model::contract::{ContractsStorage, Error, ContractOutput, ContractAd
 use serde_json as json;
 use linked_hash_set::LinkedHashSet;
 use std::hash;
+use crate::storage::Hive;
+use crate::utils::AWM;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ContractTransaction {
-    value: u32,
-    hash: Hash,
-    from: Account,
-    address: ContractAddress,
-    contract_input: json::Map<String, json::Value>,
-    timestamp: u64,
+    pub value: u32,
+    pub hash: Hash,
+    pub from: Account,
+    pub address: ContractAddress,
+    pub contract_input: json::Map<String, json::Value>,
+    pub timestamp: u64,
+}
+
+#[derive(Clone)]
+pub struct ContractInputOutput {
+    pub transaction: ContractTransaction,
+    pub output: ContractOutput,
 }
 
 impl PartialEq for ContractTransaction {
@@ -69,31 +77,8 @@ impl ContractsManager {
         }
     }
 
-    pub fn execute_contracts(&mut self) -> Vec<ContractOutput> {
-        let contracts_todo_num = 5;
-        let mut vec = vec![];
-
-        while let Some(ct) = self.transactions_queue.pop_front() {
-            if vec.len() < contracts_todo_num {
-                match self.call(&ct.from, &ct.address, ct.contract_input, ct.timestamp) {
-                    Ok(r) => {
-                        vec.push(r);
-                    },
-                    Err(e) => {
-                        error!("failed to execute contract {:?} from {:?}", ct.address, ct.from);
-                    }
-                }
-            }
-        }
-
-        vec
-    }
-
-    #[inline]
-    pub fn call(&mut self, caller: &Account, address: &ContractAddress, input: json::Map<String, json::Value>, tx_timestamp: u64) -> Result<ContractOutput, Error> {
-        let call_input = input.get("input").ok_or(Error::JsonParse("expected field 'input'".into()))?
-            .as_object().ok_or(Error::JsonParse("expected object".into()))?;
-
+    pub fn execute_contracts(&mut self) -> Vec<ContractInputOutput> {
+        /*
         if address == self.pos_contract_address {
             use chrono::*;
 
@@ -117,8 +102,41 @@ impl ContractsManager {
             } else {
                 return Err(Error::Unknown("timeout".into()));
             }
-        } else {
-            return self.storage.call(address, caller, call_input);
         }
+        */
+        let contracts_todo_num = 5;
+        let mut vec = vec![];
+
+        while let Some(ct) = self.transactions_queue.pop_front() {
+            if vec.len() < contracts_todo_num {
+                match self.input(&ct.from, &ct.address, ct.contract_input, ct.timestamp) {
+                    Ok(r) => {
+                        vec.push(ContractInputOutput {
+                            output: r,
+                            transaction: ct.clone(),
+                        });
+                    },
+                    Err(e) => {
+                        error!("failed to execute contract {:?} from {:?}", ct.address, ct.from);
+                    }
+                }
+            }
+        }
+
+        vec
+    }
+
+    pub fn input(&mut self, caller: &Account, address: &ContractAddress, input: json::Map<String, json::Value>, tx_timestamp: u64) -> Result<ContractOutput, Error> {
+        let call_input = input.get("input").ok_or(Error::JsonParse("expected field 'input'".into()))?
+            .as_object().ok_or(Error::JsonParse("expected object".into()))?;
+
+        self.storage.call(address, caller, call_input)
+        // or create...
+        // or remove
+    }
+
+    #[inline]
+    pub fn apply_state(&mut self, call: ContractInputOutput, hive: AWM<Hive>) {
+        self.storage.apply_state(call, hive);
     }
 }

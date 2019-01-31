@@ -15,6 +15,12 @@ macro_rules! make_awm {
     };
 }
 
+impl<T> From<T> for AM<T> {
+    fn from(v: T) -> Self {
+        make_am!(v)
+    }
+}
+
 #[macro_export]
 macro_rules! lock_awm {
     ($v:expr, $locked:ident, $op:block) => {

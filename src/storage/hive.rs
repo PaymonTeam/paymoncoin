@@ -1,13 +1,10 @@
 extern crate rand;
 extern crate crypto;
-//extern crate rocksdb;
 extern crate log;
-//extern crate ntrumls;
 
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
 use crate::rocksdb::{DBIterator, DB, Options, IteratorMode, Direction, Column, WriteOptions, ReadOptions, Writable};
-//use rocksdb::*;
 use std::io;
 use std::num;
 use std::sync::Arc;
@@ -18,6 +15,7 @@ use crate::model::transaction_validator::TransactionError;
 use crate::model::transaction::*;
 use crate::model::approvee::Approvee;
 use crate::model::{StateDiffObject, StateDiff};
+use crate::model::contracts_manager::ContractInputOutput;
 use serde::{Serialize, Deserialize};
 use serde_pm::{SerializedBuffer, to_buffer, to_boxed_buffer, from_stream};
 use std::time;
@@ -25,16 +23,24 @@ use std::str::FromStr;
 use hex;
 use std::env;
 
-static CF_NAMES: [&str; 7] = ["transaction", "transaction-metadata", "address",
-    "address_transactions", "approvee", "milestone", "state_diff"];
 pub const SUPPLY : u64 = 10_000;
+
+static CF_NAMES: [&str; 8] = [
+    "transaction",
+    "transaction-metadata",
+    "address",
+    "address_transactions",
+    "approvee",
+    "milestone",
+    "state_diff",
+    "contracts"
+];
 
 pub enum Error {
     IO(io::Error),
     Parse(num::ParseIntError),
     Str(String),
 }
-//use crate::env;
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug, Hash)]
 pub enum CFType {
@@ -45,6 +51,7 @@ pub enum CFType {
     Approvee,
     Milestone,
     StateDiff,
+    Contracts,
 }
 
 pub struct Hive {
@@ -719,6 +726,10 @@ impl Hive {
                 None
             }
         }
+    }
+
+    pub fn apply_contract_state(&mut self, call: ContractInputOutput) {
+
     }
 
     fn init_db() -> DB {

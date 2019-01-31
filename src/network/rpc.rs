@@ -158,6 +158,12 @@ pub struct TransactionsData {
 }
 
 #[derive(Serialize, Deserialize, Eq, Debug, Clone, PMIdentifiable, Default)]
+#[pm_identifiable(id = "0x20fcaac6")]
+pub struct ContractsInputOutputs {
+    pub vec: Vec<crate::model::contracts_manager::ContractInputOutput>,
+}
+
+#[derive(Serialize, Deserialize, Eq, Debug, Clone, PMIdentifiable, Default)]
 #[pm_identifiable(id = "0x183f2199")]
 pub struct ConsensusValue {
     pub value: u32,

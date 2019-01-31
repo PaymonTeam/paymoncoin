@@ -8,6 +8,9 @@ use crypto::digest::Digest;
 use crate::model::transaction::HASH_NULL;
 use std::num;
 use std::fmt::Debug;
+use super::contracts_manager::{ContractInputOutput, ContractTransaction};
+use crate::storage::Hive;
+use crate::utils::AWM;
 
 pub type ContractAddress = Address;
 
@@ -275,6 +278,7 @@ pub enum Operation {
     Destroy,
 }
 
+#[derive(Clone)]
 pub struct ContractOutput {
     pub output: json::Value,
     pub storage_diff: Option<StorageDiff>,
@@ -290,44 +294,12 @@ impl ContractsStorage {
     }
 
     pub fn call(&mut self, contract_address: &ContractAddress, caller: &Account, input: &json::Map<String, json::Value>) -> Result<ContractOutput, Error> {
-        use self::StorageAction::*;
-
         debug!("request for contract {:?} call with input data {:?}", contract_address, input);
+        // TODO: check for creation
 
         if let Some(ref mut contract) = self.contracts.get_mut(contract_address) {
             if let Some(ref mut storage) = self.storages.get_mut(contract_address) {
                 let output = contract.call(caller, input, storage)?;
-
-                if let Some(ref diff) = output.storage_diff {
-                    for (k, act) in &diff.inner {
-                        match act {
-                            Insert(v) => {
-                                if !storage.inner.contains_key(k) {
-                                    storage.inner.insert(k.clone(), v.clone());
-                                } else {
-                                    error!("attempt to insert value, but key exists");
-                                    return Err(Error::KeyExists);
-                                }
-                            },
-                            Update(v) => {
-                                if storage.inner.contains_key(k) {
-                                    storage.inner.insert(k.clone(), v.clone());
-                                } else {
-                                    error!("attempt to update value, but key doesn't exist");
-                                    return Err(Error::KeyDoesntExist);
-                                }
-                            },
-                            Remove(v) => {
-                                if storage.inner.contains_key(k) {
-                                    storage.inner.remove(k);
-                                } else {
-                                    error!("attempt to remove value, but key doesn't exist");
-                                    return Err(Error::KeyDoesntExist);
-                                }
-                            },
-                        }
-                    }
-                }
 
                 let diff = output.balance_diff;
                 let balance = caller.1 as usize;
@@ -345,7 +317,7 @@ impl ContractsStorage {
         Err(Error::UnknownContract)
     }
 
-    pub fn create(&mut self, creator: &Account, input: &json::Value) -> Result<(), Error> {
+    pub fn create(&mut self, creator: &Account, contract_address: Address, input: &json::Value) -> Result<ContractOutput, Error> {
         let obj = input.as_object().ok_or(Error::JsonParse("expected object".into()))?;
         let contract_type = obj.get("type").ok_or(Error::JsonParse("expected field 'type'".into()))?
             .as_str().ok_or(Error::JsonParse("expected string".into()))?;
@@ -363,34 +335,89 @@ impl ContractsStorage {
             return Err(Error::UnknownContractType);
         }
 
-        let hash = Hash::sha3_256(input.to_string().as_bytes());
-        if !self.contracts.contains_key(&hash) {
-            self.contracts.insert(hash.clone(), new_contract);
-
-            let mut storage = ContractStorage::<String>::new();
-            if let Some(storage_diff) = output.storage_diff {
-                for (k, v) in &storage_diff.inner {
-                    if let StorageAction::Insert(ref v) = v {
-                        storage.inner.insert(k.clone(), v.clone());
-                    }
-                }
-            }
-            self.storages.insert(hash, storage);
-        }
-
-        info!("created contract {:?} with input {}", hash, input.to_string());
-
-        Ok(())
+        Ok(output)
     }
 
     pub fn get_value(&self, contract_address: &ContractAddress, key: &Hash) -> Option<&String> {
         self.storages.get(contract_address).and_then(|s| s.get(key))
     }
+
+    pub fn apply_state(&mut self, call: ContractInputOutput, hive: AWM<Hive>) {
+        use self::StorageAction::*;
+
+        if let Some(ref mut contract) = self.contracts.get_mut(&call.transaction.address) {
+            if let Some(ref mut storage) = self.storages.get_mut(&call.transaction.address) {
+                let hive = hive.upgrade().unwrap().lock().unwrap();
+//                hive.apply_contract_state(call.clone());
+
+                match call.output.status {
+                    Status::Succeed => {
+                        match call.output.operation {
+                            Operation::Call => {
+                                if let Some(ref diff) = call.output.storage_diff {
+                                    for (k, act) in &diff.inner {
+                                        match act {
+                                            Insert(v) => {
+                                                if !storage.inner.contains_key(k) {
+                                                    storage.inner.insert(k.clone(), v.clone());
+                                                } else {
+                                                    error!("attempt to insert value, but key exists");
+                                                    return Err(Error::KeyExists);
+                                                }
+                                            },
+                                            Update(v) => {
+                                                if storage.inner.contains_key(k) {
+                                                    storage.inner.insert(k.clone(), v.clone());
+                                                } else {
+                                                    error!("attempt to update value, but key doesn't exist");
+                                                    return Err(Error::KeyDoesntExist);
+                                                }
+                                            },
+                                            Remove(v) => {
+                                                if storage.inner.contains_key(k) {
+                                                    storage.inner.remove(k);
+                                                } else {
+                                                    error!("attempt to remove value, but key doesn't exist");
+                                                    return Err(Error::KeyDoesntExist);
+                                                }
+                                            },
+                                        }
+                                    }
+                                }
+                            },
+                            Operation::Create => {
+
+//        if !self.contracts.contains_key(&contract_address) {
+//            self.contracts.insert(contract_address.clone(), new_contract);
+//
+//            let mut storage = ContractStorage::<String>::new();
+//            if let Some(storage_diff) = output.storage_diff {
+//                for (k, v) in &storage_diff.inner {
+//                    if let StorageAction::Insert(ref v) = v {
+//                        storage.inner.insert(k.clone(), v.clone());
+//                    }
+//                }
+//            }
+//            self.storages.insert(contract_address, storage);
+//        }
+
+//        info!("created contract {:?} with input {}", hash, input.to_string());
+
+                            },
+                            Operation::Destroy => {
+                                // TODO
+                            }
+                        }
+                    },
+                    Status::Failed => {}
+                }
+            }
+        }
+    }
 }
 
 pub trait Contract<T> where T: Export<Vec<StorageValue<String>>> {
-    fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &mut ContractStorage<T>) -> Result<ContractOutput, Error>;
-//    fn create(caller: &Account, input: &json::Value) -> Result<(ContractOutput, TokenContract), Error>;
+    fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &ContractStorage<T>) -> Result<ContractOutput, Error>;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -399,7 +426,7 @@ pub struct POSContract {
 }
 
 impl Contract<String> for POSContract {
-    fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &mut ContractStorage<String>) -> Result<ContractOutput, Error> {
+    fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &ContractStorage<String>) -> Result<ContractOutput, Error> {
         let method = input
             .get("method").ok_or(Error::JsonParse("expected field 'method'".into()))?
             .as_str().ok_or(Error::JsonParse("expected string".into()))?;
@@ -441,7 +468,7 @@ impl TokenContract {
         }
     }
 
-    pub fn balance_of(&self, address: &Address, storage: &mut ContractStorage<String>) -> Result<ContractOutput, Error> {
+    pub fn balance_of(&self, address: &Address, storage: &ContractStorage<String>) -> Result<ContractOutput, Error> {
         let balance = storage.get(&KeyBuilder::new("balances").chain(address).finalize()).ok_or(Error::UnknownStorageKey)?;
         let output = json!( {
             "balance": balance
@@ -456,7 +483,7 @@ impl TokenContract {
         })
     }
 
-    pub fn transfer(&self, caller: &Account, to: &Address, amount: u64, storage: &mut ContractStorage<String>) -> Result<ContractOutput, Error> {
+    pub fn transfer(&self, caller: &Account, to: &Address, amount: u64, storage: &ContractStorage<String>) -> Result<ContractOutput, Error> {
         use self::StorageAction::*;
         let from = caller.0;
 
@@ -496,7 +523,7 @@ impl TokenContract {
         })
     }
 
-    pub fn name(&self, storage: &mut ContractStorage<String>) -> Result<ContractOutput, Error> {
+    pub fn name(&self, storage: &ContractStorage<String>) -> Result<ContractOutput, Error> {
         let name = storage.get(&KeyBuilder::from_str("name").unwrap().finalize()).ok_or(Error::UnknownStorageKey)?;
         let output = json!( {
             "name": name
@@ -550,7 +577,7 @@ impl TokenContract {
 }
 
 impl Contract<String> for TokenContract {
-    fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &mut ContractStorage<String>) -> Result<ContractOutput, Error> {
+    fn call(&mut self, caller: &Account, input: &json::Map<String, json::Value>, storage: &ContractStorage<String>) -> Result<ContractOutput, Error> {
 //        use json::Value;
 //        let json_val: Value = json::from_str(input)?;
 //        let input = json_val.as_object().ok_or(Error::JsonParse("expected object".into()))?;
@@ -606,6 +633,7 @@ mod tests {
         init_log();
 
         use super::StorageAction::*;
+        use crate::model::transaction::ADDRESS_SIZE;
 
         let acc1 = Account(Address::from_str("P111111111111111111111111111111111111111111").unwrap(), 1000);
         let acc2 = Account(Address::from_str("P222222222222222222222222222222222222222222").unwrap(), 2000);
@@ -620,8 +648,8 @@ mod tests {
             }
         });
 
-        let contract_hash = string_hash_function(create_contract_json.to_string().as_bytes());
-        contracts_storage.create(&acc1, &create_contract_json).expect("failed to create contract");
+        let contract_address = Address(create_contract_json.to_string().as_bytes()[..ADDRESS_SIZE]);
+        contracts_storage.create(&acc1, contract_address.clone(), &create_contract_json).expect("failed to create contract");
 
         let call_contract_json = json!({
             "method": "name",
@@ -629,7 +657,7 @@ mod tests {
         });
         let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
 
-        let out = contracts_storage.call(&contract_hash, &acc2, call_contract_json_obj).expect("failed to call contract");
+        let out = contracts_storage.call(&contract_address, &acc2, call_contract_json_obj).expect("failed to call contract");
         assert!(out.storage_diff.is_none());
         assert_eq!(out.balance_diff, 0);
         assert_eq!(out.output, json!({ "name": "Test Token" }));
@@ -642,7 +670,7 @@ mod tests {
         });
 
         let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
-        let out = contracts_storage.call(&contract_hash, &acc2, call_contract_json_obj).expect("failed to call contract");
+        let out = contracts_storage.call(&contract_address, &acc2, call_contract_json_obj).expect("failed to call contract");
         assert!(out.storage_diff.is_none());
         assert_eq!(out.balance_diff, 0);
         assert_eq!(out.output, json!({ "balance": "1000000" }));
@@ -656,7 +684,7 @@ mod tests {
         });
 
         let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
-        let mut out = contracts_storage.call(&contract_hash, &acc1, call_contract_json_obj).expect("failed to call contract");
+        let mut out = contracts_storage.call(&contract_address, &acc1, call_contract_json_obj).expect("failed to call contract");
         assert!(out.storage_diff.is_some());
 
         let sender_balance_key = KeyBuilder::new("balances").chain(acc1.0).finalize();
@@ -676,7 +704,7 @@ mod tests {
         });
 
         let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
-        let mut out = contracts_storage.call(&contract_hash, &acc1, call_contract_json_obj);
+        let mut out = contracts_storage.call(&contract_address, &acc1, call_contract_json_obj);
         assert!(out.is_err());
     }
 }

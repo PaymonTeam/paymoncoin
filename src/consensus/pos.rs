@@ -612,15 +612,13 @@ fn timeout_in(t: Duration) -> oneshot::Receiver<()> {
 pub struct Validator {
     index: ValidatorIndex,
     node: Neighbor,
-    address: Address,
 }
 
 impl Validator {
-    pub fn from_index(index: ValidatorIndex, address: Address) -> Self {
+    pub fn from_index(index: ValidatorIndex) -> Self {
         Validator {
             index,
             node: Neighbor::from_address("127.0.0.1".parse::<SocketAddr>().unwrap()),
-            address,
         }
     }
 }
