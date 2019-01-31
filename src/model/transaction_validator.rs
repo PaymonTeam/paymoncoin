@@ -13,6 +13,7 @@ use std::collections::{HashSet, LinkedList};
 use std::sync::atomic::{AtomicBool, Ordering};
 use self::linked_hash_set::LinkedHashSet;
 use crate::model::TransactionRequester;
+use crate::model::contracts_manager::ContractsManager;
 
 // TODO: make Mutex
 pub static mut SNAPSHOT_TIMESTAMP: u64 = 0; //Duration = Duration::from_secs(0);
@@ -30,7 +31,7 @@ pub struct TransactionValidator {
     new_solid_transaction_list_one: AM<LinkedHashSet<Hash>>,
     new_solid_transaction_list_two: AM<LinkedHashSet<Hash>>,
     transaction_requester: AM<TransactionRequester>,
-
+    contracts_manager: AM<ContractsManager>,
 }
 
 pub fn has_invalid_timestamp(transaction: &Transaction) -> bool {
@@ -103,6 +104,7 @@ impl TransactionValidator {
             running: Arc::new(AtomicBool::new(true)),
             new_solid_transaction_list_one: make_am!(LinkedHashSet::new()),
             new_solid_transaction_list_two: make_am!(LinkedHashSet::new()),
+            contracts_manager: ContractsManager::new(),
         };
 
         let transaction_validator: AM<TransactionValidator> = make_am!(tv);
@@ -331,13 +333,11 @@ impl TransactionValidator {
             let trunk_tx;
             let branch_tx;
 
-            // println!("hive lock 29");
             if let Ok(hive) = self.hive.lock() {
                 if let Some(tx) = hive.storage_load_transaction(&transaction.object
                     .trunk_transaction) {
                     trunk_tx = tx;
                 } else {
-                    // println!("hive unlock 29");
                     return Err(TransactionError::InvalidHash);
                 }
 
@@ -345,13 +345,11 @@ impl TransactionValidator {
                     .branch_transaction) {
                     branch_tx = tx;
                 } else {
-                    // println!("hive unlock 29");
                     return Err(TransactionError::InvalidHash);
                 }
             } else {
                 panic!("hive mutex is broken")
             }
-            // println!("hive unlock 29");
 
             if !self.check_approvee(&trunk_tx) {
                 solid = false;
@@ -362,7 +360,10 @@ impl TransactionValidator {
             }
 
             if solid {
-                transaction.update_solidity(true);
+                if transaction.update_solidity(true) {
+                    let mut cm = self.contracts_manager.lock().unwrap();
+                    cm.add_contract_tx_to_queue(transaction.object.value, transaction.object.hash.clone(),)
+                }
                 if let Ok(mut hive) = self.hive.lock() {
                     hive.update_heights(transaction.clone());
                 } else {
@@ -376,8 +377,7 @@ impl TransactionValidator {
         Ok(false)
     }
 
-    pub fn update_status(&mut self, transaction: &mut Transaction) -> Result<(),
-        TransactionError> {
+    pub fn update_status(&mut self, transaction: &mut Transaction) -> Result<(), TransactionError> {
         if let Ok(mut tr) = self.transaction_requester.lock() {
             tr.clear_transaction_request(transaction.get_hash());
         } else {

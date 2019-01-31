@@ -1,5 +1,5 @@
 use std::collections::{HashMap, hash_map::Keys};
-use super::transaction::{Hash, Account, Address, AddressError};
+use super::transaction::{Hash, Account, Address, AddressError, HashError};
 use std::hash;
 use std::str::FromStr;
 use std::marker::PhantomData;
@@ -8,6 +8,8 @@ use crypto::digest::Digest;
 use crate::model::transaction::HASH_NULL;
 use std::num;
 use std::fmt::Debug;
+
+pub type ContractAddress = Address;
 
 #[derive(Debug)]
 pub enum Error {
@@ -258,14 +260,27 @@ impl Storage<StorageAction<String>> for ContractStorage<StorageAction<String>> {
 
 #[derive(Default)]
 pub struct ContractsStorage {
-    storages: HashMap<Hash, ContractStorage<String>>,
-    contracts: HashMap<Hash, Box<dyn Contract<String> + Send>>,
+    storages: HashMap<ContractAddress, ContractStorage<String>>,
+    contracts: HashMap<ContractAddress, Box<dyn Contract<String> + Send>>,
+}
+
+pub enum Status {
+    Succeed,
+    Failed,
+}
+
+pub enum Operation {
+    Create,
+    Call,
+    Destroy,
 }
 
 pub struct ContractOutput {
     pub output: json::Value,
     pub storage_diff: Option<StorageDiff>,
     pub balance_diff: isize,
+    pub status: Status,
+    pub operation: Operation,
 }
 
 impl ContractsStorage {
@@ -274,13 +289,13 @@ impl ContractsStorage {
         Self::default()
     }
 
-    pub fn call(&mut self, contract_hash: &Hash, caller: &Account, input: &json::Map<String, json::Value>) -> Result<ContractOutput, Error> {
+    pub fn call(&mut self, contract_address: &ContractAddress, caller: &Account, input: &json::Map<String, json::Value>) -> Result<ContractOutput, Error> {
         use self::StorageAction::*;
 
-        debug!("request for contract {:?} call with input data {:?}", contract_hash, input);
+        debug!("request for contract {:?} call with input data {:?}", contract_address, input);
 
-        if let Some(ref mut contract) = self.contracts.get_mut(contract_hash) {
-            if let Some(ref mut storage) = self.storages.get_mut(contract_hash) {
+        if let Some(ref mut contract) = self.contracts.get_mut(contract_address) {
+            if let Some(ref mut storage) = self.storages.get_mut(contract_address) {
                 let output = contract.call(caller, input, storage)?;
 
                 if let Some(ref diff) = output.storage_diff {
@@ -368,8 +383,8 @@ impl ContractsStorage {
         Ok(())
     }
 
-    pub fn get_value(&self, contract_hash: &Hash, key: &Hash) -> Option<&String> {
-        self.storages.get(contract_hash).and_then(|s| s.get(key))
+    pub fn get_value(&self, contract_address: &ContractAddress, key: &Hash) -> Option<&String> {
+        self.storages.get(contract_address).and_then(|s| s.get(key))
     }
 }
 
@@ -436,6 +451,8 @@ impl TokenContract {
             storage_diff: None,
             balance_diff: 0,
             output,
+            status: Status::Succeed,
+            operation: Operation::Call,
         })
     }
 
@@ -474,6 +491,8 @@ impl TokenContract {
             storage_diff: Some(storage_diff),
             balance_diff: 0,
             output,
+            status: Status::Succeed,
+            operation: Operation::Call,
         })
     }
 
@@ -487,6 +506,8 @@ impl TokenContract {
             storage_diff: None,
             balance_diff: 0,
             output,
+            status: Status::Succeed,
+            operation: Operation::Call,
         })
     }
 
@@ -519,6 +540,8 @@ impl TokenContract {
             output: json!({}),
             balance_diff: 0,
             storage_diff: Some(storage),
+            status: Status::Succeed,
+            operation: Operation::Create,
         };
 
         let contract = TokenContract::new(name, symbol, decimals);
