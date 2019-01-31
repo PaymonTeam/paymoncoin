@@ -7,6 +7,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::collections::{VecDeque, BTreeSet};
 use crate::model::{TransactionObject, Transaction, TransactionType};
 use crate::model::contract::{ContractStorage, ContractsStorage, ContractOutput};
+use crate::model::contracts_manager::{ContractsManager};
 use crate::storage::Hive;
 use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
 use std::thread;
@@ -63,8 +64,8 @@ pub struct Node {
     milestone: AM<Milestone>,
     bft_in: mpsc::UnboundedReceiver<(usize, ConsensusType)>,
     bft_out: mpsc::UnboundedSender<(ConsensusType)>,
-    contracts_storage: ContractsStorage,
     validators: Vec<Validator>,
+    contracts_manager: AM<ContractsManager>,
 //    bft_network: consensus::pos::TestNetwork<rpc::ConsensusValue>,
 }
 
@@ -99,7 +100,7 @@ impl Node {
             milestone,
             bft_in: in_rx,
             bft_out: out_tx,
-            contracts_storage: ContractsStorage::new(),
+            contracts_manager: make_am!(ContractsManager::new()),
             validators: Vec::new(),
         }
     }
@@ -169,40 +170,49 @@ impl Node {
 //        self.bft_in = in_rx;
         self.bft_out = out_tx;
 
+        let cm_weak = Arc::downgrade(&self.contracts_manager);
+
         thread::spawn(move || {
-            let node_count = 4;
-            let max_faulty = 1;
+            let mut current_index = 0;
 
-            let timer = tokio_timer::wheel().tick_duration(ROUND_DURATION).build();
-            let timer_copy = timer.clone();
+            loop {
+//                let node_count = 4;
+//                let max_faulty = 1;
+                let cm = cm_weak.upgrade().unwrap().lock().unwrap();
+                cm.future_validators;
+                drop(cm);
 
-            use secp256k1::*;
+                let timer = tokio_timer::wheel().tick_duration(ROUND_DURATION).build();
+                let timer_copy = timer.clone();
 
-            let port: usize = ::std::env::var("API_PORT").unwrap().parse().unwrap();
-            let local_id = port - 7000usize;
-            let ctx = Secp256k1::<All>::new();
-            let sk = ctx.generate_keypair(&mut thread_rng()).0;
-            //            let ctx = Context::new(rpc::ConsensusValue{ value: i as u32 }, Secp256k1Signature::new(sk), i, node_count);
-            let ctx = Context {
-                signature: Secp256k1SignatureScheme::new(sk),
-                local_id,
-                proposal: Mutex::new(Some(rpc::ConsensusValue { value: 0 as u32 })),
-                current_round: Arc::new(AtomicUsize::new(0)),
-                timer: timer_copy,
-                evaluated: Mutex::new(BTreeSet::new()),
-                node_count,
-            };
+                use secp256k1::*;
 
-            let f = bft::agree(
-                ctx,
-                node_count,
-                max_faulty,
-                out_rx.map_err(|_| Error),
-                in_tx.sink_map_err(|_| Error).with(move |t| Ok((local_id, t))),
-            )
-                .map_err(|e| warn!("error on consensus {:?}", e))
-                .map(|r| info!("committed = {:?}", r));
-            tokio::run(f);
+                let port: usize = ::std::env::var("API_PORT").unwrap().parse().unwrap();
+                let local_id = port - 7000usize;
+                let ctx = Secp256k1::<All>::new();
+                let sk = ctx.generate_keypair(&mut thread_rng()).0;
+
+                let ctx = Context {
+                    signature: Secp256k1SignatureScheme::new(sk),
+                    local_id,
+                    proposal: Mutex::new(Some(rpc::ConsensusValue { value: 0 as u32 })),
+                    current_round: Arc::new(AtomicUsize::new(0)),
+                    timer: timer_copy,
+                    evaluated: Mutex::new(BTreeSet::new()),
+                    node_count,
+                };
+
+                let f = bft::agree(
+                    ctx,
+                    node_count,
+                    max_faulty,
+                    out_rx.map_err(|_| Error),
+                    in_tx.sink_map_err(|_| Error).with(move |t| Ok((local_id, t))),
+                )
+                    .map_err(|e| warn!("error on consensus {:?}", e))
+                    .map(|r| info!("committed = {:?}", r));
+                tokio::run(f);
+            }
         });
     }
 
