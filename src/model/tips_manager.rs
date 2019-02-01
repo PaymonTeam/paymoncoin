@@ -366,8 +366,7 @@ impl TipsManager {
         let mut rnd = rand::thread_rng();
         let mut monte_carlo_integrations = HashMap::<Hash, i32>::new();
         let _tail: Hash;
-//        println!("visited_hashes={:?}", visited_hashes);
-//        println!("diff={:?}", diff);
+
         for _ in 0..iterations {
             if let Some(tail) = self.random_walk(visited_hashes, diff, Some(tip), extra_tip,
                                                 ratings, max_depth,

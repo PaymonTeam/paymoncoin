@@ -16,9 +16,9 @@ use crate::model::TransactionRequester;
 use crate::model::contracts_manager::ContractsManager;
 
 // TODO: make Mutex
-pub static mut SNAPSHOT_TIMESTAMP: u64 = 0; //Duration = Duration::from_secs(0);
-pub static mut SNAPSHOT_TIMESTAMP_MS: u64 = 0; //Duration = Duration::from_secs(0);
-pub const MAX_TIMESTAMP_FUTURE: u64 = 2 * 60 * 60; //Duration = Duration::from_secs(2 * 60 * 60);
+pub static mut SNAPSHOT_TIMESTAMP: u64 = 0;
+pub static mut SNAPSHOT_TIMESTAMP_MS: u64 = 0;
+pub const MAX_TIMESTAMP_FUTURE: u64 = 2 * 60 * 60;
 pub const MAX_TIMESTAMP_FUTURE_MS: u64 = MAX_TIMESTAMP_FUTURE * 1000;
 
 pub struct TransactionValidator {
@@ -231,8 +231,6 @@ impl TransactionValidator {
         }
 
         while running.load(Ordering::SeqCst) {
-//            println!("propogating");
-
             let mut new_solid_hashes = HashSet::<Hash>::new();
             use_first.store(!use_first.load(Ordering::SeqCst), Ordering::SeqCst);
 
