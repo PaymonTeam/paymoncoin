@@ -22,7 +22,7 @@ use crate::model::*;
 use futures::{Stream, Async};
 use futures::prelude::*;
 use futures::executor::Executor;
-use crate::consensus::{self, Validator, pos::{
+use crate::consensus::{self, Validator, ValidatorIndex, pos::{
     Error,
     Context,
     Secp256k1SignatureScheme,
@@ -45,12 +45,13 @@ use rhododendron as bft;
 use serde::Serialize;
 use num_traits::real::Real;
 
-type ConsensusType = bft::Communication<rpc::ConsensusValue, [u8; 32], usize, consensus::Secp256k1Signature>;
+type CommunicationType = bft::Communication<rpc::ContractsInputOutputs, [u8; 32], ValidatorIndex, consensus::Secp256k1Signature>;
 
+#[derive(Clone)]
 struct LocalValidator {
     pub sk: secp256k1::SecretKey,
     pub pk: secp256k1::PublicKey,
-    pub address: Address,
+    pub address: ValidatorIndex,
 }
 
 pub struct Node {
@@ -69,8 +70,8 @@ pub struct Node {
     transaction_requester: AM<TransactionRequester>,
     tips_vm: AM<TipsViewModel>,
     milestone: AM<Milestone>,
-    bft_in: AM<mpsc::UnboundedReceiver<(usize, ConsensusType)>>,
-    bft_out: AM<mpsc::UnboundedSender<(ConsensusType)>>,
+    bft_in: AM<mpsc::UnboundedReceiver<(Address, CommunicationType)>>,
+    bft_out: AM<mpsc::UnboundedSender<(CommunicationType)>>,
     contracts_manager: AM<ContractsManager>,
     local_validator: AM<Option<LocalValidator>>,
 }
@@ -99,8 +100,8 @@ impl Node {
             transaction_validator,
             tips_vm,
             milestone,
-            bft_in: in_rx,
-            bft_out: out_tx,
+            bft_in: make_am!(in_rx),
+            bft_out: make_am!(out_tx),
             contracts_manager: make_am!(ContractsManager::new()),
             local_validator: make_am!(None),
         }
@@ -131,7 +132,6 @@ impl Node {
 
         let (in_tx, in_rx) = mpsc::unbounded();
         let (out_tx, out_rx) = mpsc::unbounded();
-        let in_rx: AM<_> = make_am!(in_rx);
 
         let running_weak = Arc::downgrade(&self.running.clone());
         let broadcast_queue_weak = Arc::downgrade(&self.broadcast_queue.clone());
@@ -164,6 +164,7 @@ impl Node {
         let running_weak = Arc::downgrade(&self.running.clone());
         let neighbors_weak = Arc::downgrade(&self.neighbors.clone());
         let receiver_changed_weak = Arc::downgrade(&receiver_changed.clone());
+        let in_rx: AM<Option<_>> = make_am!(Some(in_rx));
         let in_rx_weak = Arc::downgrade(&in_rx.clone());
         let jh = thread::spawn(|| Node::bft_thread(running_weak, neighbors_weak, in_rx_weak, receiver_changed_weak));
         self.thread_join_handles.push_back(jh);
@@ -172,13 +173,11 @@ impl Node {
 
         use crossbeam::scope;
 
-//        self.bft_in = in_rx;
-        self.bft_out = out_tx.into(); //make_am!(out_tx);
+        self.bft_out = make_am!(out_tx);
 
         let cm_weak = Arc::downgrade(&self.contracts_manager);
-//        let cm_weak = Arc::downgrade(&self.contracts_manager);
-        let in_rx_clone = Arc::downgrade(&in_rx);
-        let out_tx_clone = Arc::downgrade(&in_rx);
+//        let in_rx_clone = Arc::downgrade(&in_rx);
+        let out_tx_clone = Arc::downgrade(&self.bft_out);
         let running_clone = Arc::downgrade(&self.running);
         let hive_weak = self.hive.clone();
         let local_validator_weak = Arc::downgrade(&self.local_validator);
@@ -186,6 +185,7 @@ impl Node {
         thread::spawn(move || {
             use secp256k1::*;
             use std::collections::HashMap;
+            use std::str::FromStr;
 
             let mut current_index = 0;
             let running = running_clone.upgrade().unwrap();
@@ -193,24 +193,36 @@ impl Node {
                 thread::sleep(Duration::from_secs(1));
             }
             drop(running);
+            let cm_weak_clone = cm_weak.clone();
+            let lv = local_validator_weak.clone();
 
             loop {
-                let local_validator = local_validator_weak.upgrade().unwrap().lock().unwrap();
+                let local_validator = match lv.clone().upgrade() {
+                    Some(v) => match v.lock() {
+                        Ok(v) => (*v).clone(),
+                        Err(_) => continue
+                    },
+                    None => continue
+                };
+
                 if let Some(local_validator) = local_validator {
-                    let (in_tx, in_rx) = mpsc::unbounded();
+                    let (in_tx, in_rx_new) = mpsc::unbounded();
                     let (out_tx, out_rx) = mpsc::unbounded();
                     {
-                        let mut v = in_rx_clone.upgrade().unwrap().lock().unwrap();
-                        *v = in_rx;
-                        let mut v = out_tx_clone.upgrade().unwrap().lock().unwrap();
+                        let arc1 = in_rx.clone();
+                        let mut v = arc1.lock().unwrap();
+                        *v = Some(in_rx_new);
+                        let arc2 = out_tx_clone.clone().upgrade().unwrap();
+                        let mut v = arc2.lock().unwrap();
                         *v = out_tx;
                     }
                     receiver_changed.store(false, Ordering::SeqCst);
 
-                    let mut cm = cm_weak.upgrade().unwrap().lock().unwrap();
+                    let arc3 = cm_weak.clone().upgrade().unwrap();
+                    let mut cm = arc3.lock().unwrap();
                     let validators_ids = cm.future_validators.clone();
                     let node_count = validators_ids.len();
-                    let max_faulty = (node_count / 3.0).floor() as usize;
+                    let max_faulty = (node_count as f32 / 3.0).floor() as usize;
 
                     let executed = cm.execute_contracts();
                     drop(cm);
@@ -221,7 +233,7 @@ impl Node {
                     let local_id = local_validator.address;
                     let mut validators = HashMap::new();
                     for vid in &validators_ids {
-                        validators.insert(vid.clone(), Validator::from_index(vid.clone()))
+                        validators.insert(vid.clone(), Validator::from_index(vid.clone()));
                     }
 
                     let ctx = Context {
@@ -236,25 +248,25 @@ impl Node {
                         queue: vec![]
                     };
 
-                    let cm_weak_clone = cm_weak.clone();
                     let hive_weak_clone = hive_weak.clone();
                     let f = bft::agree(
                         ctx,
                         node_count,
                         max_faulty,
                         out_rx.map_err(|_| Error),
-                        in_tx.sink_map_err(|_| Error).with(move |t| Ok((local_id, t))),
+                        in_tx.sink_map_err(|_| Error).with(move |t| Ok((/*local_id*/Address::from_str("").unwrap(), t))),
                     )
                         .map_err(|e| warn!("error on consensus {:?}", e))
                         .map(|r| {
                             info!("committed = {:?}", r);
                             match r.candidate {
                                 Some(c) => {
-                                    let mut cm = cm_weak_clone.upgrade().unwrap().lock().unwrap();
-                                    for call in executed {
-                                        cm.apply_state(call, hive_weak_clone);
-                                    }
+//                                    let mut cm = cm_weak_clone.clone().upgrade().unwrap().lock().unwrap();
+//                                    for call in executed {
+//                                        cm.apply_state(call, hive_weak_clone);
+//                                    }
                                 }
+                                None => {}
                             }
                         });
                     tokio::run(f);
@@ -401,7 +413,7 @@ impl Node {
         }
     }
 
-    fn bft_thread(running: Weak<AtomicBool>, neighbors: AWM<Vec<AM<Neighbor>>>, bft_in: AWM<mpsc::UnboundedReceiver<(usize, ConsensusType)>>, receiver_changed: Weak<AtomicBool>) {
+    fn bft_thread(running: Weak<AtomicBool>, neighbors: AWM<Vec<AM<Neighbor>>>, bft_in: AWM<Option<mpsc::UnboundedReceiver<(ValidatorIndex, CommunicationType)>>>, receiver_changed: Weak<AtomicBool>) {
         loop {
             let r = running.upgrade().unwrap();
             if r.load(Ordering::SeqCst) {
@@ -432,22 +444,27 @@ impl Node {
 
         loop {
             let trigger = Trigger { receiver_changed: receiver_changed.clone() };
-            let bft_in = bft_in.upgrade().unwrap().lock().unwrap();
+            let mut arc1 = bft_in.clone().upgrade().unwrap();
+            let mut bft_in = arc1.lock().unwrap();
+            let bft_in = bft_in.take();
+            if let Some(bft_in) = bft_in {
+                let neighbors_c = neighbors.clone();
 
-            tokio::run(bft_in.for_each(move |(i, c)| {
-                debug!("sending {} {:?}", i, c);
-                if let Some(arc) = neighbors.upgrade() {
-                    if let Ok(neighbors) = arc.lock() {
-                        for n in neighbors.iter() {
-                            if let Ok(mut n) = n.lock() {
-                                info!("sending to {:?}", n.addr);
-                                n.send_packet(Box::new(c.clone()));
+                tokio::run(bft_in.for_each(move |(i, c)| {
+                    debug!("sending {:?} {:?}", i, c);
+                    if let Some(arc) = neighbors_c.upgrade() {
+                        if let Ok(neighbors) = arc.lock() {
+                            for n in neighbors.iter() {
+                                if let Ok(mut n) = n.lock() {
+                                    info!("sending to {:?}", n.addr);
+                                    n.send_packet(Box::new(c.clone()));
+                                }
                             }
                         }
                     }
-                }
-                futures::future::ok(())
-            }).select(trigger));
+                    futures::future::ok(())
+                }).select(trigger).map(|_| ()).map_err(|_| ()));
+            }
 
             thread::sleep(Duration::from_secs(1));
         }
@@ -579,14 +596,14 @@ impl Node {
             if let Ok(mut queue) = self.receive_queue.lock() {
                 queue.push_back(transaction);
             }
-        } else if svuid == rpc::RquestTransaction::primary_type_id() {
+        } else if svuid == rpc::RequestTransaction::primary_type_id() {
             let tx_request: rpc::RequestTransaction = from_stream(&mut data).unwrap();
 
             let mut hash = tx_request.hash;
             if let Ok(mut queue) = self.reply_queue.lock() {
                 queue.push_back((hash, neighbor.clone()));
             }
-        } else if svuid == ConsensusType::primary_type_id() {
+        } else if svuid == CommunicationType::primary_type_id() {
             let v = from_stream(&mut data).unwrap();
             info!("received communication {:?}", v);
             self.bft_out.lock().unwrap().unbounded_send(v);

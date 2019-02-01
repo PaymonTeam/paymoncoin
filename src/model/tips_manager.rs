@@ -96,13 +96,11 @@ impl TipsManager {
                 if let Some(hash) = t_v_m.get_random_tip() {
                     let mut is_tip = true;
                     let mut tx;
-                    // println!("hive lock 7");
                     if let Ok(hive) = self.hive.lock() {
                         tx = hive.storage_load_transaction(&hash).unwrap();
                     } else {
                         panic!("broken hive mutex");
                     }
-                    // println!("hive unlock 7");
                     if tx.get_approvers(&self.hive).len() != 0 {
                         t_v_m.remove_tip(&hash);
                         is_tip = false;
@@ -489,14 +487,12 @@ impl TipsManager {
     fn below_max_depth(&self, tip: Hash, depth: u32, max_depth_ok: &mut HashSet<Hash>) -> bool {
         //if tip is confirmed stop
 
-//         println!("hive lock 19");
         let transaction = match self.hive.lock() {
             Ok(hive) => hive.storage_load_transaction(&tip).expect("can't find transaction"),
             Err(_) => {
                 panic!("hive mutex is broken");
             }
         };
-//         println!("hive unlock 19");
 
         if transaction.object.get_snapshot_index() >= depth {
             return false;
@@ -509,7 +505,6 @@ impl TipsManager {
 
         while let Some(hash) = non_analyzed_transactions.pop_front() {
             if analyzed_transactions.insert(hash) {
-//                 println!("hive lock 20");
                 let mut transaction = match self.hive.lock() {
                     Ok(hive) => hive.storage_load_transaction(&hash).expect("can't load \
                     transaction"),
@@ -517,7 +512,6 @@ impl TipsManager {
                         panic!("hive mutex is broken");
                     }
                 };
-                // println!("hive unlock 20");
 
                 if transaction.object.get_snapshot_index() != 0 && transaction.object.get_snapshot_index() < depth {
                     return true;
@@ -540,14 +534,12 @@ impl TipsManager {
                                     analyzed_tips: &mut HashSet<Hash>) -> i64 {
         let mut rating = 1;
         if analyzed_tips.insert(tx_hash) {
-            // println!("hive lock 21");
             let mut transaction = match self.hive.lock() {
                 Ok(hive) => hive.storage_load_transaction(&tx_hash).expect("tip is null"),
                 Err(_) => {
                     panic!("hive mutex is broken");
                 }
             };
-            // println!("hive unlock 21");
 
             let approver_hashes = transaction.get_approvers(&self.hive);
             for approver in approver_hashes.iter() {

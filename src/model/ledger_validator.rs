@@ -117,12 +117,10 @@ impl LedgerValidator {
             if visited_hashes.insert(na_hash.clone()) {
                 let mut transaction;
 
-                // println!("hive lock 10");
                 if let Ok(mut hive) = self.hive.lock() {
                     transaction = match hive.storage_load_transaction(&na_hash) {
                         Some(t) => t,
                         None => {
-                            // println!("hive unlock 10");
                             return Err(TransactionError::InvalidHash)
                         }
                     };
@@ -140,8 +138,6 @@ impl LedgerValidator {
                 } else {
                     panic!("broken hive mutex");
                 }
-                // println!("hive unlock 10");
-
             }
         }
 
@@ -233,7 +229,6 @@ impl LedgerValidator {
     fn build_snapshot(&self) -> Result<Option<MilestoneObject>, TransactionError> {
         let mut consistent_milestone = None;
 
-        // println!("hive lock 13");
         if let Ok(hive) = self.hive.lock() {
             let mut candidate_milestone = hive.storage_first_milestone();
             while let Some(cm) = candidate_milestone {

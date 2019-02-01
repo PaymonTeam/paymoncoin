@@ -23,7 +23,7 @@ use std::str::FromStr;
 use hex;
 use std::env;
 
-pub const SUPPLY : u64 = 10_000;
+pub const SUPPLY : u64 = 1_000_000_000;
 
 static CF_NAMES: [&str; 8] = [
     "transaction",

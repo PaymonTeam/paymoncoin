@@ -30,7 +30,7 @@ pub const ADDRESS_SIZE: usize = 21;
 pub const HASH_NULL: Hash = Hash([0u8; HASH_SIZE]);
 pub const ADDRESS_NULL: Address = Address([0u8; ADDRESS_SIZE]);
 
-#[derive(PartialEq, Clone, Copy, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Hash(pub [u8; HASH_SIZE]);
 
 impl Hash {
@@ -179,7 +179,7 @@ pub enum HashError {
     InvalidHash,
 }
 
-#[derive(PartialEq, Copy, Clone, Eq, Hash)]
+#[derive(PartialEq, Copy, Clone, Eq, Hash, Ord, PartialOrd)]
 pub struct Address(pub [u8; ADDRESS_SIZE]);
 
 impl Deref for Address {
@@ -306,7 +306,7 @@ impl Address {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Serialize, Deserialize, Default, Debug, PartialEq, Copy, Clone)]
 pub struct Account(pub Address, pub u32);
 
 impl Deref for Account {

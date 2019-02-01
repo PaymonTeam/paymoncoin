@@ -11,6 +11,7 @@ use std::fmt::Debug;
 use super::contracts_manager::{ContractInputOutput, ContractTransaction};
 use crate::storage::Hive;
 use crate::utils::AWM;
+use serde::{Serialize, Deserialize};
 
 pub type ContractAddress = Address;
 
@@ -39,7 +40,7 @@ impl From<AddressError> for Error {
 }
 
 impl From<HashError> for Error {
-    fn from(e: AddressError) -> Self {
+    fn from(e: HashError) -> Self {
         Error::Unknown("invalid hash value".into())
     }
 }
@@ -103,15 +104,15 @@ impl FromStr for KeyBuilder {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StorageAction<T> where T: Clone + PartialEq + Eq + Debug {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum StorageAction<T> where T: Serialize + Clone + PartialEq + Eq + Debug {
     Insert(T),
     Update(T),
     Remove(T),
 }
 
-impl<T> StorageAction<T> where T: Clone + PartialEq + Eq + Debug {
-    pub fn map<B: Clone + PartialEq + Eq + Debug, F: FnOnce(T) -> B>(mut self, f: F) -> StorageAction<B> {
+impl<T> StorageAction<T> where T: Serialize + Clone + PartialEq + Eq + Debug {
+    pub fn map<B: Serialize + Clone + PartialEq + Eq + Debug, F: FnOnce(T) -> B>(mut self, f: F) -> StorageAction<B> {
         match self {
             StorageAction::Insert(v) => StorageAction::Insert(f(v)),
             StorageAction::Update(v) => StorageAction::Update(f(v)),
@@ -179,7 +180,7 @@ impl Export<Vec<StorageValue<StorageAction<String>>>> for StorageAction<String> 
 
 impl<K, V> Export<Vec<StorageValue<StorageAction<String>>>> for HashMap<K, StorageAction<V>>
     where K: AsRef<[u8]> + Eq + hash::Hash + Clone + Debug,
-          V: Export<Vec<StorageValue<String>>> + Clone + Eq + Debug,
+          V: Export<Vec<StorageValue<String>>> + Serialize + Clone + Eq + Debug,
 {
     fn save<S, T>(&self, mut state: S, key: &T) -> Vec<StorageValue<StorageAction<String>>> where
         S: crypto::digest::Digest + Clone,
@@ -209,6 +210,7 @@ pub trait Storage<I> {
     fn keys(&self) -> Keys<Self::Hash, I>;
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ContractStorage<T> {
     inner: HashMap<Hash, T>,
 }
@@ -267,21 +269,23 @@ pub struct ContractsStorage {
     contracts: HashMap<ContractAddress, Box<dyn Contract<String> + Send>>,
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub enum Status {
     Succeed,
     Failed,
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub enum Operation {
     Create,
     Call,
     Destroy,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ContractOutput {
     pub output: json::Value,
-    pub storage_diff: Option<StorageDiff>,
+    pub storage_diff: StorageDiff,
     pub balance_diff: isize,
     pub status: Status,
     pub operation: Operation,
@@ -342,46 +346,45 @@ impl ContractsStorage {
         self.storages.get(contract_address).and_then(|s| s.get(key))
     }
 
-    pub fn apply_state(&mut self, call: ContractInputOutput, hive: AWM<Hive>) {
+    pub fn apply_state(&mut self, call: ContractInputOutput, hive: AWM<Hive>) -> Result<(), Error> {
         use self::StorageAction::*;
 
-        if let Some(ref mut contract) = self.contracts.get_mut(&call.transaction.address) {
-            if let Some(ref mut storage) = self.storages.get_mut(&call.transaction.address) {
-                let hive = hive.upgrade().unwrap().lock().unwrap();
+        if let Some(ref mut contract) = self.contracts.get_mut(&call.input.address) {
+            if let Some(ref mut storage) = self.storages.get_mut(&call.input.address) {
+                let arc = hive.upgrade().unwrap();
+                let hive = arc.lock().unwrap();
 //                hive.apply_contract_state(call.clone());
 
                 match call.output.status {
                     Status::Succeed => {
                         match call.output.operation {
                             Operation::Call => {
-                                if let Some(ref diff) = call.output.storage_diff {
-                                    for (k, act) in &diff.inner {
-                                        match act {
-                                            Insert(v) => {
-                                                if !storage.inner.contains_key(k) {
-                                                    storage.inner.insert(k.clone(), v.clone());
-                                                } else {
-                                                    error!("attempt to insert value, but key exists");
-                                                    return Err(Error::KeyExists);
-                                                }
-                                            },
-                                            Update(v) => {
-                                                if storage.inner.contains_key(k) {
-                                                    storage.inner.insert(k.clone(), v.clone());
-                                                } else {
-                                                    error!("attempt to update value, but key doesn't exist");
-                                                    return Err(Error::KeyDoesntExist);
-                                                }
-                                            },
-                                            Remove(v) => {
-                                                if storage.inner.contains_key(k) {
-                                                    storage.inner.remove(k);
-                                                } else {
-                                                    error!("attempt to remove value, but key doesn't exist");
-                                                    return Err(Error::KeyDoesntExist);
-                                                }
-                                            },
-                                        }
+                                for (k, act) in &call.output.storage_diff.inner {
+                                    match act {
+                                        Insert(v) => {
+                                            if !storage.inner.contains_key(k) {
+                                                storage.inner.insert(k.clone(), v.clone());
+                                            } else {
+                                                error!("attempt to insert value, but key exists");
+                                                return Err(Error::KeyExists);
+                                            }
+                                        },
+                                        Update(v) => {
+                                            if storage.inner.contains_key(k) {
+                                                storage.inner.insert(k.clone(), v.clone());
+                                            } else {
+                                                error!("attempt to update value, but key doesn't exist");
+                                                return Err(Error::KeyDoesntExist);
+                                            }
+                                        },
+                                        Remove(v) => {
+                                            if storage.inner.contains_key(k) {
+                                                storage.inner.remove(k);
+                                            } else {
+                                                error!("attempt to remove value, but key doesn't exist");
+                                                return Err(Error::KeyDoesntExist);
+                                            }
+                                        },
                                     }
                                 }
                             },
@@ -413,6 +416,7 @@ impl ContractsStorage {
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -434,13 +438,13 @@ impl Contract<String> for POSContract {
             .get("arguments").ok_or(Error::JsonParse("expected field 'arguments'".into()))?
             .as_object().ok_or(Error::JsonParse("expected object".into()))?;
 
-        if method == "balance_of" {
-            let address = Address::from_str(args.get("address")
-                .ok_or(Error::JsonParse("expected field 'address'".into()))?
-                .as_str().ok_or(Error::JsonParse("expected string".into()))?)?;
-
-            return self.balance_of(&address, storage);
-        }
+//        if method == "balance_of" {
+//            let address = Address::from_str(args.get("address")
+//                .ok_or(Error::JsonParse("expected field 'address'".into()))?
+//                .as_str().ok_or(Error::JsonParse("expected string".into()))?)?;
+//
+//            return self.balance_of(&address, storage);
+//        }
 
         Err(Error::JsonParse("unknown method".into()))
     }
@@ -475,7 +479,7 @@ impl TokenContract {
         } );
 
         Ok(ContractOutput {
-            storage_diff: None,
+            storage_diff: StorageDiff::new(),
             balance_diff: 0,
             output,
             status: Status::Succeed,
@@ -515,7 +519,7 @@ impl TokenContract {
         } );
 
         Ok(ContractOutput {
-            storage_diff: Some(storage_diff),
+            storage_diff,
             balance_diff: 0,
             output,
             status: Status::Succeed,
@@ -530,7 +534,7 @@ impl TokenContract {
         } );
 
         Ok(ContractOutput {
-            storage_diff: None,
+            storage_diff: StorageDiff::new(),
             balance_diff: 0,
             output,
             status: Status::Succeed,
@@ -566,7 +570,7 @@ impl TokenContract {
         let out = ContractOutput {
             output: json!({}),
             balance_diff: 0,
-            storage_diff: Some(storage),
+            storage_diff: storage,
             status: Status::Succeed,
             operation: Operation::Create,
         };
@@ -658,7 +662,7 @@ mod tests {
         let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
 
         let out = contracts_storage.call(&contract_address, &acc2, call_contract_json_obj).expect("failed to call contract");
-        assert!(out.storage_diff.is_none());
+        assert!(out.storage_diff.len() == 0);
         assert_eq!(out.balance_diff, 0);
         assert_eq!(out.output, json!({ "name": "Test Token" }));
 
@@ -671,7 +675,7 @@ mod tests {
 
         let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
         let out = contracts_storage.call(&contract_address, &acc2, call_contract_json_obj).expect("failed to call contract");
-        assert!(out.storage_diff.is_none());
+        assert!(out.storage_diff.len() == 0);
         assert_eq!(out.balance_diff, 0);
         assert_eq!(out.output, json!({ "balance": "1000000" }));
 
@@ -685,7 +689,7 @@ mod tests {
 
         let call_contract_json_obj: &json::Map<String, json::Value> = call_contract_json.as_object().unwrap();
         let mut out = contracts_storage.call(&contract_address, &acc1, call_contract_json_obj).expect("failed to call contract");
-        assert!(out.storage_diff.is_some());
+        assert!(out.storage_diff.len() != 0);
 
         let sender_balance_key = KeyBuilder::new("balances").chain(acc1.0).finalize();
         let recipient_balance_key = KeyBuilder::new("balances").chain(acc2.0).finalize();

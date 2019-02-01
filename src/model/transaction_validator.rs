@@ -104,7 +104,7 @@ impl TransactionValidator {
             running: Arc::new(AtomicBool::new(true)),
             new_solid_transaction_list_one: make_am!(LinkedHashSet::new()),
             new_solid_transaction_list_two: make_am!(LinkedHashSet::new()),
-            contracts_manager: ContractsManager::new(),
+            contracts_manager: make_am!(ContractsManager::new()),
         };
 
         let transaction_validator: AM<TransactionValidator> = make_am!(tv);
@@ -254,39 +254,30 @@ impl TransactionValidator {
             while let Some(hash) = it.next() {
                 if running.load(Ordering::SeqCst) {
                     let mut transaction;
-                    // println!("hive lock 27");
                     if let Ok(mut hive) = hive.lock() {
                         if let Some(t) = hive.storage_load_transaction(&hash) {
                             transaction = t;
                         } else {
-                            // println!("hive unlock 27");
                             continue;
                         }
                     } else {
                         panic!("broken hive mutex");
                     }
-                    // println!("hive unlock 27");
                     let approvers = transaction.get_approvers(&hive);
                     // TODO: optimize lock
                     for _h in approvers {
                         let mut tx;
-                        // println!("hive lock 28");
                         if let Ok(mut hive) = hive.lock() {
                             tx = hive.storage_load_transaction(&hash).unwrap();
                         } else {
                             panic!("broken hive mutex");
                         }
-                        // println!("hive unlock 28");
                         if let Some(arc) = transaction_validator.upgrade() {
                             if let Ok(mut tv) = arc.lock() {
-//                                info!("set solid");
                                 if tv.quiet_quick_set_solid(&mut tx) {
-                                    // println!("hive lock 35");
-//                                    info!("set solid ok");
                                     if let Ok(mut hive) = hive.lock() {
                                         hive.update_transaction(&mut tx);
                                     }
-                                    // println!("hive unlock 35");
                                 } else if transaction.is_solid() {
                                     if use_first.load(Ordering::Relaxed) {
                                         if let Ok(mut list) = solid_transaction_list_one.lock() {
@@ -361,8 +352,24 @@ impl TransactionValidator {
 
             if solid {
                 if transaction.update_solidity(true) {
-                    let mut cm = self.contracts_manager.lock().unwrap();
-                    cm.add_contract_tx_to_queue(transaction.object.value, transaction.object.hash.clone(),)
+                    use serde_json as json;
+                    use json::*;
+
+                    if let Ok(data) = json::from_str::<Value>(&transaction.object.data) {
+                        if let Some(o) = data.as_object() {
+                            if let Some(i) = o.get("input") {
+                                if let Some(input) = i.as_object() {
+                                    let acc = Account(Address::from_public_key(&transaction.object.signature_pubkey), 0);
+
+                                    let mut cm = self.contracts_manager.lock().unwrap();
+                                    cm.add_contract_tx_to_queue(transaction.object.value,
+                                                                transaction.object.hash.clone(),
+                                                                acc,
+                                                                transaction.object.address, input.clone(), transaction.object.timestamp);
+                                }
+                            }
+                        }
+                    }
                 }
                 if let Ok(mut hive) = self.hive.lock() {
                     hive.update_heights(transaction.clone());

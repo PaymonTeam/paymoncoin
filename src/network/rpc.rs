@@ -157,7 +157,7 @@ pub struct TransactionsData {
     pub transactions: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Eq, Debug, Clone, PMIdentifiable, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, PMIdentifiable, Default, PartialOrd, Ord)]
 #[pm_identifiable(id = "0x20fcaac6")]
 pub struct ContractsInputOutputs {
     pub vec: Vec<crate::model::contracts_manager::ContractInputOutput>,
@@ -189,7 +189,7 @@ impl PartialEq for ConsensusValue {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, PMIdentifiable, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, PMIdentifiable)]
 #[pm_identifiable(id = "0xac73d2ff")]
 pub struct Signed
 //    where T: Serialize + PartialEq + Eq + Default + Debug + Clone + Identifiable
@@ -199,7 +199,7 @@ pub struct Signed
     pub data: SignedData,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum SignedData {
     ApplyForValidator {
         stake: u64,

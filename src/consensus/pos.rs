@@ -31,7 +31,6 @@ use crate::model::transaction::Address;
 
 use crate::network::{
     Neighbor,
-    node::{PacketData},
     rpc::{self, ConsensusValue},
 };
 use serde_pm::{to_boxed_buffer, to_buffer, SerializedBuffer, Identifiable};
@@ -39,8 +38,7 @@ use crate::utils::AM;
 
 use rhododendron as bft;
 
-type ValidatorIndex = Address;
-type ValidatorDataType = u32;
+pub type ValidatorIndex = Address;
 
 pub const ROUND_DURATION: Duration = Duration::from_millis(1000);
 
@@ -389,7 +387,7 @@ impl<T, S> Context<T, S> where S: SignatureScheme,
     pub fn new(proposal: T, signature: S, local_id: <Self as bft::Context>::AuthorityId, validators: HashMap<ValidatorIndex, Validator>) -> Self where T: Ord {
         assert_eq!(validators.is_empty(), false);
         let node_count = validators.len();
-        let mut queue = validators.iter().cloned().map(|k, _| k).collect();
+        let mut queue = validators.clone().into_iter().map(|(k, _)| k).collect::<Vec<Address>>();
         queue.sort_unstable();
 
         Context {
@@ -472,8 +470,8 @@ impl<T, S> bft::Context for Context<T, S>
         }
     }
 
-    fn round_proposer(&mut self, round: u32) -> Self::AuthorityId {
-        self.queue[round % self.queue.len()]
+    fn round_proposer(&self, round: u32) -> Self::AuthorityId {
+        self.queue[round as usize % self.queue.len()]
     }
 
     fn proposal_valid(&self, proposal: &Self::Candidate) -> FutureResult<bool, Error> {
@@ -608,17 +606,17 @@ fn timeout_in(t: Duration) -> oneshot::Receiver<()> {
     rx
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Validator {
     index: ValidatorIndex,
-    node: Neighbor,
+//    node: Neighbor,
 }
 
 impl Validator {
     pub fn from_index(index: ValidatorIndex) -> Self {
         Validator {
             index,
-            node: Neighbor::from_address("127.0.0.1".parse::<SocketAddr>().unwrap()),
+//            node: Neighbor::from_address("127.0.0.1".parse::<SocketAddr>().unwrap()),
         }
     }
 }
