@@ -41,6 +41,10 @@ bytes = "0.4"
 chrono = "^0.4"
 regex = "^1.1"
 num-traits = "^0.2"
+patricia-trie = "^0.3"
+memorydb = "^0.3"
+ethereum-trie = "0.4.0"
+
 #rhododendron = "^0.4"
 rhododendron = { path = "rhododendron" }
 secp256k1 = { version = "^0.12", features = ["rand", "serde"] }

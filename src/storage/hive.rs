@@ -516,10 +516,6 @@ impl Hive {
             Some((key, bytes)) => {
                 let index = from_stream(&mut SerializedBuffer::from_slice(&key)).unwrap();
                 let hash = from_stream(&mut SerializedBuffer::from_slice(&bytes)).unwrap();
-//                let mut index = 0u32;
-//                let mut hash = HASH_NULL;
-//                index.read_params(&mut SerializedBuffer::from_slice(&key));
-//                hash.read_params(&mut SerializedBuffer::from_slice(&bytes));
 
                 Some(MilestoneObject {
                     index,
@@ -534,19 +530,13 @@ impl Hive {
     }
 
     pub fn storage_next_milestone(&self, index: u32) -> Option<MilestoneObject> {
-        let key = to_buffer(&index).unwrap(); //get_serialized_object(&index, false);
+        let key = to_buffer(&index).unwrap();
         let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize]).unwrap(), IteratorMode::From(&key, Direction::Forward)).unwrap();
 
         match it.next() {
             Some((key, bytes)) => {
-//                let key = it.key().unwrap();
                 let index = from_stream(&mut SerializedBuffer::from_slice(&key)).unwrap();
                 let hash = from_stream(&mut SerializedBuffer::from_slice(&bytes)).unwrap();
-
-//                let mut index = 0u32;
-//                let mut hash = HASH_NULL;
-//                index.read_params(&mut SerializedBuffer::from_slice(key.as_ref()));
-//                hash.read_params(&mut SerializedBuffer::from_slice(bytes.as_ref()));
 
                 Some(MilestoneObject {
                     index,
@@ -566,8 +556,6 @@ impl Hive {
         match vec {
             Ok(res) => {
                 let hash = from_stream(&mut SerializedBuffer::from_slice(&res?)).unwrap();
-//                let mut hash = HASH_NULL;
-//                hash.read_params(&mut SerializedBuffer::from_slice(&res?));
 
                 Some(MilestoneObject {
                     index, hash
@@ -716,8 +704,6 @@ impl Hive {
         match vec {
             Ok(res) => {
                 let num = from_stream(&mut SerializedBuffer::from_slice(&res?)).unwrap();
-//                let mut num = 0;
-//                num.read_params(&mut SerializedBuffer::from_slice(&res?));
                 Some(num)
             },
 
@@ -765,7 +751,6 @@ impl Hive {
             opts.set_write_buffer_size(2 * 1024 * 1024);
             opts.add_merge_operator("bytes_concat", concat_merge);
 
-//            ColumnFamilyDescriptor::new(*name, opts)
             opts
         }).collect::<Vec<_>>();
 
@@ -793,7 +778,6 @@ impl Hive {
                     opts.set_max_write_buffer_number(2);
                     opts.set_write_buffer_size(2 * 1024 * 1024);
                     opts.add_merge_operator("bytes_concat", concat_merge);
-//                    ColumnFamilyDescriptor::new(*name, opts)
                     opts
                 }).collect::<Vec<_>>();
 
@@ -809,10 +793,7 @@ impl Hive {
         use byteorder::{ByteOrder, LittleEndian};
         use secp256k1::*;
         use crate::rand::{thread_rng, Rng};
-//        use self::ntrumls::{NTRUMLS, PQParamSetID};
 
-//        let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-//        let (sk, pk) = ntrumls.generate_keypair().expect("failed to generate address");
         let secp = Secp256k1::<All>::new();
         let (sk, pk) = secp.generate_keypair(&mut thread_rng());
 
@@ -834,12 +815,7 @@ impl Hive {
 
     pub fn generate_address_from_private_key(sk: &PrivateKey) -> (Address, PublicKey) {
         use byteorder::{ByteOrder, LittleEndian};
-//        use self::ntrumls::{NTRUMLS, PQParamSetID};
 
-//        let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
-//        let fg = ntrumls.unpack_fg_from_private_key(sk).expect("failed to unpack fg from private \
-//        key");
-//        let (_, pk) = ntrumls.generate_keypair_from_fg(&fg).expect("failed to generate address");
         use secp256k1::*;
         let secp = Secp256k1::<All>::new();
         let pk = PublicKey::from_secret_key(&secp, sk);
@@ -945,5 +921,47 @@ impl From<io::Error> for Error {
 impl From<num::ParseIntError> for Error {
     fn from(e: num::ParseIntError) -> Self {
         Error::Parse(e)
+    }
+}
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_hive_state() {
+        use crate::model::contracts_manager::*;
+        use crate::model::contract::*;
+//        use patricia_trie::{TrieDB, TrieDBMut};
+//        use memorydb::MemoryDB;
+        use trie::*;
+
+        let mut hive = Hive::new();
+
+        let mut input = ContractTransaction {
+            value: 0,
+            hash: Hash::from_str("21").unwrap(),
+            from: Account(Address::from_str("").unwrap(), 1000),
+            address: Address::from_str("").unwrap(),
+            contract_input: json!({}),
+            timestamp: ::std::time::SystemTime::now().elapsed().unwrap().as_secs(),
+        };
+
+        let output = ContractOutput {
+            output: json!({}),
+            storage_diff: StorageDiff::new(),
+            balance_diff: 0,
+            status: Status::Succeed,
+            operation: Operation::Create,
+        };
+
+        let mut call = ContractInputOutput {
+            input,
+            output,
+        };
+
+//        let mut db = MemoryDB::new();
+//        let mut trie_db = TrieDBMut::new(&mut db, );
+
+        hive.apply_contract_state(call);
     }
 }
