@@ -13,7 +13,6 @@ use crate::storage::hive::Hive;
 use std::collections::HashSet;
 use std::clone::Clone;
 use crate::secp256k1;
-//use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
 use crate::utils::defines::AM;
 use std::str::FromStr;
 use hex;
@@ -98,47 +97,22 @@ impl hash::Hash for Hash {
 }
 
 impl Serialize for Hash {
-    // FIXME:
-    fn serialize<S>(&self, _serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
         S: Serializer {
-        unimplemented!()
+        serializer.serialize_str(&hex::encode(self.0))
     }
-//    fn encode<S: Serializer>(&self, s: &mut S) -> Result<(), S::Error> {
-//        let strs: Vec<String> = self.0.iter()
-//            .map(|b| format!("{:02x}", b))
-//            .collect();
-//        s.emit_str(&format!("{}", strs.join("")))
-//    }
-
 }
 
 impl<'de> Deserialize<'de> for Hash {
-    // FIXME:
-    fn deserialize<D>(_deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
         D: Deserializer<'de> {
-        unimplemented!()
+        deserializer.deserialize_str(FromStringVisitor::<Hash>::new())
     }
-//    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
-//        let v = d.read_str()?.from_hex().map_err(|e| d.error("failed to decode Hash"))?;
-//        if v.len() < HASH_SIZE {
-//            return Err(d.error("invalid hash size"));
-//        }
-//
-//        let mut hash = HASH_NULL.clone();
-//        hash.clone_from_slice(&v[..HASH_SIZE]);
-//        Ok(hash)
-//    }
-
 }
 
 impl fmt::Debug for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//        use self::rustc_serialize::hex::ToHex;
-        let strs: Vec<String> = self.0.iter()
-            .map(|b| format!("{:02X}", b))
-            .collect();
-        write!(f, "Hash({})", strs.join(""))
-//        write!(f, "P{}", self.0.to_hex())
+        write!(f, "Hash({})", hex::encode(self.0))
     }
 }
 
@@ -235,16 +209,10 @@ impl Serialize for Address {
 }
 
 impl<'de> Deserialize<'de> for Address {
-    // FIXME:
-    fn deserialize<D>(_deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
         D: Deserializer<'de> {
-        unimplemented!()
+        deserializer.deserialize_str(FromStringVisitor::<Address>::new())
     }
-//    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
-//        let s = d.read_str()?;
-//        Ok(Address::from_str(&s).map_err(|e| d.error("failed to decode Address"))?)
-//    }
-
 }
 
 impl fmt::Debug for Address {
@@ -692,4 +660,32 @@ pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
 
     let mut secp = Secp256k1::<All>::new();
     secp.verify(&transaction.object.hash.into(), sign, pk).map(|_| true).map_err(|_| false).unwrap()
+}
+
+struct FromStringVisitor<T: FromStr>(std::marker::PhantomData<T>);
+
+use serde::de;
+
+impl<T: FromStr> FromStringVisitor<T> {
+    fn new() -> Self {
+        FromStringVisitor(std::marker::PhantomData{})
+    }
+}
+
+impl<'de, T> serde::de::Visitor<'de> for FromStringVisitor<T>
+    where T: FromStr
+{
+    type Value = T;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a string")
+    }
+
+    fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        T::from_str(v).map_err(|_| E::custom(format!("invalid address")))
+    }
+
+    fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
+        T::from_str(&v).map_err(|_| E::custom(format!("invalid address")))
+    }
 }

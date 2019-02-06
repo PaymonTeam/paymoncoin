@@ -637,7 +637,6 @@ impl API {
                             }
                             "getBalances" => {
                                 debug!("getBalances");
-
                                 match json::from_str::<rpc::GetBalances>(&json_str) {
                                     Ok(object) => {
                                         unsafe {

@@ -103,7 +103,9 @@ pub struct RequestTransaction {
 #[derive(Serialize, Deserialize)]
 pub struct GetBalances {
     pub addresses: Vec<Address>,
+    #[serde(default)]
     pub tips: Vec<Hash>,
+    #[serde(default)]
     pub threshold: u8,
 }
 
