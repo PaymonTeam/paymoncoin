@@ -123,16 +123,12 @@ impl Milestone {
             let hive;
             let coordinator;
 
-//            if let Some(arc) = transaction_validator.upgrade() {
-                if let Ok(m) = milestone_clone_1.lock() {
-                    hive = m.hive.clone();
-                    coordinator = m.coordinator.clone(); //Address::from_public_key(&m.coordinator);
-                } else {
-                    panic!("broken transaction_validator mutex");
-                }
-//            } else {
-//                panic!("transaction_validator is null");
-//            }
+            if let Ok(m) = milestone_clone_1.lock() {
+                hive = m.hive.clone();
+                coordinator = m.coordinator.clone(); //Address::from_public_key(&m.coordinator);
+            } else {
+                panic!("broken transaction_validator mutex");
+            }
 
             info!("Waiting for Ledger Validator initialization...");
             while !ledger_initialized_clone_thread_1.load(Ordering::SeqCst) {
@@ -147,9 +143,9 @@ impl Milestone {
                 let scan_time = SystemTime::now();
                 let previous_latest_milestone_index;
 
-                if let Ok(self_p) = milestone_clone_1.lock() {
-                    shutting_down = self_p.shutting_down;
-                    previous_latest_milestone_index = self_p.latest_milestone_index;
+                if let Ok(m) = milestone_clone_1.lock() {
+                    shutting_down = m.shutting_down;
+                    previous_latest_milestone_index = m.latest_milestone_index;
                     if shutting_down {
                         break;
                     }
@@ -160,7 +156,7 @@ impl Milestone {
                 let hashes: Vec<Hash>;
                 let mut hashes_is_ok = false;
                 if let Ok(hive) = hive.lock() {
-                    hashes = match hive.load_address_transactions(&coordinator){
+                    hashes = match hive.load_address_transactions(&coordinator) {
                         Some(h) => {
                             hashes_is_ok = true;
                             h

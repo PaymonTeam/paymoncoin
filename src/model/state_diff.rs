@@ -18,6 +18,7 @@ impl StateDiffObject {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct StateDiff {
     pub state_diff_object: StateDiffObject,
     pub hash: Hash

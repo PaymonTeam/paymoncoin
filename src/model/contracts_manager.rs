@@ -166,7 +166,7 @@ impl ContractsManager {
     pub fn input(&mut self, caller: &Account, address: &ContractAddress, input: json::Map<String, json::Value>, tx_timestamp: u64) -> Result<ContractOutput, Error> {
         let call_input = input.get("input").ok_or(Error::JsonParse("expected field 'input'".into()))?
             .as_object().ok_or(Error::JsonParse("expected object".into()))?;
-
+//        self.storage.create()
         self.storage.call(address, caller, call_input)
         // or create...
         // or remove

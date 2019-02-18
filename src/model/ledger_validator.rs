@@ -171,8 +171,7 @@ impl LedgerValidator {
     }
 
     pub fn update_snapshot(&mut self, milestone_obj: &MilestoneObject, latest_snapshot: &mut Snapshot) ->
-    Result<bool,
-        TransactionError> {
+    Result<bool, TransactionError> {
         let transaction;
         if let Ok(hive) = self.hive.lock() {
             transaction = match hive.storage_load_transaction(&milestone_obj.hash) {
