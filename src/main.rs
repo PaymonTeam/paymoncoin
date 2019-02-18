@@ -107,8 +107,7 @@ fn main() {
         let port = config.get_int(ConfigurationSettings::Port).unwrap();
 
         let pmnc = Arc::new(Mutex::new(PaymonCoin::new(config)));
-
-        let _node_arc = pmnc.lock().unwrap().run();
+        let _ = pmnc.lock().unwrap().run();
 
         let pmnc_clone = pmnc.clone();
 //            let mut api_running = Arc::new(AtomicBool::from(true));
@@ -122,11 +121,7 @@ fn main() {
             drop(api);
         });
 
-//        thread::sleep(Duration::from_secs(10));
-//            if let Ok(n) = node_arc.lock() {
-//                n.neighbors.lock().pu
-//            }
-//        thread::sleep(Duration::from_secs(10000));
+        thread::sleep(Duration::from_secs(10000));
 
         {
             //            api_running.store(false, Ordering::SeqCst);
@@ -138,13 +133,10 @@ fn main() {
 
         api_jh.join();
         {
-//                if let Ok(mut p) = pmnc.lock() {
-            pmnc.lock().and_then(|mut p| {
-                p.shutdown();
-                Ok(p)
-            });
-//                    p.shutdown();
-//                }
+//            pmnc.lock().and_then(|mut p| {
+//                p.shutdown();
+//                Ok(p)
+//            });
         }
     }).unwrap();
 
