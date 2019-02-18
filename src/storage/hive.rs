@@ -73,23 +73,24 @@ impl Hive {
         use secp256k1::*;
         let mwm = 9;
         let secp = Secp256k1::<All>::new();
-
-        let coordinator_sk = SecretKey::from_slice(&[1; 32]).unwrap();
+        let coordinator_sk = SecretKey::from_slice(&[1u8; secp256k1::constants::SECRET_KEY_SIZE]).unwrap();
+//
         let coordinator_pk = PublicKey::from_secret_key(&secp, &coordinator_sk);
-        let acc1_sk = SecretKey::from_slice(&[2; 32]).unwrap();
-        let acc1_pk = PublicKey::from_secret_key(&secp, &acc1_sk);
-        let acc2_sk = SecretKey::from_slice(&[3; 32]).unwrap();
+
+//        let acc1_sk = SecretKey::from_slice(&hex::decode("b43707099d126bb7734ff228825335eb4d9c1fd4ed14bc438c0cd3c93dbb2b681e6a896e24355d50e15b3625b68f26a1181f6bd72607a2c7f33f6ec2786e4102").unwrap()[..secp256k1::constants::SECRET_KEY_SIZE]).unwrap();//&[2; secp256k1::constants::SECRET_KEY_SIZE]).unwrap();
+//        let acc1_pk = PublicKey::from_secret_key(&secp, &acc1_sk);
+        let acc2_sk = SecretKey::from_slice(&[3; secp256k1::constants::SECRET_KEY_SIZE]).unwrap();
         let acc2_pk = PublicKey::from_secret_key(&secp, &acc2_sk);
         let coordinator = Address::from_public_key(&coordinator_pk);
-        let acc1 = Address::from_public_key(&acc1_pk);
+        dbg!(coordinator);
+//        let acc1 = Address::from_public_key(&acc1_pk);
+        let acc1 = Address::from_str("PCC355A433B116AB685739F8E8FE967161FFB8E4B9C").unwrap();
         let acc2 = Address::from_public_key(&acc2_pk);
-
+        dbg!(acc1);
+        dbg!(acc2);
         let mut th1 = HASH_NULL; // coordinator: 8000 -> Acc1
         let mut th2 = HASH_NULL; // coordinator: 2000 -> Acc2, trunk: th1, branch: th1
         let mut mh1 = HASH_NULL; // coordiator: milestone: 1, trunk: th1, branch: th2
-        let mut th3 = HASH_NULL; // Acc1: 5 -> Acc2, trunk: th1, branch: th2
-        let mut th4 = HASH_NULL; // Acc2: 5 -> Acc1, trunk: th3, branch: mh1
-        let mut mh2 = HASH_NULL; // coordiator: milestone: 2, trunk: mh1, branch: th4
 
         {
             let mut tx = TransactionObject::new();
@@ -104,7 +105,7 @@ impl Hive {
 
             let mut tx = Transaction::from_object(tx);
             tx.object.nonce = tx.find_nonce(mwm);
-            dbg!(tx.object.nonce);
+//            dbg!(tx.object.nonce);
             tx.object.hash = tx.calculate_hash();
             th1 = tx.object.hash.clone();
             tx.object.signature = tx.calculate_signature(&coordinator_sk, &coordinator_pk);
@@ -127,7 +128,7 @@ impl Hive {
 
             let mut tx = Transaction::from_object(tx);
             tx.object.nonce = tx.find_nonce(mwm);
-            dbg!(tx.object.nonce);
+//            dbg!(tx.object.nonce);
             tx.object.hash = tx.calculate_hash();
             th2 = tx.object.hash.clone();
             tx.object.signature = tx.calculate_signature(&coordinator_sk, &coordinator_pk);
@@ -149,7 +150,7 @@ impl Hive {
 
             let mut tx = Transaction::from_object(tx);
             tx.object.nonce = tx.find_nonce(mwm);
-            dbg!(tx.object.nonce);
+//            dbg!(tx.object.nonce);
             tx.object.hash = tx.calculate_hash();
             mh1 = tx.object.hash.clone();
             tx.object.signature = tx.calculate_signature(&coordinator_sk, &coordinator_pk);
@@ -160,6 +161,21 @@ impl Hive {
                 hash: mh1.clone()
             };
             debug!("milestone1 ({:?}) ={}", mh1, self.put_milestone(&milestone));
+        }
+
+        {
+            let mut state = HashMap::new();
+            state.insert(acc1, 8000);
+            state.insert(acc2, 2000);
+            state.insert(coordinator.clone(), -10000);
+            let sdo = StateDiffObject {
+                state
+            };
+            let sd = StateDiff {
+                hash: mh1.clone(),
+                state_diff_object: sdo
+            };
+            debug!("state_diff1={}", self.put_state_diff(&sd));
         }
     }
 
@@ -418,7 +434,7 @@ impl Hive {
 //                index: 2,
 //                hash: mh2.clone()
 //            };
-//            debug!("milestone2 ({:?}) ={}", mh2, self.put_milestone(&milestone));
+//            debug!("milestone2 ({:?}) ={}", mh2, self. (&milestone));
 //        }
 //
 //        {
@@ -532,6 +548,8 @@ impl Hive {
     pub fn storage_next_milestone(&self, index: u32) -> Option<MilestoneObject> {
         let key = to_buffer(&index).unwrap();
         let mut it = self.db.iterator_cf(self.db.cf_handle(CF_NAMES[CFType::Milestone as usize]).unwrap(), IteratorMode::From(&key, Direction::Forward)).unwrap();
+
+        let _ = it.next(); // skip first
 
         match it.next() {
             Some((key, bytes)) => {
