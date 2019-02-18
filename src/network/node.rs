@@ -370,7 +370,7 @@ impl Node {
                 if let Some(arc) = receive_queue.upgrade() {
                     if let Ok(mut queue) = arc.lock() {
                         if let Some(mut t) = queue.pop_front() {
-                            info!("received tx: {:?}", t.get_hash());
+                            info!("received tx: {:?}\n{:?}", t.get_hash(), t.object);
                             let _address = t.object.address.clone();
                             let validated = transaction::validate_transaction(&mut t, 3);
                             info!("validated={}", validated);

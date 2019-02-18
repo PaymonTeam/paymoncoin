@@ -53,32 +53,6 @@ pub struct GetTransactionsToApprove {
     pub reference: Hash
 }
 
-//impl Serializable for GetTransactionsToApprove {
-//    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-//        stream.write_i32(Self::SVUID);
-//        stream.write_u32(self.depth);
-//        stream.write_u32(self.num_walks);
-//
-//        if self.reference == HASH_NULL {
-//            stream.write_bool(true);
-//            stream.write_bytes(&self.reference);
-//        } else {
-//            stream.write_bool(false);
-//        }
-//    }
-//
-//    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-//        self.depth = stream.read_u32();
-//        self.num_walks = stream.read_u32();
-//
-//        if stream.read_bool() {
-//            stream.read_bytes(&mut self.reference, HASH_SIZE);
-//        } else {
-//            self.reference = HASH_NULL;
-//        }
-//    }
-//}
-
 /**
     TransactionsToApprove
 */
@@ -208,10 +182,3 @@ pub enum SignedData {
         address: Address,
     }
 }
-
-//#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, PMIdentifiable, Default)]
-//#[pm_identifiable(id = "0x24e88fca")]
-//pub struct ApplyForValidator {
-//    stake: u64,
-//    address: Address,
-//}

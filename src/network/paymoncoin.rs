@@ -46,7 +46,9 @@ impl PaymonCoin {
         let snapshot = Snapshot::init("db/snapshot.dat".to_string(), "".to_string()).expect("Can't \
         load snapshot");
         let hive = Arc::new(Mutex::new(Hive::new()));
-
+        {
+            hive.lock().unwrap().init();
+        }
         // used for shutdown replicator pool
         let (replicator_tx, replicator_rx) = channel::<()>();
         let (pmnc_tx, pmnc_rx) = channel::<()>();
