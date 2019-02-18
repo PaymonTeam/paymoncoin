@@ -7,6 +7,7 @@ use std::fmt;
 
 use error::{Error, Result, SerializationError};
 
+#[derive(Debug)]
 pub struct SerializedBuffer {
     pub buffer: Vec<u8>,
     position: usize,
