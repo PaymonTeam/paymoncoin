@@ -666,6 +666,7 @@ impl API {
                                 return Ok(json!({}));
                             }
                             Err(e) => {
+                                error!("json parse error: {:?}", e);
                                 return Err(APIError::InvalidData);
                             }
                         };

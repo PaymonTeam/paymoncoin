@@ -344,11 +344,11 @@ mod serde_secp_signature {
 
     pub fn deserialize<'de, D>(d: D) -> Result<secp256k1::Signature, D::Error> where D: de::Deserializer<'de> {
         let s = d.deserialize_str(StringVisitor::<String>::new())?;
-        Ok(secp256k1::Signature::from_der(&hex::decode(&s).unwrap()).unwrap())
+        Ok(secp256k1::Signature::from_compact(&hex::decode(&s).unwrap()).unwrap())
     }
 
     pub fn serialize<S>(t: &secp256k1::Signature, s: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        s.serialize_str(&hex::encode(&t.serialize_der()))
+        s.serialize_str(&hex::encode(&t.serialize_compact()[..]))
     }
 }
 
