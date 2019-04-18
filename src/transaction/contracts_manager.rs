@@ -1,8 +1,8 @@
 use std::collections::{HashSet};
 use std::str::FromStr;
 use crate::consensus::Validator;
-use crate::model::transaction::{Hash, Address, Account};
-use crate::model::contract::{ContractsStorage, Error, ContractOutput, ContractAddress};
+use crate::transaction::transaction::{Hash, Address, Account};
+use crate::transaction::contract::{ContractsStorage, Error, ContractOutput, ContractAddress};
 use serde_json as json;
 use linked_hash_set::LinkedHashSet;
 use std::hash;

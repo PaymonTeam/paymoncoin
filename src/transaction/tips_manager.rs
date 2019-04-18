@@ -3,14 +3,14 @@ use std::iter::Iterator;
 use std::cmp::max;
 use std::sync::{Arc, Mutex};
 
-use crate::model::transaction::*;
+use crate::transaction::transaction::*;
 use crate::storage::hive::Hive;
-use crate::model::milestone::{Milestone, MilestoneObject};
+use crate::transaction::milestone::{Milestone, MilestoneObject};
 use crate::utils::defines::AM;
-use crate::model::tips_view_model::TipsViewModel;
-use crate::model::ledger_validator::LedgerValidator;
-use crate::model::transaction_validator::TransactionValidator;
-use crate::model::transaction_validator::TransactionError;
+use crate::transaction::TipsViewModel;
+use crate::storage::ledger_validator::LedgerValidator;
+use crate::transaction::transaction_validator::TransactionValidator;
+use crate::transaction::transaction_validator::TransactionError;
 use std::thread;
 
 use rand::Rng;

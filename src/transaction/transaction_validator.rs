@@ -2,8 +2,8 @@ extern crate linked_hash_set;
 
 use crate::utils::{AM, AWM};
 use crate::storage::Hive;
-use crate::model::{TipsViewModel, Transaction};
-use crate::model::transaction::*;
+use crate::transaction::{TipsViewModel, Transaction};
+use crate::transaction::transaction::*;
 use std::time::Duration;
 use std::thread::JoinHandle;
 use std::thread;
@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::collections::{HashSet, LinkedList};
 use std::sync::atomic::{AtomicBool, Ordering};
 use self::linked_hash_set::LinkedHashSet;
-use crate::model::TransactionRequester;
-use crate::model::contracts_manager::ContractsManager;
+use crate::transaction::TransactionRequester;
+use crate::transaction::contracts_manager::ContractsManager;
 
 // TODO: make Mutex
 pub static mut SNAPSHOT_TIMESTAMP: u64 = 0; //Duration = Duration::from_secs(0);

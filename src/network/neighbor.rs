@@ -2,7 +2,7 @@ extern crate futures;
 
 use std::io::Error;
 
-use crate::model::config::{Configuration, ConfigurationSettings};
+use crate::utils::config::{Configuration, ConfigurationSettings};
 use std::sync::{Arc, Weak, Mutex};
 use mio::tcp::TcpStream;
 use std::collections::VecDeque;

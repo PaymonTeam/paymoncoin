@@ -1,8 +1,8 @@
 use std::sync::Mutex;
 use std::collections::HashMap;
-use crate::model::transaction::*;
+use crate::transaction::transaction::*;
 use crate::storage::hive;
-use crate::model::transaction_validator::TransactionError;
+use crate::transaction::transaction_validator::TransactionError;
 
 pub const SNAPSHOT_PUBKEY: &str = "ABC123";
 pub const SNAPSHOT_INDEX: u32 = 1;

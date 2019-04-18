@@ -8,15 +8,15 @@ use std::{
     time::Duration,
 };
 
-use crate::storage::Hive;
 use crate::network::node::*;
 use crate::network::replicator_new::ReplicatorNew;
-use crate::model::config::{PORT, Configuration, ConfigurationSettings};
-use crate::model::config;
-use crate::model::TipsViewModel;
-use crate::model::transaction::Address;
+use crate::utils::config::{PORT, Configuration, ConfigurationSettings};
+use crate::utils::config;
+use crate::transaction::TipsViewModel;
+use crate::transaction::transaction::Address;
 use crate::utils::{AM, AWM};
-use crate::model::*;
+use crate::transaction::*;
+use crate::storage::*;
 use std::time;
 use std::str::FromStr;
 use crossbeam::scope;

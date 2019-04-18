@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 use serde_pm::{SerializedBuffer, Boxed, Identifiable};
 use std::fmt::Debug;
 
-use crate::model::{
+use crate::transaction::{
     Transaction, TransactionObject,
     transaction::*
 };
@@ -136,7 +136,7 @@ pub struct TransactionsData {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, PMIdentifiable, Default, PartialOrd, Ord)]
 #[pm_identifiable(id = "0x20fcaac6")]
 pub struct ContractsInputOutputs {
-    pub vec: Vec<crate::model::contracts_manager::ContractInputOutput>,
+    pub vec: Vec<crate::transaction::contracts_manager::ContractInputOutput>,
 }
 
 #[derive(Serialize, Deserialize, Eq, Debug, Clone, PMIdentifiable, Default)]

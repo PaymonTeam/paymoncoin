@@ -10,12 +10,10 @@ use std::num;
 use std::sync::Arc;
 use std::collections::{HashSet, HashMap, LinkedList};
 
-use crate::model::{Milestone, MilestoneObject};
-use crate::model::transaction_validator::TransactionError;
-use crate::model::transaction::*;
-use crate::model::approvee::Approvee;
-use crate::model::{StateDiffObject, StateDiff};
-use crate::model::contracts_manager::ContractInputOutput;
+use crate::transaction::{Milestone, MilestoneObject};
+use crate::transaction::transaction_validator::TransactionError;
+use crate::transaction::transaction::*;
+use crate::transaction::contracts_manager::ContractInputOutput;
 use serde::{Serialize, Deserialize};
 use serde_pm::{SerializedBuffer, to_buffer, to_boxed_buffer, from_stream};
 use std::time;
@@ -930,6 +928,39 @@ impl Hive {
     }
 }
 
+
+#[derive(Serialize, Deserialize)]
+pub struct StateDiffObject {
+    pub state: HashMap<Address, i64>
+}
+
+impl StateDiffObject {
+    pub const SVUID: i32 = 29537194;
+
+    pub fn new() -> Self {
+        StateDiffObject {
+            state: HashMap::new()
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct StateDiff {
+    pub state_diff_object: StateDiffObject,
+    pub hash: Hash
+}
+
+impl StateDiff {
+    pub fn from_bytes(mut bytes: SerializedBuffer, hash: Hash) -> Self {
+        let state_diff_object = from_stream(&mut bytes).unwrap();
+
+        StateDiff {
+            state_diff_object,
+            hash
+        }
+    }
+}
+
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
         Error::IO(e)
@@ -947,8 +978,8 @@ mod tests {
 
     #[test]
     fn apply_hive_state() {
-        use crate::model::contracts_manager::*;
-        use crate::model::contract::*;
+        use crate::transaction::contracts_manager::*;
+        use crate::transaction::contract::*;
 //        use patricia_trie::{TrieDB, TrieDBMut};
 //        use memorydb::MemoryDB;
         use trie::*;

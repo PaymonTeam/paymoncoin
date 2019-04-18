@@ -1,8 +1,8 @@
-use crate::model::transaction::*;
-use crate::model::LedgerValidator;
-use crate::model::snapshot::Snapshot;
-use crate::model::TransactionValidator;
-use crate::model::transaction_validator::TransactionError;
+use crate::transaction::transaction::*;
+use crate::storage::LedgerValidator;
+use crate::storage::snapshot::Snapshot;
+use crate::transaction::TransactionValidator;
+use crate::transaction::transaction_validator::TransactionError;
 
 use std::collections::{HashSet, HashMap, LinkedList};
 use crate::utils::AM;

@@ -36,9 +36,9 @@ extern crate tokio;
 
 #[macro_use]
 pub mod utils;
+pub mod transaction;
 pub mod consensus;
 pub mod network;
-pub mod model;
 pub mod storage;
 
 use std::{
@@ -55,8 +55,8 @@ use mio::Poll;
 use mio::net::TcpListener;
 
 use crate::network::node::*;
-use crate::model::config::{PORT, Configuration, ConfigurationSettings};
-use crate::model::config;
+use crate::utils::config::{PORT, Configuration, ConfigurationSettings};
+use crate::utils::config;
 use crate::network::paymoncoin::PaymonCoin;
 use env_logger::LogBuilder;
 use log::{LogRecord, LogLevelFilter};
@@ -240,8 +240,8 @@ mod tests {
 
     #[test]
     fn hive_transaction_test() {
-        use crate::model::{Transaction, TransactionObject};
-        use crate::model::transaction::ADDRESS_NULL;
+        use crate::transaction::{Transaction, TransactionObject};
+        use crate::transaction::transaction::ADDRESS_NULL;
         use crate::storage::hive::{CFType};
         use super::hex;
 //        use self::ser::hex::{ToHex, FromHex};
@@ -312,7 +312,7 @@ mod tests {
         }
 
         builder.init().unwrap();
-        use crate::model::transaction::{Hash, ADDRESS_NULL, HASH_SIZE};
+        use crate::transaction::transaction::{Hash, ADDRESS_NULL, HASH_SIZE};
 
         let mut hive = Hive::new();
         hive.init();

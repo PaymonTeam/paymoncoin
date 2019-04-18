@@ -1,7 +1,7 @@
 extern crate linked_hash_set;
 
 use self::linked_hash_set::LinkedHashSet;
-use crate::model::transaction::*;
+use crate::transaction::transaction::*;
 use std::time::{Duration, SystemTime};
 use std::time;
 use rand::{Rng, thread_rng};

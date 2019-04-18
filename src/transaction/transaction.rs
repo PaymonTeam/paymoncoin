@@ -4,7 +4,6 @@ extern crate base64;
 use serde_pm_derive;
 use std::fmt;
 use std::hash;
-use crate::model::approvee::*;
 use serde_pm::{Identifiable, SerializedBuffer, from_stream, to_buffer};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
@@ -416,12 +415,12 @@ impl Transaction {
             None => match Approvee::load(hive, &self.get_hash()) {
                 Some(aprv) => {
                     let hashes = aprv.get_hashes();
-                    self.approvers = Some(Approvee::new(&hashes));
+                    self.approvers = Some(Approvee::new(hashes.clone()));
                     hashes
                 },
                 None => {
                     let empty_set = HashSet::new();
-                    self.approvers = Some(Approvee::new(&empty_set));
+                    self.approvers = Some(Approvee::new(empty_set.clone()));
                     empty_set
                 }
             }
@@ -751,5 +750,42 @@ impl<'de, T> serde::de::Visitor<'de> for StringVisitor<T>
 
     fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
         T::from_str(&v).map_err(|_| E::custom(format!("invalid address")))
+    }
+}
+
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct Approvee {
+    set: HashSet<Hash>,
+}
+
+impl Approvee {
+    pub fn new_empty() -> Self {
+        Approvee {
+            set: HashSet::new(),
+        }
+    }
+
+    pub fn new(set: HashSet<Hash>) -> Self {
+        Approvee {
+            set,
+        }
+    }
+
+    pub fn load(hive: &AM<Hive>, hash: &Hash) -> Option<Self> {
+        use std::iter::FromIterator;
+
+        if let Ok(hive) = hive.lock() {
+            return match hive.storage_load_approvee(hash) {
+                Some(vec_h) => Some(Approvee::new(HashSet::from_iter(vec_h.into_iter()))),
+                None => None
+            };
+        } else {
+            return None;
+        }
+    }
+
+    pub fn get_hashes(&self) -> HashSet<Hash> {
+        return self.set.clone();
     }
 }

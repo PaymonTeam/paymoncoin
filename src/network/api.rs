@@ -18,10 +18,10 @@ use serde::{Serialize, Deserialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use crate::model::transaction::*;
-use crate::model::*;
+use crate::transaction::transaction::*;
+use crate::transaction::*;
 use std::collections::{HashMap, HashSet};
-use crate::model::transaction_validator::TransactionError;
+use crate::transaction::transaction_validator::TransactionError;
 use std::fmt;
 
 #[macro_export]
