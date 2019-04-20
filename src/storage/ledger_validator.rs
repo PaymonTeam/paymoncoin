@@ -1,10 +1,10 @@
-use crate::storage::Hive;
-use crate::model::{Milestone, MilestoneObject, TransactionRequester, Snapshot};
+use crate::storage::{Hive, Snapshot};
+use crate::transaction::{Milestone, MilestoneObject, TransactionRequester};
 use std::collections::{HashSet, HashMap, LinkedList};
-use crate::model::transaction::*;
-use crate::model::{StateDiff, StateDiffObject};
+use crate::transaction::transaction::*;
+use crate::storage::hive::{StateDiff, StateDiffObject};
 use crate::utils::*;
-use crate::model::transaction_validator::TransactionError;
+use crate::transaction::transaction_validator::TransactionError;
 use std::i64;
 
 pub struct LedgerValidator {
@@ -171,8 +171,7 @@ impl LedgerValidator {
     }
 
     pub fn update_snapshot(&mut self, milestone_obj: &MilestoneObject, latest_snapshot: &mut Snapshot) ->
-    Result<bool,
-        TransactionError> {
+    Result<bool, TransactionError> {
         let transaction;
         if let Ok(hive) = self.hive.lock() {
             transaction = match hive.storage_load_transaction(&milestone_obj.hash) {

@@ -27,7 +27,7 @@ use secp256k1;
 use tokio;
 use tokio_timer::{self, Timer};
 use serde::Serialize;
-use crate::model::transaction::Address;
+use crate::transaction::transaction::Address;
 
 use crate::network::{
     Neighbor,

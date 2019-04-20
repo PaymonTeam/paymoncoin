@@ -18,16 +18,33 @@ use serde::{Serialize, Deserialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use crate::model::transaction::*;
-use crate::model::*;
+use crate::transaction::transaction::*;
+use crate::transaction::*;
 use std::collections::{HashMap, HashSet};
-use crate::model::transaction_validator::TransactionError;
+use crate::transaction::transaction_validator::TransactionError;
+use std::fmt;
 
 #[macro_export]
 macro_rules! format_success_response {
     ($a:ident) => {
-        Ok(Response::with((iron::status::Ok, json::to_string(&$a).unwrap())))
+        Ok(Response::with((iron::status::Ok, $a)))
     };
+}
+
+struct StatusCode {
+    status: status::Status
+}
+
+impl StatusCode {
+    pub fn new(status: status::Status) -> Self {
+        StatusCode { status }
+    }
+}
+
+impl iron::modifier::Modifier<Response> for StatusCode {
+    fn modify(self, response: &mut Response) {
+        response.status = Some(self.status);
+    }
 }
 
 struct DefaultContentType;
@@ -39,7 +56,10 @@ impl AfterMiddleware for DefaultContentType {
     }
 }
 
-static mut PMNC: Option<AM<PaymonCoin>> = None;
+lazy_static! {
+    pub static ref PMNC: Mutex<Option<AM<PaymonCoin>>> = Mutex::new(None);
+}
+
 const MILESTONE_START_INDEX: u32 = 0;
 const MIN_RANDOM_WALKS: u32 = 5;
 const MAX_RANDOM_WALKS: u32 = 27;
@@ -58,16 +78,71 @@ pub struct APIRequest<T: Serialize> {
     pub object: T,
 }
 
+//error_chain! {
+//    errors {
+//        TipAbsent {
+//            description("invalid toolchain name")
+//            display("invalid toolchain name")
+//        }
+//
+//        TheSubHiveIsNotSolid {
+//            description("invalid toolchain name")
+//            display("invalid toolchain name")
+//        }
+//
+//        InvalidData {
+//            description("invalid toolchain name")
+//            display("invalid toolchain name")
+//        }
+//
+//        InvalidRequest {
+//            description("invalid toolchain name")
+//            display("invalid toolchain name")
+//        }
+//
+//        Overflow {
+//            description("invalid toolchain name")
+//            display("invalid toolchain name")
+//        }
+//
+//        InternalError {
+//            description("invalid toolchain name")
+//            display("invalid toolchain name")
+//        }
+//
+//        UnknownMethod {
+//            description("invalid toolchain name")
+//            display("invalid toolchain name")
+//        }
+//    }
+//}
+
 #[derive(Debug)]
 pub enum APIError {
-    InvalidStringParametr,
     TipAbsent,
     TheSubHiveIsNotSolid,
     InvalidData,
     InvalidRequest,
-    NoneParameter,
-    IncorrectJsonParsing,
-    Overflow
+    Overflow,
+    InternalError,
+    UnknownMethod,
+}
+
+impl From<json::Error> for APIError {
+    fn from(e: json::Error) -> Self {
+        APIError::InvalidData
+    }
+}
+
+impl std::error::Error for APIError {
+}
+
+impl fmt::Display for APIError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            _ => f.write_str("error")
+        }
+    }
 }
 
 impl API {
@@ -79,8 +154,9 @@ impl API {
             .http(format!("127.0.0.1:{}", port))
             .expect("failed to start API server");
 
-        unsafe {
-            PMNC = Some(pmnc);
+        {
+            let mut lock = PMNC.lock().unwrap();
+            *lock = Some(pmnc);
         }
 
         Self {
@@ -102,8 +178,11 @@ impl API {
         Response::with((iron::status::Ok, format!("{{\"error\":\"{}\"}}\n", err.to_string())))
     }
 
-    fn get_transactions_to_approve(pmnc: &mut PaymonCoin, mut depth: u32, reference: Option<Hash>, mut num_walks: u32) ->
-    Result<Option<(Hash, Hash)>, TransactionError> {
+    fn get_transactions_to_approve(pmnc: &mut PaymonCoin,
+                                   mut depth: u32,
+                                   reference: Option<Hash>,
+                                   mut num_walks: u32) -> Result<Option<(Hash, Hash)>, TransactionError>
+    {
         if num_walks > MAX_RANDOM_WALKS || num_walks == 0 {
             num_walks = MAX_RANDOM_WALKS;
         }
@@ -222,6 +301,7 @@ impl API {
         for tip in hashes.iter() {
             if let Ok(hive) = pmnc.hive.lock() {
                 if !hive.exists_transaction(*tip) {
+                    debug!("selected tip doesn't exist");
                     return Err(TransactionError::InvalidAddress);
                 }
             } else {
@@ -230,6 +310,7 @@ impl API {
 
             if let Ok(mut lv) = pmnc.ledger_validator.lock() {
                 if !lv.update_diff(&mut visited_hashes, &mut diff, *tip)? {
+                    debug!("chain isn't consistent");
                     return Err(TransactionError::InvalidAddress);
                 }
             } else {
@@ -534,253 +615,271 @@ impl API {
                                                                     "Error reading request")))?;
         let json_str = std::str::from_utf8(&body).map_err(|e| IronError::new(e,
                                                                              (status::InternalServerError, "Invalid UTF-8 string")))?;
-        let json: json::Value = json::from_str(json_str).map_err(|e| IronError::new(e,(status::InternalServerError, "Invalid JSON")))?;
+        let json: json::Value = json::from_str(json_str).map_err(|e| IronError::new(e, (status::InternalServerError, "Invalid JSON")))?;
 
         match json.as_object() {
             Some(o) => {
                 if !o.contains_key("method") {
                     return Ok(API::format_error_response("No 'method' parameter"));
                 }
-
-                match o.get("method").unwrap() {
-                    Value::String(method) => {
-                        match method.as_ref() {
-                            "broadcastTransaction" => {
-                                debug!("broadcastTransaction");
-                                match json::from_str::<rpc::BroadcastTransaction>(&json_str) {
-                                    Ok(bt) => {
-                                        unsafe {
-                                            if let Some(ref arc) = PMNC {
-                                                if let Ok(pmnc) = arc.lock() {
-                                                    if let Ok(mut node) = pmnc.node.lock() {
-                                                        debug!("rcvd tx");
-                                                        node.on_api_broadcast_transaction_received(bt);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        return Ok(Response::with((iron::status::Ok, "{}")));
-                                    }
-                                    Err(e) => return Ok(API::format_error_response
-                                                            (&format!("Invalid data \
-                                    {:?}", e)))
-                                };
+                return match API::handle_request(o.clone()) {
+                    Ok(o) => {
+                        let s = match json::to_string(&o) {
+                            Ok(s) => s,
+                            Err(_) => {
+                                return Err(IronError::new(APIError::InternalError, StatusCode::new(iron::status::InternalServerError)));
                             }
-                            "getTransactionsToApprove" => {
-                                debug!("getTransactionsToApprove");
-                                match json::from_str::<rpc::GetTransactionsToApprove>(&json_str) {
-                                    Ok(object) => {
-                                        unsafe {
-                                            if let Some(ref arc) = PMNC {
-                                                if let Ok(ref mut pmnc) = arc.lock() {
-                                                    if API::invalid_subtangle_status(pmnc) {
-                                                        return Ok(API::format_error_response("The subhive has not been updated yet"));
-                                                    }
-                                                    use rand::{thread_rng, Rng};
+                        };
+                        debug!("response={}", s);
+                        format_success_response!(s)
+                    }
+                    Err(APIError::InternalError) => {
+                        Err(IronError::new(APIError::InternalError, StatusCode::new(status::InternalServerError)))
+                    }
+                    Err(e) => {
+                        Ok(API::format_error_response(&format!("{:?}", e)))
+                    }
+                }
+            }
+            None => Ok(API::format_error_response("Invalid request"))
+        }
+    }
+
+    fn handle_request(o: json::Map<String, json::Value>) -> Result<json::Value, APIError> {
+        match o.get("method").unwrap() {
+            Value::String(method) => {
+                debug!("method: {}", method);
+                match method.as_ref() {
+                    "broadcastTransaction" => {
+                        debug!("broadcastTransaction");
+                        match json::from_value::<rpc::BroadcastTransaction>(json::Value::Object(o)) {
+                            Ok(bt) => {
+                                if let Some(ref arc) = *PMNC.lock().unwrap() {
+                                    if let Ok(pmnc) = arc.lock() {
+                                        if let Ok(mut node) = pmnc.node.lock() {
+                                            debug!("rcvd tx");
+                                            node.on_api_broadcast_transaction_received(bt);
+                                        }
+                                    }
+                                }
+//                                return Ok(Response::with((iron::status::Ok, "{}")));
+                                return Ok(json!({}));
+                            }
+                            Err(e) => {
+                                error!("json parse error: {:?}", e);
+                                return Err(APIError::InvalidData);
+                            }
+                        };
+                    }
+                    "getTransactionsToApprove" => {
+                        debug!("getTransactionsToApprove");
+                        match json::from_value::<rpc::GetTransactionsToApprove>(json::Value::Object(o)) {
+                            Ok(object) => {
+                                if let Some(ref arc) = *PMNC.lock().unwrap() {
+                                    if let Ok(ref mut pmnc) = arc.lock() {
+                                        if API::invalid_subtangle_status(pmnc) {
+                                            return Err(APIError::TheSubHiveIsNotSolid); //Ok(API::format_error_response("The subhive has not been updated yet"));
+                                        }
+                                        use rand::{thread_rng, Rng};
 //                                                    let depth = 3;
 //                                                    let num_walks = thread_rng().gen_range(2, 5);
-                                                    let depth = object.depth;
-                                                    let mut num_walks = match object.num_walks {
-                                                        0 => 1,
-                                                        v => v
-                                                    };
-                                                    if num_walks < MIN_RANDOM_WALKS {
-                                                        num_walks = MIN_RANDOM_WALKS;
-                                                    }
+                                        let depth = object.depth;
+                                        let mut num_walks = match object.num_walks {
+                                            0 => 1,
+                                            v => v
+                                        };
+                                        if num_walks < MIN_RANDOM_WALKS {
+                                            num_walks = MIN_RANDOM_WALKS;
+                                        }
 
 //                                                    let reference = match object.reference {
 //                                                        v => Some(v),
 //                                                        HASH_NULL => None,
 //                                                    };
 
-                                                    let reference;
-                                                    if object.reference == HASH_NULL {
-                                                        reference = None;
-                                                    } else {
-                                                        reference = Some(object.reference);
-                                                    }
+                                        let reference;
+                                        if object.reference == HASH_NULL {
+                                            reference = None;
+                                        } else {
+                                            reference = Some(object.reference);
+                                        }
 
-                                                    if depth < 0 || (reference.is_none() && depth == 0) {
-                                                        return Ok(API::format_error_response("Invalid depth input"));
-                                                    }
+                                        if depth < 0 || (reference.is_none() && depth == 0) {
+                                            return Err(APIError::InvalidData);
+//                                            return Ok(API::format_error_response("Invalid depth input"));
+                                        }
 
-                                                    debug!("num_walks={}", num_walks);
+                                        debug!("num_walks={}", num_walks);
 
-                                                    match API::get_transactions_to_approve(pmnc,
-                                                                                           depth,
-                                                                                           reference,
-                                                                                           num_walks) {
-                                                        Ok(Some((trunk, branch))) => {
-                                                            let result = rpc::TransactionsToApprove {
-                                                                branch,
-                                                                trunk,
-                                                            };
-                                                            return format_success_response!(result);
-                                                        }
-                                                        Ok(None) => return Ok(API::format_error_response("None")),
-                                                        _ => return Ok(API::format_error_response("Internal error"))
-                                                    }
-                                                }
+                                        match API::get_transactions_to_approve(pmnc,
+                                                                               depth,
+                                                                               reference,
+                                                                               num_walks) {
+                                            Ok(Some((trunk, branch))) => {
+                                                let result = rpc::TransactionsToApprove {
+                                                    branch,
+                                                    trunk,
+                                                };
+//                                                return Ok(json::to_value(result)?)return Ok(json::to_value(result)?);
                                             }
-                                        };
-                                        return Ok(API::format_error_response("Internal error"));
+                                            Ok(None) => return Err(APIError::InvalidData), //Ok(API::format_error_response("None")),
+                                            _ => return Err(APIError::InternalError)
+                                        }
                                     }
-                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
-                                };
+                                }
+                                return Err(APIError::InternalError);
                             }
-                            "getNodeInfo" => {
-                                debug!("getNodeInfo");
-                                let result = rpc::NodeInfo {
-                                    name: "PMNC 0.1".to_string()
-                                };
-                                format_success_response!(result)
-                            }
-                            "getBalances" => {
-                                debug!("getBalances");
-
-                                match json::from_str::<rpc::GetBalances>(&json_str) {
-                                    Ok(object) => {
-                                        unsafe {
-                                            if let Some(ref arc) = PMNC {
-                                                if let Ok(ref mut pmnc) = arc.lock() {
-                                                    match API::get_balances(pmnc,
-                                                                            object.addresses,
-                                                                            object.tips,
-                                                                            object.threshold) {
-                                                        Ok(balances) => {
-                                                            let result = rpc::Balances {
-                                                                balances
-                                                            };
-                                                            return format_success_response!(result);
-                                                        }
-                                                        Err(e) => {
-                                                            error!("{:?}", e);
-                                                            return Ok
-                                                                (API::format_error_response
-                                                                    ("Internal error"));
-                                                        }
-                                                    }
-                                                }
+                            Err(_e) => return Err(APIError::InvalidData)
+                        };
+                    }
+                    "getNodeInfo" => {
+                        debug!("getNodeInfo");
+                        let result = rpc::NodeInfo {
+                            name: "PMNC 0.1".to_string()
+                        };
+                        Ok(json::to_value(result)?)
+                    }
+                    "getBalances" => {
+                        debug!("getBalances");
+                        match json::from_value::<rpc::GetBalances>(json::Value::Object(o)) {
+                            Ok(object) => {
+                                if let Some(ref arc) = *PMNC.lock().unwrap() {
+                                    if let Ok(ref mut pmnc) = arc.lock() {
+                                        match API::get_balances(pmnc,
+                                                                object.addresses,
+                                                                object.tips,
+                                                                object.threshold) {
+                                            Ok(balances) => {
+                                                let result = rpc::Balances {
+                                                    balances
+                                                };
+                                                return Ok(json::to_value(result)?);
                                             }
-                                        };
-                                        return Ok(API::format_error_response("Internal error"));
-                                    }
-                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
-                                };
-                            }
-                            "getInclusionStates" => {
-                                match json::from_str::<rpc::GetInclusionStates>(&json_str) {
-                                    Ok(object) => {
-                                        unsafe {
-                                            if let Some(ref mut arc) = PMNC {
-                                                if let Ok(ref mut pmnc) = arc.lock() {
-                                                    match API::get_new_inclusion_state_statement(pmnc,
-                                                                                                 &object.transactions.clone(),
-                                                                                                 &object.tips.clone()) {
-                                                        Ok(vec) => {
-                                                            let result = rpc::InclusionStates {
-                                                                booleans: vec
-                                                            };
-                                                            return format_success_response!(result);
-                                                        }
-                                                        _ => return Ok(API::format_error_response("Internal error"))
-                                                    }
-                                                } else {
-                                                    panic!("broken pmnc mutex");
-                                                }
-                                            } else {
-                                                panic!("None returned");
+                                            Err(e) => {
+                                                error!("{:?}", e);
+                                                return Err(APIError::InternalError);
                                             }
                                         }
                                     }
-                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
                                 }
+                                return Err(APIError::InternalError);
                             }
-                            "findTransactions" => {
-                                match json::from_str::<rpc::FindTransactions>(&json_str) {
-                                    Ok(object) => {
-                                        unsafe {
-                                            if let Some(ref mut arc) = PMNC {
-                                                if let Ok(ref mut pmnc) = arc.lock() {
-                                                    match API::find_transactions(pmnc, &object.addresses, &object.tags, &object.approvees) {
-                                                        Ok(vec) => {
-                                                            let result = rpc::FoundedTransactions {
-                                                                hashes: vec
-                                                            };
-                                                            return format_success_response!(result);
-                                                        }
-                                                        _ => return Ok(API::format_error_response("Internal error"))
-                                                    }
-                                                } else {
-                                                    panic!("broken pmnc mutex");
-                                                }
-                                            } else {
-                                                panic!("None returned");
+                            Err(_e) => return Err(APIError::InvalidData)
+                        };
+                    }
+                    "getInclusionStates" => {
+                        match json::from_value::<rpc::GetInclusionStates>(json::Value::Object(o)) {
+                            Ok(object) => {
+                                if let Some(ref mut arc) = *PMNC.lock().unwrap() {
+                                    if let Ok(ref mut pmnc) = arc.lock() {
+                                        match API::get_new_inclusion_state_statement(pmnc,
+                                                                                     &object.transactions.clone(),
+                                                                                     &object.tips.clone()) {
+                                            Ok(vec) => {
+                                                let result = rpc::InclusionStates {
+                                                    booleans: vec
+                                                };
+                                                return Ok(json::to_value(result)?);
                                             }
+                                            _ => return Err(APIError::InternalError)
                                         }
+                                    } else {
+                                        panic!("broken pmnc mutex");
                                     }
-                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
+                                } else {
+                                    panic!("None returned");
                                 }
                             }
-                            "getTips" => {
-                                match json::from_str::<rpc::GetTips>(&json_str) {
-                                    Ok(_object) => {
-                                        unsafe {
-                                            if let Some(ref mut arc) = PMNC {
-                                                if let Ok(ref mut pmnc) = arc.lock() {
-                                                    match API::get_tips(pmnc) {
-                                                        Ok(vec) => {
-                                                            let result = rpc::Tips {
-                                                                hashes: vec
-                                                            };
-                                                            return format_success_response!(result);
-                                                        }
-                                                        _ => return Ok(API::format_error_response("Internal error"))
-                                                    }
-                                                } else {
-                                                    panic!("broken pmnc mutex");
-                                                }
-                                            } else {
-                                                panic!("None returned");
-                                            }
-                                        }
-                                    }
-                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
-                                }
-                            }
-                            "getTransactionsData" => {
-                                match json::from_str::<rpc::GetTransactionsData>(&json_str) {
-                                    Ok(object) => {
-                                        unsafe {
-                                            if let Some(ref mut arc) = PMNC {
-                                                if let Ok(ref mut pmnc) = arc.lock() {
-                                                    match API::get_transactions_data(pmnc, &object.hashes) {
-                                                        Ok(vec) => {
-                                                            let result = rpc::TransactionsData {
-                                                                transactions: vec
-                                                            };
-                                                            return format_success_response!(result);
-                                                        }
-                                                        _ => return Ok(API::format_error_response("Internal error"))
-                                                    }
-                                                } else {
-                                                    panic!("broken pmnc mutex");
-                                                }
-                                            } else {
-                                                panic!("None returned");
-                                            }
-                                        }
-                                    }
-                                    Err(_e) => return Ok(API::format_error_response("Invalid data"))
-                                }
-                            }
-                            _ => Ok(API::format_error_response("Unknown 'method' parameter"))
+                            Err(_e) => return Err(APIError::InvalidData)
                         }
                     }
-                    _ => Ok(API::format_error_response("Invalid 'method' parameter"))
+                    "findTransactions" => {
+                        match json::from_value::<rpc::FindTransactions>(json::Value::Object(o)) {
+                            Ok(object) => {
+                                if let Some(ref mut arc) = *PMNC.lock().unwrap() {
+                                    if let Ok(ref mut pmnc) = arc.lock() {
+                                        match API::find_transactions(pmnc, &object.addresses, &object.tags, &object.approvees) {
+                                            Ok(vec) => {
+                                                let result = rpc::FoundedTransactions {
+                                                    hashes: vec
+                                                };
+                                                return Ok(json::to_value(result)?);
+                                            }
+                                            _ => return Err(APIError::InternalError)
+                                        }
+                                    } else {
+                                        panic!("broken pmnc mutex");
+                                    }
+                                } else {
+                                    panic!("None returned");
+                                }
+                            }
+                            Err(_e) => return Err(APIError::InvalidData)
+                        }
+                    }
+                    "getTips" => {
+                        match json::from_value::<rpc::GetTips>(json::Value::Object(o)) {
+                            Ok(_object) => {
+                                if let Some(ref mut arc) = *PMNC.lock().unwrap() {
+                                    if let Ok(ref mut pmnc) = arc.lock() {
+                                        match API::get_tips(pmnc) {
+                                            Ok(vec) => {
+                                                let result = rpc::Tips {
+                                                    hashes: vec
+                                                };
+                                                return Ok(json::to_value(result)?);
+                                            }
+                                            _ => return Err(APIError::InternalError)
+                                        }
+                                    } else {
+                                        panic!("broken pmnc mutex");
+                                    }
+                                } else {
+                                    panic!("None returned");
+                                }
+                            }
+                            Err(_e) => return Err(APIError::InvalidData)
+                        }
+                    }
+                    "getTransactionsData" => {
+                        match json::from_value::<rpc::GetTransactionsData>(json::Value::Object(o)) {
+                            Ok(object) => {
+                                if let Some(ref mut arc) = *PMNC.lock().unwrap() {
+                                    if let Ok(ref mut pmnc) = arc.lock() {
+                                        match API::get_transactions_data(pmnc, &object.hashes) {
+                                            Ok(vec) => {
+                                                let result = rpc::TransactionsData {
+                                                    transactions: vec
+                                                };
+                                                return Ok(json::to_value(result)?);
+                                            }
+                                            _ => return Err(APIError::InternalError)
+                                        }
+                                    } else {
+                                        panic!("broken pmnc mutex");
+                                    }
+                                } else {
+                                    panic!("None returned");
+                                }
+                            }
+                            Err(_e) => return Err(APIError::InvalidData)
+                        }
+                    }
+                    "createContract" => {
+                        let object = json::from_value::<rpc::GetTransactionsData>(json::Value::Object(o))?;
+                        let m = PMNC.lock().unwrap();
+                        let pmnc = &mut m.as_ref().unwrap().lock().unwrap();
+//                        pmnc.node.co
+                        let vec = API::get_transactions_data(pmnc, &object.hashes)?;
+                        let result = rpc::TransactionsData {
+                            transactions: vec
+                        };
+                        Ok(json::to_value(result)?)
+                    }
+                    _ => Err(APIError::UnknownMethod)
                 }
             }
-            None => Ok(API::format_error_response("Invalid request"))
+            _ => Err(APIError::UnknownMethod)
         }
     }
 

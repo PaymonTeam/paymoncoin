@@ -1,8 +1,8 @@
 use std::collections::{HashSet};
 use std::str::FromStr;
 use crate::consensus::Validator;
-use crate::model::transaction::{Hash, Address, Account};
-use crate::model::contract::{ContractsStorage, Error, ContractOutput, ContractAddress};
+use crate::transaction::transaction::{Hash, Address, Account};
+use crate::transaction::contract::{ContractsStorage, Error, ContractOutput, ContractAddress};
 use serde_json as json;
 use linked_hash_set::LinkedHashSet;
 use std::hash;
@@ -96,6 +96,10 @@ impl ContractsManager {
         }
     }
 
+    pub fn handle_tx_with_input(&mut self, value: u32, hash: Hash, from: Account, address: ContractAddress, contract_input: json::Map<String, json::Value>, timestamp: u64) {
+
+    }
+
     pub fn add_contract_tx_to_queue(&mut self, value: u32, hash: Hash, from: Account, address: ContractAddress, contract_input: json::Map<String, json::Value>, timestamp: u64) {
         let ct = ContractTransaction {
             value, hash, from, address, contract_input, timestamp,
@@ -166,7 +170,7 @@ impl ContractsManager {
     pub fn input(&mut self, caller: &Account, address: &ContractAddress, input: json::Map<String, json::Value>, tx_timestamp: u64) -> Result<ContractOutput, Error> {
         let call_input = input.get("input").ok_or(Error::JsonParse("expected field 'input'".into()))?
             .as_object().ok_or(Error::JsonParse("expected object".into()))?;
-
+//        self.storage.create()
         self.storage.call(address, caller, call_input)
         // or create...
         // or remove

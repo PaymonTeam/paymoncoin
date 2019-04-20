@@ -81,21 +81,50 @@ impl<'a> ser::SerializeTupleVariant for SerStruct<'a> {
     }
 }
 
-impl ser::SerializeMap for SerNone {
+pub struct SerMap<'a> {
+    ser: &'a mut Serializer,
+    len: u32,
+    next_index: u32,
+}
+
+impl<'a> SerMap<'a> {
+    fn with_serialize_len(ser: &'a mut Serializer,
+                          len: u32)
+                          -> Result<SerMap<'a>> {
+        ser::Serializer::serialize_u32(&mut *ser, len)?;
+
+        Ok(SerMap { ser, len, next_index: 0 })
+    }
+}
+
+impl<'a> ser::SerializeMap for SerMap<'a>
+{
     type Ok = ();
     type Error = Error;
 
-    fn serialize_key<T: ?Sized>(&mut self, key: &T) -> Result<()> where
-        T: Serialize {
-        Err(SerializationError::UnserializableType.into())
+    fn serialize_key<T>(&mut self, key: &T) -> Result<()>
+        where T: ?Sized + Serialize
+    {
+        if self.next_index < self.len {
+            self.next_index += 1;
+        } else {
+            debug!("SerializeMap::serialize_key() is called when no elements is left to serialize");
+            return Err(SerializationError::LimitExceeded.into());
+        }
+
+        debug!("Serializing key");
+        key.serialize(&mut *self.ser)
     }
 
-    fn serialize_value<T: ?Sized>(&mut self, value: &T) -> Result<()> where
-        T: Serialize {
-        Err(SerializationError::UnserializableType.into())
+    fn serialize_value<T>(&mut self, value: &T) -> Result<()>
+        where T: ?Sized + Serialize
+    {
+        debug!("Serializing value");
+        value.serialize(&mut *self.ser)
     }
 
     fn end(self) -> Result<()> {
+        debug!("Finished serializing map");
         Ok(())
     }
 }
@@ -151,7 +180,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeTuple = SerStruct<'a>;
     type SerializeTupleStruct = SerStruct<'a>;
     type SerializeTupleVariant = SerStruct<'a>;
-    type SerializeMap = SerNone;
+    type SerializeMap = SerMap<'a>;
     type SerializeStruct = SerStruct<'a>;
     type SerializeStructVariant = SerStruct<'a>;
 
@@ -297,7 +326,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
         debug!("serialize_map len={:?}", len);
-        Err(SerializationError::UnserializableType.into())
+        if let Some(len) = len {
+            SerMap::with_serialize_len(self, safe_uint_cast(len)?)
+        } else {
+            return Err(SerializationError::UnserializableType.into());
+        }
     }
 
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {

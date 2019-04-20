@@ -10,7 +10,7 @@ use slab;
 
 use network::replicator::ReplicatorSource;
 use serde_pm::{SerializedBuffer};
-use model::config::{Configuration, ConfigurationSettings, PORT};
+use utils::config::{Configuration, ConfigurationSettings, PORT};
 use network::node::Node;
 use std::sync::mpsc::{Sender, Receiver};
 use std::sync::{LockResult, MutexGuard};

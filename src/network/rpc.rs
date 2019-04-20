@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 use serde_pm::{SerializedBuffer, Boxed, Identifiable};
 use std::fmt::Debug;
 
-use crate::model::{
+use crate::transaction::{
     Transaction, TransactionObject,
     transaction::*
 };
@@ -53,32 +53,6 @@ pub struct GetTransactionsToApprove {
     pub reference: Hash
 }
 
-//impl Serializable for GetTransactionsToApprove {
-//    fn serialize_to_stream(&self, stream: &mut SerializedBuffer) {
-//        stream.write_i32(Self::SVUID);
-//        stream.write_u32(self.depth);
-//        stream.write_u32(self.num_walks);
-//
-//        if self.reference == HASH_NULL {
-//            stream.write_bool(true);
-//            stream.write_bytes(&self.reference);
-//        } else {
-//            stream.write_bool(false);
-//        }
-//    }
-//
-//    fn read_params(&mut self, stream: &mut SerializedBuffer) {
-//        self.depth = stream.read_u32();
-//        self.num_walks = stream.read_u32();
-//
-//        if stream.read_bool() {
-//            stream.read_bytes(&mut self.reference, HASH_SIZE);
-//        } else {
-//            self.reference = HASH_NULL;
-//        }
-//    }
-//}
-
 /**
     TransactionsToApprove
 */
@@ -103,7 +77,9 @@ pub struct RequestTransaction {
 #[derive(Serialize, Deserialize)]
 pub struct GetBalances {
     pub addresses: Vec<Address>,
+    #[serde(default)]
     pub tips: Vec<Hash>,
+    #[serde(default)]
     pub threshold: u8,
 }
 
@@ -160,7 +136,7 @@ pub struct TransactionsData {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, PMIdentifiable, Default, PartialOrd, Ord)]
 #[pm_identifiable(id = "0x20fcaac6")]
 pub struct ContractsInputOutputs {
-    pub vec: Vec<crate::model::contracts_manager::ContractInputOutput>,
+    pub vec: Vec<crate::transaction::contracts_manager::ContractInputOutput>,
 }
 
 #[derive(Serialize, Deserialize, Eq, Debug, Clone, PMIdentifiable, Default)]
@@ -206,10 +182,3 @@ pub enum SignedData {
         address: Address,
     }
 }
-
-//#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, PMIdentifiable, Default)]
-//#[pm_identifiable(id = "0x24e88fca")]
-//pub struct ApplyForValidator {
-//    stake: u64,
-//    address: Address,
-//}

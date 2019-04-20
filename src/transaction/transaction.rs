@@ -4,7 +4,6 @@ extern crate base64;
 use serde_pm_derive;
 use std::fmt;
 use std::hash;
-use crate::model::approvee::*;
 use serde_pm::{Identifiable, SerializedBuffer, from_stream, to_buffer};
 use self::crypto::digest::Digest;
 use self::crypto::sha3::Sha3;
@@ -13,11 +12,11 @@ use crate::storage::hive::Hive;
 use std::collections::HashSet;
 use std::clone::Clone;
 use crate::secp256k1;
-//use self::ntrumls::{NTRUMLS, Signature, PrivateKey, PublicKey, PQParamSetID};
 use crate::utils::defines::AM;
 use std::str::FromStr;
 use hex;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde_bytes;
 
 pub type PublicKey = secp256k1::PublicKey;
 pub type PrivateKey = secp256k1::SecretKey;
@@ -98,47 +97,22 @@ impl hash::Hash for Hash {
 }
 
 impl Serialize for Hash {
-    // FIXME:
-    fn serialize<S>(&self, _serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
         S: Serializer {
-        unimplemented!()
+        serializer.serialize_str(&hex::encode(self.0))
     }
-//    fn encode<S: Serializer>(&self, s: &mut S) -> Result<(), S::Error> {
-//        let strs: Vec<String> = self.0.iter()
-//            .map(|b| format!("{:02x}", b))
-//            .collect();
-//        s.emit_str(&format!("{}", strs.join("")))
-//    }
-
 }
 
 impl<'de> Deserialize<'de> for Hash {
-    // FIXME:
-    fn deserialize<D>(_deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
         D: Deserializer<'de> {
-        unimplemented!()
+        deserializer.deserialize_str(StringVisitor::<Hash>::new())
     }
-//    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
-//        let v = d.read_str()?.from_hex().map_err(|e| d.error("failed to decode Hash"))?;
-//        if v.len() < HASH_SIZE {
-//            return Err(d.error("invalid hash size"));
-//        }
-//
-//        let mut hash = HASH_NULL.clone();
-//        hash.clone_from_slice(&v[..HASH_SIZE]);
-//        Ok(hash)
-//    }
-
 }
 
 impl fmt::Debug for Hash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//        use self::rustc_serialize::hex::ToHex;
-        let strs: Vec<String> = self.0.iter()
-            .map(|b| format!("{:02X}", b))
-            .collect();
-        write!(f, "Hash({})", strs.join(""))
-//        write!(f, "P{}", self.0.to_hex())
+        write!(f, "Hash({})", hex::encode(self.0))
     }
 }
 
@@ -235,16 +209,10 @@ impl Serialize for Address {
 }
 
 impl<'de> Deserialize<'de> for Address {
-    // FIXME:
-    fn deserialize<D>(_deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
+    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
         D: Deserializer<'de> {
-        unimplemented!()
+        deserializer.deserialize_str(StringVisitor::<Address>::new())
     }
-//    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
-//        let s = d.read_str()?;
-//        Ok(Address::from_str(&s).map_err(|e| d.error("failed to decode Address"))?)
-//    }
-
 }
 
 impl fmt::Debug for Address {
@@ -266,7 +234,7 @@ impl Address {
     }
 
     pub fn verify(&self) -> bool {
-        Address::calculate_checksum(&self) == self.0[ADDRESS_SIZE - 1]
+        Address::calculate_checksum(&self[..ADDRESS_SIZE-1]) == self.0[ADDRESS_SIZE - 1]
     }
 
     pub fn calculate_checksum(bytes: &[u8]) -> u8 {
@@ -295,7 +263,6 @@ impl Address {
         let mut buf = [0u8; 32];
         sha.result(&mut buf);
 
-        let _addr_left = hex::encode(&buf[..])[24..].to_string(); //.to_uppercase();
         let offset = 32 - ADDRESS_SIZE + 1;
         let checksum_byte = Address::calculate_checksum(&buf[offset..]);
 
@@ -329,6 +296,61 @@ pub enum TransactionType {
     Full,
 }
 
+mod serde_secp_public {
+    use serde::*;
+    use super::StringVisitor;
+
+    struct IntVisitor;
+
+    impl<'de> de::Visitor<'de> for IntVisitor {
+        type Value = u32;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("integer")
+        }
+    }
+
+    struct BytesVisitor;
+
+    impl<'de> de::Visitor<'de> for BytesVisitor {
+        type Value = ();
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("bytes")
+        }
+    }
+
+    pub fn deserialize<'de, D>(d: D) -> Result<secp256k1::PublicKey, D::Error> where D: de::Deserializer<'de> {
+        let s = d.deserialize_str(StringVisitor::<String>::new())?;
+        debug!("s={}", s);
+        let data = &hex::decode(&s).unwrap();
+        debug!("data={:?}", data);
+        let key = secp256k1::PublicKey::from_slice(data).unwrap();
+        debug!("key={}", key);
+        debug!("key={:?}", key);
+        debug!("key={:?}", &key.serialize()[..]);
+        Ok(key)
+    }
+
+    pub fn serialize<S>(t: &secp256k1::PublicKey, s: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        s.serialize_str(&hex::encode(&t.serialize()[..]))
+    }
+}
+
+mod serde_secp_signature {
+    use serde::*;
+    use super::StringVisitor;
+
+    pub fn deserialize<'de, D>(d: D) -> Result<secp256k1::Signature, D::Error> where D: de::Deserializer<'de> {
+        let s = d.deserialize_str(StringVisitor::<String>::new())?;
+        Ok(secp256k1::Signature::from_compact(&hex::decode(&s).unwrap()).unwrap())
+    }
+
+    pub fn serialize<S>(t: &secp256k1::Signature, s: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        s.serialize_str(&hex::encode(&t.serialize_compact()[..]))
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, PMIdentifiable)]
 #[pm_identifiable(id = "0x146C22D3")]
 pub struct TransactionObject {
@@ -344,7 +366,9 @@ pub struct TransactionObject {
     pub timestamp: u64,
     pub value: u32, // TODO: change to u64?
     pub data_type: TransactionType,
+    #[serde(with = "serde_secp_signature")]
     pub signature: Signature,
+    #[serde(with = "serde_secp_public")]
     pub signature_pubkey: PublicKey,
     pub snapshot: u32,
     pub solid: bool,
@@ -355,6 +379,7 @@ pub struct TransactionObject {
 #[derive(Clone, Serialize, Deserialize, PMIdentifiable)]
 #[pm_identifiable(id = "0x73f73812")]
 pub struct Transaction {
+//    #[serde(flatten)]
     pub object: TransactionObject,
     #[serde(skip)]
     pub bytes: SerializedBuffer,
@@ -390,12 +415,12 @@ impl Transaction {
             None => match Approvee::load(hive, &self.get_hash()) {
                 Some(aprv) => {
                     let hashes = aprv.get_hashes();
-                    self.approvers = Some(Approvee::new(&hashes));
+                    self.approvers = Some(Approvee::new(hashes.clone()));
                     hashes
                 },
                 None => {
                     let empty_set = HashSet::new();
-                    self.approvers = Some(Approvee::new(&empty_set));
+                    self.approvers = Some(Approvee::new(empty_set.clone()));
                     empty_set
                 }
             }
@@ -433,7 +458,7 @@ impl Transaction {
     }
 
     pub fn from_bytes(mut bytes: SerializedBuffer) -> Self {
-        let transaction = from_stream::<TransactionObject>(&mut bytes).expect("failed to create tx from bytex");
+        let transaction = from_stream::<TransactionObject>(&mut bytes).expect("failed to create tx from bytes");
 //        let mut transaction = TransactionObject::new();
 //        transaction.read_params(&mut bytes);
 //        transaction.data_type = TransactionType::Full;
@@ -508,9 +533,10 @@ impl Transaction {
         sb.write_u64(self.object.timestamp);
         sb.write_bytes(&self.object.tag);
         sb.write_bytes(self.object.data.as_bytes());
+        sb.rewind();
 
         let mut sha = Sha3::sha3_256();
-        sha.input(&sb.buffer);
+        sha.input(&sb);
 
         let mut buf = [0u8; HASH_SIZE];
         sha.result(&mut buf);
@@ -588,8 +614,8 @@ impl TransactionObject {
             timestamp: 0u64,
             value: 0u32,
             data_type: TransactionType::HashOnly,
-            signature: Signature::from_der(&[0; 65]).unwrap(),
-            signature_pubkey: PublicKey::from_slice(&[0; 32]).unwrap(),
+            signature: Signature::from_der(&[48, 69, 2, 33, 0, 198, 75, 25, 36, 21, 119, 72, 101, 39, 51, 196, 18, 148, 229, 246, 227, 149, 195, 98, 106, 142, 145, 31, 55, 66, 164, 184, 173, 79, 219, 146, 47, 2, 32, 52, 123, 165, 205, 214, 41, 2, 126, 245, 132, 110, 184, 92, 148, 82, 246, 49, 46, 10, 234, 105, 118, 37, 214, 107, 32, 36, 72, 243, 233, 97, 143]).unwrap(),
+            signature_pubkey: PublicKey::from_slice(&[3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96, 72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143]).unwrap(),
             snapshot: 0u32,
             solid: false,
             height: 0,
@@ -686,10 +712,80 @@ pub fn validate_transaction(transaction: &mut Transaction, mwm: u32) -> bool {
     // check signature
     let sign = &transaction.object.signature;
     let pk = &transaction.object.signature_pubkey;
+    debug!("pk: {:?}", pk);
+    debug!("signature: {:?}", sign);
+    debug!("signature: {}", sign);
 //    let ntrumls = NTRUMLS::with_param_set(PQParamSetID::Security269Bit);
 //    ntrumls.verify(&transaction.object.hash, sign, &pk)
     use secp256k1::*;
 
     let mut secp = Secp256k1::<All>::new();
-    secp.verify(&transaction.object.hash.into(), sign, pk).map(|_| true).map_err(|_| false).unwrap()
+    let message = transaction.object.hash.into();
+    debug!("msg={:?}", message);
+    secp.verify(&message, sign, pk).is_ok()
+}
+
+struct StringVisitor<T: FromStr>(std::marker::PhantomData<T>);
+
+use serde::de;
+
+impl<T: FromStr> StringVisitor<T> {
+    fn new() -> Self {
+        StringVisitor(std::marker::PhantomData{})
+    }
+}
+
+impl<'de, T> serde::de::Visitor<'de> for StringVisitor<T>
+    where T: FromStr
+{
+    type Value = T;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a string")
+    }
+
+    fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        T::from_str(v).map_err(|_| E::custom(format!("invalid address")))
+    }
+
+    fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
+        T::from_str(&v).map_err(|_| E::custom(format!("invalid address")))
+    }
+}
+
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct Approvee {
+    set: HashSet<Hash>,
+}
+
+impl Approvee {
+    pub fn new_empty() -> Self {
+        Approvee {
+            set: HashSet::new(),
+        }
+    }
+
+    pub fn new(set: HashSet<Hash>) -> Self {
+        Approvee {
+            set,
+        }
+    }
+
+    pub fn load(hive: &AM<Hive>, hash: &Hash) -> Option<Self> {
+        use std::iter::FromIterator;
+
+        if let Ok(hive) = hive.lock() {
+            return match hive.storage_load_approvee(hash) {
+                Some(vec_h) => Some(Approvee::new(HashSet::from_iter(vec_h.into_iter()))),
+                None => None
+            };
+        } else {
+            return None;
+        }
+    }
+
+    pub fn get_hashes(&self) -> HashSet<Hash> {
+        return self.set.clone();
+    }
 }

@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::marker::PhantomData;
 use crypto::sha3;
 use crypto::digest::Digest;
-use crate::model::transaction::HASH_NULL;
+use crate::transaction::transaction::HASH_NULL;
 use std::num;
 use std::fmt::Debug;
 use super::contracts_manager::{ContractInputOutput, ContractTransaction};
@@ -637,7 +637,7 @@ mod tests {
         init_log();
 
         use super::StorageAction::*;
-        use crate::model::transaction::ADDRESS_SIZE;
+        use crate::transaction::transaction::ADDRESS_SIZE;
 
         let acc1 = Account(Address::from_str("P111111111111111111111111111111111111111111").unwrap(), 1000);
         let acc2 = Account(Address::from_str("P222222222222222222222222222222222222222222").unwrap(), 2000);

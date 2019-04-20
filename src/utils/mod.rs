@@ -1,4 +1,5 @@
 pub mod defines;
+pub mod config;
 pub use self::defines::{AM, AWM};
 
 #[macro_export]

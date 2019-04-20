@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Instant, Duration};
 use std::thread;
 use crate::network::Node;
-use crate::model::config::{Configuration, ConfigurationSettings, PORT};
+use crate::utils::config::{Configuration, ConfigurationSettings, PORT};
 use futures::sync::mpsc;
 use futures::sync::mpsc::{Sender, UnboundedSender, UnboundedReceiver};
 use crossbeam::scope;

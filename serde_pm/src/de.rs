@@ -209,7 +209,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value> where
         V: de::Visitor<'de> {
         debug!("deserialize_map");
-        Err(SerializationError::UnserializableType.into())
+        let len = self.buff.read_u32()?;
+        debug!("Deserializing map of len {}", len);
+
+        visitor.visit_map(MapAccess::new(self, len))
     }
 
     fn deserialize_struct<V>(self, name: &'static str, fields: &'static [&'static str], visitor: V) -> Result<V::Value> where
@@ -340,6 +343,48 @@ impl<'de, 'a> de::VariantAccess<'de> for EnumVariantAccess<'a, 'de>
     {
         debug!("Deserializing struct variant");
         de::Deserializer::deserialize_struct(self.de, "", fields, visitor)
+    }
+}
+
+struct MapAccess<'a, 'de: 'a> {
+    de: &'a mut Deserializer<'de>,
+    len: u32,
+    next_index: u32,
+}
+
+impl<'a, 'de> MapAccess<'a, 'de> {
+    fn new(de: &'a mut Deserializer<'de>, len: u32) -> MapAccess<'a, 'de> {
+        MapAccess { de, len, next_index: 0 }
+    }
+}
+
+impl<'de, 'a> de::MapAccess<'de> for MapAccess<'a, 'de>
+{
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
+        where K: de::DeserializeSeed<'de>
+    {
+        if self.next_index < self.len {
+            self.next_index += 1;
+        } else {
+            debug!("MapAccess::next_key_seed() is called when no elements is left to deserialize");
+            return Ok(None);
+        }
+
+        debug!("Deserializing map key");
+        seed.deserialize(&mut *self.de).map(Some)
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
+        where V: de::DeserializeSeed<'de>
+    {
+        debug!("Deserializing map value");
+        seed.deserialize(&mut *self.de)
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        safe_uint_cast(self.len - self.next_index).ok()
     }
 }
 

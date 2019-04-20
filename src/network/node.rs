@@ -1,24 +1,24 @@
 use std::io;
-use crate::model::config::{Configuration, ConfigurationSettings};
+use crate::utils::config::{Configuration, ConfigurationSettings};
 use std::sync::{Arc, Weak, Mutex};
 use crate::network::neighbor::Neighbor;
 use std::net::{TcpStream, SocketAddr, IpAddr};
 use std::sync::mpsc::{Sender, Receiver};
 use std::collections::{VecDeque, BTreeSet};
-use crate::model::{TransactionObject, Transaction, TransactionType};
-use crate::model::contract::{ContractStorage, ContractsStorage, ContractOutput};
-use crate::model::contracts_manager::{ContractsManager};
+use crate::transaction::{TransactionObject, Transaction, TransactionType};
+use crate::transaction::contract::{ContractStorage, ContractsStorage, ContractOutput};
+use crate::transaction::contracts_manager::{ContractsManager};
 use crate::storage::Hive;
 use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use crate::model::transaction;
-use crate::model::transaction::{Address, Hash, HASH_NULL};
+use crate::transaction::transaction;
+use crate::transaction::transaction::{Address, Hash, HASH_NULL};
 use rand::{Rng, thread_rng};
 use crate::utils::{AM, AWM};
 use crate::network::{rpc};
-use crate::model::*;
+use crate::transaction::*;
 use futures::{Stream, Async};
 use futures::prelude::*;
 use futures::executor::Executor;
@@ -131,7 +131,7 @@ impl Node {
         }
 
         let (in_tx, in_rx) = mpsc::unbounded();
-        let (out_tx, out_rx) = mpsc::unbounded();
+        let (out_tx, out_rx) = mpsc::unbounded::<(CommunicationType)>();
 
         let running_weak = Arc::downgrade(&self.running.clone());
         let broadcast_queue_weak = Arc::downgrade(&self.broadcast_queue.clone());
@@ -176,7 +176,7 @@ impl Node {
         self.bft_out = make_am!(out_tx);
 
         let cm_weak = Arc::downgrade(&self.contracts_manager);
-//        let in_rx_clone = Arc::downgrade(&in_rx);
+        let in_rx_clone = Arc::downgrade(&in_rx);
         let out_tx_clone = Arc::downgrade(&self.bft_out);
         let running_clone = Arc::downgrade(&self.running);
         let hive_weak = self.hive.clone();
@@ -273,6 +273,7 @@ impl Node {
 
                     receiver_changed.store(true, Ordering::SeqCst);
                 }
+                thread::sleep(Duration::from_secs(3));
             }
         });
     }
@@ -370,7 +371,7 @@ impl Node {
                 if let Some(arc) = receive_queue.upgrade() {
                     if let Ok(mut queue) = arc.lock() {
                         if let Some(mut t) = queue.pop_front() {
-                            info!("received tx: {:?}", t.get_hash());
+                            info!("received tx: {:?}\n{:?}", t.get_hash(), t.object);
                             let _address = t.object.address.clone();
                             let validated = transaction::validate_transaction(&mut t, 3);
                             info!("validated={}", validated);
