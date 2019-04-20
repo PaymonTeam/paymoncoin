@@ -29,6 +29,8 @@ extern crate chrono;
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate error_chain;
 
 #[macro_use]
 extern crate tokio_io;
@@ -62,6 +64,7 @@ use env_logger::LogBuilder;
 use log::{LogRecord, LogLevelFilter};
 use crate::storage::Hive;
 use crate::network::api::API;
+use crate::transaction::transaction::Address;
 
 pub fn init_log() {
     let format = |record: &LogRecord| {

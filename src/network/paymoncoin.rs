@@ -43,8 +43,7 @@ impl PaymonCoin {
         let num_keys_milestone = 22;
         let milestone_start_index = 1;
 
-        let snapshot = Snapshot::init("db/snapshot.dat".to_string(), "".to_string()).expect("Can't \
-        load snapshot");
+        let snapshot = Snapshot::init("db/snapshot.dat".to_string(), "".to_string()).expect("Can't load snapshot");
         let hive = Arc::new(Mutex::new(Hive::new()));
         {
             hive.lock().unwrap().init();

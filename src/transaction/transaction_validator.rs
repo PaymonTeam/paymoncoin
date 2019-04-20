@@ -362,7 +362,7 @@ impl TransactionValidator {
                                     let acc = Account(Address::from_public_key(&transaction.object.signature_pubkey), 0);
 
                                     let mut cm = self.contracts_manager.lock().unwrap();
-                                    cm.add_contract_tx_to_queue(transaction.object.value,
+                                    cm.handle_tx_with_input(transaction.object.value,
                                                                 transaction.object.hash.clone(),
                                                                 acc,
                                                                 transaction.object.address, input.clone(), transaction.object.timestamp);

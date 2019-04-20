@@ -96,6 +96,10 @@ impl ContractsManager {
         }
     }
 
+    pub fn handle_tx_with_input(&mut self, value: u32, hash: Hash, from: Account, address: ContractAddress, contract_input: json::Map<String, json::Value>, timestamp: u64) {
+
+    }
+
     pub fn add_contract_tx_to_queue(&mut self, value: u32, hash: Hash, from: Account, address: ContractAddress, contract_input: json::Map<String, json::Value>, timestamp: u64) {
         let ct = ContractTransaction {
             value, hash, from, address, contract_input, timestamp,
